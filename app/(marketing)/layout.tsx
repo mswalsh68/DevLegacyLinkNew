@@ -1,5 +1,7 @@
 // Marketing layout — public, no auth required.
-// Wraps home, login, pricing, etc.
+import { MarketingNav } from '@/components/marketing/MarketingNav'
+import { MarketingFooter } from '@/components/marketing/MarketingFooter'
+
 export default function MarketingLayout({
   children,
 }: {
@@ -7,9 +9,9 @@ export default function MarketingLayout({
 }) {
   return (
     <div className="flex min-h-screen flex-col">
-      {/* Marketing nav will go here */}
+      <MarketingNav />
       <main className="flex-1">{children}</main>
-      {/* Marketing footer will go here */}
+      <MarketingFooter />
     </div>
   )
 }
