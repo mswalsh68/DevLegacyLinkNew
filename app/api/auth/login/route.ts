@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { SignJWT } from 'jose'
 import sql from 'mssql'
+import { getPool } from '@/lib/db/connection'
 import { loginSchema } from '@/lib/validations/auth'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -20,27 +21,6 @@ function getConfig() {
     accessExpiry:  process.env.JWT_EXPIRES_IN      ?? '15m',
     refreshExpiry: process.env.REFRESH_TOKEN_EXPIRES_IN ?? '7d',
   }
-}
-
-// ─── DB pool ──────────────────────────────────────────────────────────────────
-
-let pool: sql.ConnectionPool | null = null
-
-async function getPool() {
-  if (pool) return pool
-  pool = await new sql.ConnectionPool({
-    server:   process.env.DB_SERVER ?? 'localhost\\SQLEXPRESS',
-    database: process.env.GLOBAL_DB_NAME ?? 'DevLegacyLinkGlobal',
-    authentication: {
-      type: 'default',
-      options: {
-        userName: process.env.DB_USER ?? 'sa',
-        password: process.env.DB_PASS ?? '',
-      },
-    },
-    options: { encrypt: false, trustServerCertificate: true },
-  }).connect()
-  return pool
 }
 
 // ─── Route handler ────────────────────────────────────────────────────────────
@@ -80,7 +60,7 @@ export async function POST(req: NextRequest) {
   let userJson: Record<string, unknown>
 
   try {
-    const db      = await getPool()
+    const db      = await getPool('global')
     const request = db.request()
 
     request.input('Email',      sql.NVarChar(255), email)
