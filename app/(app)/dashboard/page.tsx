@@ -1,13 +1,17 @@
-// Protected dashboard — replace with real widgets when building out the app.
+// Protected dashboard — server component.
+// Reads the session server-side and passes the role to the client DashboardContent
+// so the welcome header can show the right label on first render (no flash).
 import type { Metadata } from 'next'
+import { getServerSession } from '@/lib/auth'
+import DashboardContent from './DashboardContent'
 
 export const metadata: Metadata = { title: 'Dashboard' }
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  // Auth already enforced by the (app) layout — session is guaranteed here.
+  const session = await getServerSession()
+
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-      <p className="mt-2 text-gray-600">Welcome back. Your dashboard will appear here.</p>
-    </div>
+    <DashboardContent role={session?.role ?? 'user'} />
   )
 }
