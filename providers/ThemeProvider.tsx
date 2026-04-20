@@ -29,13 +29,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     fetch('/api/config')
       .then((r) => r.json())
-      .then((data: TeamConfig) => {
+      .then((res: { success: boolean; data: TeamConfig }) => {
+        if (!res.success || !res.data) return
+        const data = res.data
         setConfig(data)
-        // Apply brand colors as CSS custom properties
         const root = document.documentElement
-        root.style.setProperty('--color-primary', data.primaryColor)
+        root.style.setProperty('--color-primary',   data.primaryColor)
         root.style.setProperty('--color-secondary', data.secondaryColor)
-        root.style.setProperty('--color-accent', data.accentColor)
+        root.style.setProperty('--color-accent',    data.accentColor)
       })
       .catch(() => {
         // Silently fall back to defaults on error
