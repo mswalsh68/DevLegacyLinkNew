@@ -1,0 +1,98 @@
+# =============================================================================
+# deploy-database.yml
+# Deploys App DB schema (synonyms + stored procedures) to Azure SQL.
+#
+# Triggers:
+#   • Push to main that touches databases/** or scripts/**
+#   • Manual dispatch (workflow_dispatch) so you can target any environment
+#     and any App DB without a code push.
+#
+# Required GitHub Secrets  (Settings → Secrets → Actions):
+#   AZURE_SQL_SERVER      — e.g. myserver.database.windows.net
+#   AZURE_SQL_USERNAME    — SQL login with ddl_admin / db_owner on the App DB
+#                           and db_datareader on the Global DB
+#   AZURE_SQL_PASSWORD    — password for the above login
+#   GLOBAL_DB_NAME        — e.g. LegacyLinkGlobal
+#
+# Firewall note:
+#   Azure SQL must allow connections from GitHub Actions runners.
+#   In the Azure Portal → SQL Server → Networking, enable
+#   "Allow Azure services and resources to access this server"
+#   OR add the GitHub Actions IP ranges (changes frequently —
+#   using the "Allow Azure services" toggle is simpler for CI/CD).
+# =============================================================================
+
+name: Deploy Database
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'databases/**'
+      - 'scripts/**'
+
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - development
+      app_db_name:
+        description: 'App DB name (e.g. LegacyLinkApp_Bulls)'
+        required: true
+        default: 'LegacyLinkApp'
+
+jobs:
+  deploy:
+    name: Deploy App DB
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'production' }}
+
+    env:
+      # Use workflow_dispatch inputs when present; fall back to secrets for
+      # push-triggered runs.
+      APP_DB: ${{ github.event.inputs.app_db_name || vars.APP_DB_NAME }}
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Install sqlcmd ────────────────────────────────────────────────────
+      # ubuntu-latest ships mssql-tools18; sqlcmd18 is the binary name.
+      # We create a 'sqlcmd' alias so deploy-app-db.sh just calls 'sqlcmd'.
+      - name: Install sqlcmd
+        run: |
+          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
+            | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+          curl -fsSL https://packages.microsoft.com/config/ubuntu/22.04/prod.list \
+            | sudo tee /etc/apt/sources.list.d/mssql-release.list
+          sudo apt-get update -qq
+          sudo ACCEPT_EULA=Y apt-get install -y -qq mssql-tools18 unixodbc-dev
+          echo "/opt/mssql-tools18/bin" >> "$GITHUB_PATH"
+
+      # ── 3. Verify sqlcmd is available ─────────────────────────────────────────
+      - name: Verify sqlcmd
+        run: sqlcmd -? | head -5
+
+      # ── 4. Make deploy script executable ─────────────────────────────────────
+      - name: Make deploy script executable
+        run: chmod +x scripts/deploy-app-db.sh
+
+      # ── 5. Deploy synonyms + stored procedures ────────────────────────────────
+      - name: Deploy to Azure SQL
+        run: |
+          ./scripts/deploy-app-db.sh \
+            --server    "${{ secrets.AZURE_SQL_SERVER }}" \
+            --app-db    "${{ env.APP_DB }}" \
+            --global-db "${{ secrets.GLOBAL_DB_NAME }}" \
+            --username  "${{ secrets.AZURE_SQL_USERNAME }}" \
+            --password  "${{ secrets.AZURE_SQL_PASSWORD }}"
+        env:
+          # Prevent password from appearing in debug output
+          AZURE_SQL_PASSWORD: ${{ secrets.AZURE_SQL_PASSWORD }}
