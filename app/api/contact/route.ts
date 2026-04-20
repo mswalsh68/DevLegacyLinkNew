@@ -2,33 +2,76 @@ import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { accessRequestSchema, contactSchema } from '@/lib/validations/contact'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+// ─── Config validation ────────────────────────────────────────────────────────
+// Called once per request so missing vars surface immediately in Vercel logs
+// rather than as a silent Resend auth failure.
 
-const ADMIN_EMAIL = process.env.CONTACT_TO_EMAIL   ?? 'legacylinkhqapp@gmail.com'
-const CC_EMAIL    = 'legacylinkhqapp@gmail.com'
-const FROM_EMAIL  = process.env.CONTACT_FROM_EMAIL ?? 'noreply@devlegacylink.com'
+function getConfig() {
+  const apiKey  = process.env.RESEND_API_KEY
+  const toEmail = process.env.CONTACT_TO_EMAIL
+  const from    = process.env.CONTACT_FROM_EMAIL
+
+  const missing: string[] = []
+  if (!apiKey)  missing.push('RESEND_API_KEY')
+  if (!toEmail) missing.push('CONTACT_TO_EMAIL')
+  if (!from)    missing.push('CONTACT_FROM_EMAIL')
+
+  if (missing.length > 0) {
+    throw new Error(
+      `[/api/contact] Missing required environment variables: ${missing.join(', ')}. ` +
+      'Add them in your Vercel project settings (or .env.local for local dev).',
+    )
+  }
+
+  return {
+    resend:     new Resend(apiKey),
+    adminEmail: toEmail!,
+    fromEmail:  from!,
+    ccEmail:    'legacylinkhqapp@gmail.com' as const,
+  }
+}
+
+// ─── Route handler ────────────────────────────────────────────────────────────
 
 export async function POST(request: Request) {
+  // Validate config up front — throws with a clear message if env vars are missing
+  let cfg: ReturnType<typeof getConfig>
+  try {
+    cfg = getConfig()
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[/api/contact] Config error:', msg)
+    return NextResponse.json(
+      { error: 'Server misconfiguration. Please contact support.' },
+      { status: 500 },
+    )
+  }
+
+  // Parse body
   let raw: unknown
   try {
     raw = await request.json()
   } catch {
-    return NextResponse.json({ error: 'Invalid request.' }, { status: 400 })
+    return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
   }
 
-  // ── Detect form type by presence of 'message' field ──────────────────────
+  // Route to the right handler based on which form submitted
   const isFullContact = typeof (raw as Record<string, unknown>).message === 'string'
 
   if (isFullContact) {
-    return handleContactForm(raw)
+    return handleContactForm(raw, cfg)
   } else {
-    return handleAccessRequest(raw)
+    return handleAccessRequest(raw, cfg)
   }
 }
 
-// ─── Access Request (landing page CTA) ───────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-async function handleAccessRequest(raw: unknown) {
+type Config = ReturnType<typeof getConfig>
+
+// ─── Access Request handler (landing page CTA) ───────────────────────────────
+
+async function handleAccessRequest(raw: unknown, cfg: Config) {
   const result = accessRequestSchema.safeParse(raw)
   if (!result.success) {
     return NextResponse.json(
@@ -38,11 +81,14 @@ async function handleAccessRequest(raw: unknown) {
   }
 
   const { name, email, role, program } = result.data
+  const timestamp = new Date().toISOString()
 
-  const { error } = await resend.emails.send({
-    from:    FROM_EMAIL,
-    to:      ADMIN_EMAIL,
-    cc:      ADMIN_EMAIL !== CC_EMAIL ? [CC_EMAIL] : [],
+  console.log(`[/api/contact] Access request from ${email} at ${timestamp}`)
+
+  const { data, error } = await cfg.resend.emails.send({
+    from:    cfg.fromEmail,
+    to:      cfg.adminEmail,
+    cc:      [cfg.ccEmail],           // always CC — no conditional
     replyTo: email,
     subject: `[LegacyLink] Access Request — ${role ?? 'No role specified'}`,
     text:    accessRequestPlainText({ name, email, role, program }),
@@ -50,25 +96,44 @@ async function handleAccessRequest(raw: unknown) {
   })
 
   if (error) {
-    console.error('[/api/contact] Access request email error:', error)
-    return NextResponse.json({ error: 'Failed to send. Please try again.' }, { status: 500 })
+    console.error('[/api/contact] Access request — admin email failed:', {
+      error,
+      submitter: email,
+      timestamp,
+    })
+    return NextResponse.json(
+      { error: 'Failed to send message. Please try again.' },
+      { status: 500 },
+    )
   }
 
-  // Fire-and-forget confirmation to the submitter
-  resend.emails.send({
-    from:    FROM_EMAIL,
+  console.log(`[/api/contact] Access request sent. Resend ID: ${data?.id}`)
+
+  // Confirmation to submitter — fire-and-forget, never blocks the success response
+  cfg.resend.emails.send({
+    from:    cfg.fromEmail,
     to:      email,
     subject: `You're on the list — LegacyLink`,
     text:    confirmPlainText(name),
     html:    confirmHtml(name),
-  }).catch((err) => console.error('[/api/contact] Confirmation error:', err))
+  }).then(({ data: d, error: err }) => {
+    if (err) {
+      console.error('[/api/contact] Access request — confirmation email failed:', {
+        error: err,
+        submitter: email,
+        timestamp,
+      })
+    } else {
+      console.log(`[/api/contact] Confirmation sent. Resend ID: ${d?.id}`)
+    }
+  })
 
-  return NextResponse.json({ success: true }, { status: 200 })
+  return NextResponse.json({ success: true, timestamp }, { status: 200 })
 }
 
-// ─── Full Contact Form (/contact page) ───────────────────────────────────────
+// ─── Full Contact Form handler (/contact page) ───────────────────────────────
 
-async function handleContactForm(raw: unknown) {
+async function handleContactForm(raw: unknown, cfg: Config) {
   const result = contactSchema.safeParse(raw)
   if (!result.success) {
     return NextResponse.json(
@@ -78,11 +143,14 @@ async function handleContactForm(raw: unknown) {
   }
 
   const { name, email, organization, subject, message } = result.data
+  const timestamp = new Date().toISOString()
 
-  const { error } = await resend.emails.send({
-    from:    FROM_EMAIL,
-    to:      ADMIN_EMAIL,
-    cc:      ADMIN_EMAIL !== CC_EMAIL ? [CC_EMAIL] : [],
+  console.log(`[/api/contact] Contact form from ${email} at ${timestamp}`)
+
+  const { data, error } = await cfg.resend.emails.send({
+    from:    cfg.fromEmail,
+    to:      cfg.adminEmail,
+    cc:      [cfg.ccEmail],           // always CC — no conditional
     replyTo: email,
     subject: `[LegacyLink] ${subject}`,
     text:    contactPlainText({ name, email, organization, subject, message }),
@@ -90,22 +158,41 @@ async function handleContactForm(raw: unknown) {
   })
 
   if (error) {
-    console.error('[/api/contact] Contact form email error:', error)
-    return NextResponse.json({ error: 'Failed to send. Please try again.' }, { status: 500 })
+    console.error('[/api/contact] Contact form — admin email failed:', {
+      error,
+      submitter: email,
+      timestamp,
+    })
+    return NextResponse.json(
+      { error: 'Failed to send message. Please try again.' },
+      { status: 500 },
+    )
   }
 
-  resend.emails.send({
-    from:    FROM_EMAIL,
+  console.log(`[/api/contact] Contact form sent. Resend ID: ${data?.id}`)
+
+  cfg.resend.emails.send({
+    from:    cfg.fromEmail,
     to:      email,
     subject: `We received your message — LegacyLink`,
     text:    confirmPlainText(name),
     html:    confirmHtml(name),
-  }).catch((err) => console.error('[/api/contact] Confirmation error:', err))
+  }).then(({ data: d, error: err }) => {
+    if (err) {
+      console.error('[/api/contact] Contact form — confirmation email failed:', {
+        error: err,
+        submitter: email,
+        timestamp,
+      })
+    } else {
+      console.log(`[/api/contact] Confirmation sent. Resend ID: ${d?.id}`)
+    }
+  })
 
-  return NextResponse.json({ success: true }, { status: 200 })
+  return NextResponse.json({ success: true, timestamp }, { status: 200 })
 }
 
-// ─── Email templates ──────────────────────────────────────────────────────────
+// ─── Email templates (unchanged) ─────────────────────────────────────────────
 
 const e = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -147,8 +234,6 @@ function row(label: string, value: string) {
   </tr>`
 }
 
-// Access request
-
 function accessRequestHtml(d: { name: string; email: string; role?: string; program?: string }) {
   return emailShell(`
     ${headerBlock('New Access Request')}
@@ -176,8 +261,6 @@ function accessRequestPlainText(d: { name: string; email: string; role?: string;
     `Program: ${d.program ?? '—'}`,
   ].join('\n')
 }
-
-// Full contact form
 
 function contactHtml(d: { name: string; email: string; organization?: string; subject: string; message: string }) {
   return emailShell(`
@@ -214,12 +297,10 @@ function contactPlainText(d: { name: string; email: string; organization?: strin
   ].join('\n')
 }
 
-// Confirmation to submitter
-
 function confirmHtml(name: string) {
   const first = name.split(' ')[0]
   return emailShell(`
-    ${headerBlock("We got your message.")}
+    ${headerBlock('We got your message.')}
     ${bodyOpen}
     <p style="margin:0 0 14px;font-size:16px;color:rgba(255,255,255,0.8);">Hi ${e(first)},</p>
     <p style="margin:0 0 14px;font-size:15px;color:rgba(255,255,255,0.6);line-height:1.7;">
