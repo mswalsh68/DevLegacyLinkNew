@@ -1,39 +1,69 @@
-// Login is public (no auth required to view).
-// Form interaction logic lives in a client component child.
+// Server Component shell — form state lives in LoginForm ('use client').
+// No nav/footer: login is a standalone full-screen page.
 import type { Metadata } from 'next'
-import Link from 'next/link'
+import Image from 'next/image'
+import { LoginForm } from '@/components/marketing/LoginForm'
 
 export const metadata: Metadata = { title: 'Sign In' }
 
 export default function LoginPage() {
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-gray-50 px-4 py-12">
-      <div className="w-full max-w-sm">
-        {/* Logo */}
-        <div className="mb-8 text-center">
-          <div className="inline-flex items-center gap-2 font-bold text-gray-900">
-            <span className="rounded bg-blue-600 px-2 py-0.5 text-sm text-white">DLL</span>
-            DevLegacyLink
-          </div>
-          <h1 className="mt-4 text-2xl font-bold text-gray-900">Sign in to your account</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Enter your credentials to continue.
+    <div className="relative min-h-screen flex items-center justify-center px-4 py-12">
+
+      {/* Full-screen background */}
+      <Image
+        src="/login-background.jpg"
+        alt=""
+        fill
+        priority
+        style={{ objectFit: 'cover', objectPosition: 'center' }}
+      />
+
+      {/* Dark scrim */}
+      <div className="absolute inset-0" style={{ backgroundColor: 'rgba(0,0,0,0.62)' }} />
+
+      {/* Card */}
+      <div
+        className="relative w-full max-w-md rounded-2xl overflow-hidden"
+        style={{ boxShadow: '0 32px 80px rgba(0,0,0,0.8)' }}
+      >
+
+        {/* ── White logo panel ── */}
+        <div className="flex items-center justify-center px-6 py-8 bg-white">
+          <Image
+            src="/logo-full.jpg"
+            alt="LegacyLink — Where rosters become legacies"
+            width={420}
+            height={160}
+            priority
+            style={{ objectFit: 'contain', width: '100%', height: 'auto' }}
+          />
+        </div>
+
+        {/* Gold divider */}
+        <div style={{ height: 3, backgroundColor: '#CFC493' }} />
+
+        {/* ── Dark form panel ── */}
+        <div className="px-8 py-8 bg-brand-dark">
+
+          <h2 className="text-base font-semibold mb-6 tracking-wide text-white/65">
+            Sign in to your account
+          </h2>
+
+          <LoginForm />
+
+          <p className="text-center text-xs mt-6 text-white/20">
+            Contact your program administrator for access.
           </p>
-        </div>
 
-        {/* Card */}
-        <div className="rounded-xl border border-gray-200 bg-white px-8 py-8 shadow-sm">
-          {/* LoginForm client component will replace this placeholder */}
-          <p className="text-center text-sm text-gray-400">Login form coming in Phase 2.</p>
         </div>
-
-        <p className="mt-6 text-center text-sm text-gray-500">
-          Don&apos;t have an account?{' '}
-          <Link href="/contact" className="font-medium text-blue-600 hover:underline">
-            Request access
-          </Link>
-        </p>
       </div>
+
+      {/* Footer */}
+      <p className="absolute bottom-4 text-xs text-white/25">
+        &copy; {new Date().getFullYear()} LegacyLink &mdash; All rights reserved
+      </p>
+
     </div>
   )
 }
