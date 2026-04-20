@@ -1,5 +1,27 @@
 import { z } from 'zod'
 
+// Used by the landing page ContactCTA ("Request Access") form
+export const accessRequestSchema = z.object({
+  name: z
+    .string()
+    .min(2, 'Name must be at least 2 characters')
+    .max(100, 'Name is too long'),
+  email: z
+    .string()
+    .email('Please enter a valid email address'),
+  role: z
+    .string()
+    .max(100)
+    .optional(),
+  program: z
+    .string()
+    .max(150, 'Program name is too long')
+    .optional(),
+})
+
+export type AccessRequestData = z.infer<typeof accessRequestSchema>
+
+// Used by the full /contact page form
 export const contactSchema = z.object({
   name: z
     .string()
