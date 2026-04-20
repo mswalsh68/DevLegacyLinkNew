@@ -1,17 +1,22 @@
 // ─── Smart Database Connection Layer ─────────────────────────────────────────
 //
-// Development  (NODE_ENV=development):
-//   → localhost\SQLEXPRESS, encrypt=false, trustServerCertificate=true
+// Azure SQL  (NODE_ENV=production OR server contains .database.windows.net):
+//   → encrypt=true, trustServerCertificate=false
 //
-// Production   (NODE_ENV=production):
-//   → Azure SQL (DB_SERVER env var), encrypt=true, trustServerCertificate=false
+// Local SQLEXPRESS (everything else):
+//   → encrypt=false, trustServerCertificate=true
 //
 // All route handlers and procedures import from here — never create a pool
 // directly anywhere else.
 
 import sql from 'mssql'
 
-const isProd = process.env.NODE_ENV === 'production'
+const DB_SERVER = process.env.DB_SERVER ?? ''
+
+// Treat as Azure if explicitly in production OR the server URL looks like Azure SQL
+const isAzure =
+  process.env.NODE_ENV === 'production' ||
+  DB_SERVER.toLowerCase().includes('.database.windows.net')
 
 // ─── Logical DB identifiers → actual database names (from env vars) ───────────
 
@@ -26,8 +31,10 @@ const DB_NAMES: Record<DbKey, string> = {
 // ─── Base config — switches per environment ───────────────────────────────────
 
 function buildBaseConfig(database: string): sql.config {
+  const server = DB_SERVER || (isAzure ? '' : 'localhost\\SQLEXPRESS')
+
   return {
-    server:   process.env.DB_SERVER ?? (isProd ? '' : 'localhost\\SQLEXPRESS'),
+    server,
     database,
     authentication: {
       type: 'default',
@@ -37,16 +44,15 @@ function buildBaseConfig(database: string): sql.config {
       },
     },
     options: {
-      // Azure SQL requires encryption. Local SQLEXPRESS does not (and rejects it).
-      encrypt:                isProd,
-      trustServerCertificate: !isProd,
-      // Allows named-instance syntax (localhost\SQLEXPRESS) in dev
+      // Azure SQL mandates encryption; local SQLEXPRESS rejects it.
+      encrypt:                isAzure,
+      trustServerCertificate: !isAzure,
       enableArithAbort:       true,
     },
     pool: {
-      max:                10,
-      min:                0,
-      idleTimeoutMillis:  30_000,
+      max:                  10,
+      min:                  0,
+      idleTimeoutMillis:    30_000,
       acquireTimeoutMillis: 15_000,
     },
     connectionTimeout: 15_000,
@@ -63,16 +69,16 @@ export async function getPool(db: DbKey): Promise<sql.ConnectionPool> {
 
   const config = buildBaseConfig(DB_NAMES[db])
 
-  if (isProd && !config.server) {
+  if (isAzure && !config.server) {
     throw new Error(
-      `[db/connection] DB_SERVER env var is required in production. ` +
-      `Set it to your Azure SQL server (e.g. myserver.database.windows.net).`,
+      `[db/connection] DB_SERVER env var is required when targeting Azure SQL. ` +
+      `Set it to your server hostname (e.g. myserver.database.windows.net).`,
     )
   }
 
   console.log(
-    `[db/connection] Connecting to ${isProd ? 'Azure' : 'local'} SQL — ` +
-    `${config.server}/${DB_NAMES[db]}`,
+    `[db/connection] Connecting to ${isAzure ? 'Azure' : 'local'} SQL — ` +
+    `${config.server}/${DB_NAMES[db]} (encrypt=${isAzure})`,
   )
 
   const pool = await new sql.ConnectionPool(config).connect()
