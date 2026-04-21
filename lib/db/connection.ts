@@ -20,12 +20,16 @@ const isAzure =
 
 // ─── Logical DB identifiers → actual database names (from env vars) ───────────
 
-export type DbKey = 'global' | 'roster' | 'alumni'
+// 'app'    — the per-tenant App DB (players + alumni, single DB)
+// 'global' — the shared Global DB (users, auth, team config)
+// 'roster' / 'alumni' kept as aliases for backward compat — both point to APP_DB_NAME
+export type DbKey = 'global' | 'app' | 'roster' | 'alumni'
 
 const DB_NAMES: Record<DbKey, string> = {
   global: process.env.GLOBAL_DB_NAME ?? 'DevLegacyLinkGlobal',
-  roster: process.env.ROSTER_DB_NAME ?? 'DevLegacyLinkRoster',
-  alumni: process.env.ALUMNI_DB_NAME ?? 'DevLegacyLinkAlumni',
+  app:    process.env.APP_DB_NAME    ?? 'DevLegacyLinkApp',
+  roster: process.env.APP_DB_NAME    ?? 'DevLegacyLinkApp',
+  alumni: process.env.APP_DB_NAME    ?? 'DevLegacyLinkApp',
 }
 
 // ─── Base config — switches per environment ───────────────────────────────────
