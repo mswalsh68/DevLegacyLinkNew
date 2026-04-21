@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/providers/AuthProvider'
-import { useTeamConfig, applyTheme } from '@/providers/ThemeProvider'
+import { useTeamConfig } from '@/providers/ThemeProvider'
 import type { TeamConfig } from '@/types'
 
 type TeamItem = TeamConfig & { teamId: string }
@@ -38,22 +38,10 @@ export function AppNav() {
       .catch(() => {}) // silent — switcher just won't show if teams unavailable
   }, [])
 
-  // Highlight the active team in the switcher dropdown based on localStorage.
-  // Theme is already correct (JWT has currentTeamId; ThemeProvider fetched right config).
-  // This effect only drives the visual "active" indicator in the dropdown.
-  useEffect(() => {
-    if (teams.length === 0) return
-    try {
-      const lastId = localStorage.getItem('dll_selected_team_id')
-      if (lastId) {
-        const saved = teams.find((t) => t.teamId === lastId)
-        if (saved) {
-          const { teamId: _id, ...configData } = saved
-          applyTheme(configData)
-        }
-      }
-    } catch { /* private browsing — ignore */ }
-  }, [teams])
+  // No applyTheme call here — ThemeProvider owns the theme.
+  // After a team switch the JWT has currentTeamId, /api/config returns the right
+  // team on reload, and ThemeProvider applies it. Applying colors from the /api/teams
+  // list here (which uses different SP columns) would overwrite ThemeProvider's result.
 
   // Close both dropdowns on outside click
   useEffect(() => {
@@ -102,6 +90,10 @@ export function AppNav() {
     }
 
     try { localStorage.setItem('dll_selected_team_id', team.teamId) } catch { /* ignore */ }
+
+    // Clear sessionStorage so ThemeProvider doesn't paint stale old-team colors
+    // on the new page load before the /api/config fetch completes.
+    try { sessionStorage.removeItem('dll_team_config') } catch { /* ignore */ }
 
     // Hard reload — same pattern as the original project.
     // ThemeProvider re-mounts fresh and /api/config returns the new team's config
