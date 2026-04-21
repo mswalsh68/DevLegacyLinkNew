@@ -20,5 +20,16 @@ export const TRANSFER_REASONS = [
 ] as const
 export type TransferReason = (typeof TRANSFER_REASONS)[number]
 
-export const USER_ROLES = ['global_admin', 'coach', 'staff', 'read_only'] as const
+// Values must match the global_role CHECK constraint in the DB:
+//   platform_owner | global_admin | coach_staff | readonly
+// Legacy aliases (coach, staff, read_only) kept for backwards compat.
+export const USER_ROLES = [
+  'platform_owner',
+  'global_admin',
+  'coach_staff',
+  'readonly',
+  'coach',
+  'staff',
+  'read_only',
+] as const
 export type UserRole = (typeof USER_ROLES)[number]

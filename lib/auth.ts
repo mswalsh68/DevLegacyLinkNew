@@ -21,6 +21,10 @@ export async function getServerSession(): Promise<UserSession | null> {
     if (payload.sub && !payload.userId) {
       payload.userId = payload.sub
     }
+    // sp_Login returns globalRole (not role) — normalise so role checks work.
+    if (payload.globalRole && !payload.role) {
+      payload.role = payload.globalRole
+    }
     return payload as UserSession
   } catch {
     return null
@@ -33,5 +37,8 @@ export function hasAppAccess(session: UserSession, app: string): boolean {
 }
 
 export function isGlobalAdmin(session: UserSession): boolean {
-  return session.role === 'global_admin'
+  // globalRole is normalised to role in getServerSession(); check both for safety.
+  // platform_owner has full admin access (matches original project behaviour).
+  const r = session.role ?? (session as unknown as Record<string, unknown>).globalRole
+  return r === 'global_admin' || r === 'platform_owner'
 }
