@@ -1,10 +1,9 @@
 // Protected app layout — wraps all (app) routes.
 // Server-side auth check: unauthenticated users are redirected to /login.
-// Renders the dark app shell: sidebar + sticky header + scrollable main area.
+// Renders the original design: sticky top nav (team primary color) + light page background.
 import { redirect } from 'next/navigation'
 import { getServerSession } from '@/lib/auth'
-import { AppSidebar } from '@/components/app/AppSidebar'
-import { AppHeader } from '@/components/app/AppHeader'
+import { AppNav } from '@/components/app/AppNav'
 
 export default async function AppLayout({
   children,
@@ -18,20 +17,19 @@ export default async function AppLayout({
   }
 
   return (
-    // Full-viewport dark shell
-    <div className="flex min-h-screen bg-[#0D0D0D]">
-      {/* Fixed-width sidebar */}
-      <AppSidebar />
+    <div style={{ minHeight: '100vh', backgroundColor: 'var(--color-page-bg)' }}>
+      {/* Sticky top nav — background is var(--color-primary), updates on team switch */}
+      <AppNav />
 
-      {/* Content column */}
-      <div className="flex flex-1 flex-col min-w-0">
-        {/* Sticky top header */}
-        <AppHeader />
-
-        {/* Scrollable page content */}
-        <main className="flex-1 overflow-y-auto p-6 md:p-8">
-          {children}
-        </main>
+      {/* Page content — centered, max 1200px, matches original padding */}
+      <div
+        style={{
+          maxWidth: 1200,
+          margin:   '0 auto',
+          padding:  '32px 24px',
+        }}
+      >
+        {children}
       </div>
     </div>
   )
