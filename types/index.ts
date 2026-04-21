@@ -7,8 +7,9 @@ import type { UserRole, Semester, TransferReason } from '@/lib/constants'
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 export interface UserSession {
-  userId: string   // UUID — JWT stores this in the 'sub' claim; getServerSession() maps sub → userId
-  sub?: string     // Raw JWT subject (same UUID, kept for completeness)
+  userId: string        // UUID — JWT stores this in the 'sub' claim; getServerSession() maps sub → userId
+  sub?: string          // Raw JWT subject (same UUID, kept for completeness)
+  currentTeamId?: string // Set by POST /api/auth/switch-team; tells /api/config which team to load
   username: string
   email: string
   role: UserRole

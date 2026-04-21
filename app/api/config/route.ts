@@ -8,8 +8,9 @@
 // the property names expected by TeamConfig (primaryColor, accentColor, etc.).
 // The pick() / tryArray() helpers handle all known naming conventions so this
 // route works whether the SP is from the old project or a future refactor.
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { sp_GetTeamConfig } from '@/lib/db/procedures'
+import { getServerSession } from '@/lib/auth'
 import type { TeamConfig } from '@/types'
 
 // ─── Flexible column pickers ──────────────────────────────────────────────────
@@ -109,11 +110,24 @@ function normalizeConfigRow(row: Record<string, unknown>, defaults: TeamConfig):
 
 // ─── Route ────────────────────────────────────────────────────────────────────
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const defaults = getEnvDefaults()
 
+  // Team resolution priority:
+  //   1. ?teamId=<uuid> query param (explicit client request)
+  //   2. session.currentTeamId from JWT (set by POST /api/auth/switch-team)
+  //   3. No teamId → sp_GetTeamConfig falls back to the default team
+  const qsTeamId = req.nextUrl.searchParams.get('teamId') ?? undefined
+  let teamId = qsTeamId
+  if (!teamId) {
+    try {
+      const session = await getServerSession()
+      teamId = session?.currentTeamId ?? undefined
+    } catch { /* session unavailable — continue without teamId */ }
+  }
+
   try {
-    const row = await sp_GetTeamConfig()
+    const row = await sp_GetTeamConfig(teamId ? { teamId } : undefined)
     if (row) {
       const data = normalizeConfigRow(row, defaults)
       return NextResponse.json({ success: true, data }, { status: 200 })

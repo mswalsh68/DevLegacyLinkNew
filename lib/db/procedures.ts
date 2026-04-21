@@ -94,9 +94,11 @@ export async function sp_TransferPlayerToAlumni(params: {
 // handled by the normalizeTeamRow() helper in the route handlers.
 export type TeamConfigRow = Record<string, unknown>
 
-/** Returns config for the default (first active) team. */
-export async function sp_GetTeamConfig(): Promise<TeamConfigRow | null> {
-  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_GetTeamConfig')
+/** Returns config for a specific team (or the default team if teamId is omitted). */
+export async function sp_GetTeamConfig(params?: { teamId?: string }): Promise<TeamConfigRow | null> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_GetTeamConfig', (r) => {
+    r.input('TeamId', sql.UniqueIdentifier, params?.teamId ?? null)
+  })
   return (rows as unknown as TeamConfigRow[])[0] ?? null
 }
 
@@ -114,6 +116,26 @@ export async function sp_GetUserTeams(params: {
     r.input('UserId', sql.UniqueIdentifier, params.userId)
   })
   return rows as unknown as TeamConfigRow[]
+}
+
+/**
+ * Validates user access to the new team and returns team details for re-issuing the JWT.
+ * platform_owner bypasses the user_teams membership check.
+ */
+export async function sp_SwitchTeam(params: {
+  userId:    string
+  newTeamId: string
+}): Promise<{ teamJson: string | null; errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_SwitchTeam', (r) => {
+    r.input ('UserId',    sql.UniqueIdentifier, params.userId)
+    r.input ('NewTeamId', sql.UniqueIdentifier, params.newTeamId)
+    r.output('TeamJson',  sql.NVarChar(sql.MAX))
+    r.output('ErrorCode', sql.NVarChar(50))
+  })
+  return {
+    teamJson:  (output.TeamJson  as string | null) ?? null,
+    errorCode: (output.ErrorCode as string | null) ?? null,
+  }
 }
 
 export async function sp_UpdateTeamConfig(config: Record<string, unknown>) {

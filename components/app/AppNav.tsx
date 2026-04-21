@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/providers/AuthProvider'
-import { useTeamConfig, applyTheme, triggerThemeRefresh } from '@/providers/ThemeProvider'
+import { useTeamConfig, applyTheme } from '@/providers/ThemeProvider'
 import type { TeamConfig } from '@/types'
 
 type TeamItem = TeamConfig & { teamId: string }
@@ -38,7 +38,9 @@ export function AppNav() {
       .catch(() => {}) // silent — switcher just won't show if teams unavailable
   }, [])
 
-  // Restore last selected team from localStorage (survives reload)
+  // Highlight the active team in the switcher dropdown based on localStorage.
+  // Theme is already correct (JWT has currentTeamId; ThemeProvider fetched right config).
+  // This effect only drives the visual "active" indicator in the dropdown.
   useEffect(() => {
     if (teams.length === 0) return
     try {
@@ -48,7 +50,6 @@ export function AppNav() {
         if (saved) {
           const { teamId: _id, ...configData } = saved
           applyTheme(configData)
-          triggerThemeRefresh(configData)
         }
       }
     } catch { /* private browsing — ignore */ }
@@ -75,16 +76,37 @@ export function AppNav() {
     router.push('/login')
   }
 
-  const handleSwitch = (team: TeamItem) => {
+  const handleSwitch = async (team: TeamItem) => {
     if (switching) return
     setSwitching(true)
     setSwitchError('')
     setDropdownOpen(false)
-    const { teamId, ...configData } = team
-    applyTheme(configData)
-    triggerThemeRefresh(configData)
-    try { localStorage.setItem('dll_selected_team_id', teamId) } catch { /* ignore */ }
-    setSwitching(false)
+
+    try {
+      const res = await fetch('/api/auth/switch-team', {
+        method:      'POST',
+        headers:     { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body:        JSON.stringify({ teamId: team.teamId }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setSwitchError((err as { error?: string }).error ?? 'Failed to switch team.')
+        setSwitching(false)
+        return
+      }
+    } catch {
+      setSwitchError('Failed to switch team.')
+      setSwitching(false)
+      return
+    }
+
+    try { localStorage.setItem('dll_selected_team_id', team.teamId) } catch { /* ignore */ }
+
+    // Hard reload — same pattern as the original project.
+    // ThemeProvider re-mounts fresh and /api/config returns the new team's config
+    // because the JWT now has currentTeamId set.
+    window.location.href = '/dashboard'
   }
 
   const displayName  = user?.username ?? user?.email ?? ''
