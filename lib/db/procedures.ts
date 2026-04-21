@@ -89,8 +89,31 @@ export async function sp_TransferPlayerToAlumni(params: {
   })
 }
 
-export async function sp_GetTeamConfig() {
-  return exec('global', 'sp_GetTeamConfig')
+// ─── Team config row returned by sp_GetTeamConfig / sp_GetTeams ───────────────
+// SP columns can be PascalCase (TeamId, TeamName…) or camelCase — both are
+// handled by the normalizeTeamRow() helper in the route handlers.
+export type TeamConfigRow = Record<string, unknown>
+
+/** Returns config for the default (first active) team. */
+export async function sp_GetTeamConfig(): Promise<TeamConfigRow | null> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_GetTeamConfig')
+  return (rows as unknown as TeamConfigRow[])[0] ?? null
+}
+
+/** Returns all active teams — used by /api/teams to populate the TeamSwitcher. */
+export async function sp_GetTeams(): Promise<TeamConfigRow[]> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_GetTeams')
+  return rows as unknown as TeamConfigRow[]
+}
+
+/** Returns the teams a specific user has access to. */
+export async function sp_GetUserTeams(params: {
+  userId: string
+}): Promise<TeamConfigRow[]> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_GetUserTeams', (r) => {
+    r.input('UserId', sql.UniqueIdentifier, params.userId)
+  })
+  return rows as unknown as TeamConfigRow[]
 }
 
 export async function sp_UpdateTeamConfig(config: Record<string, unknown>) {
