@@ -8,7 +8,7 @@
 // the property names expected by TeamConfig (primaryColor, accentColor, etc.).
 // The pick() / tryArray() helpers handle all known naming conventions so this
 // route works whether the SP is from the old project or a future refactor.
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { sp_GetTeamConfig } from '@/lib/db/procedures'
 import type { TeamConfig } from '@/types'
 
@@ -109,11 +109,14 @@ function normalizeConfigRow(row: Record<string, unknown>, defaults: TeamConfig):
 
 // ─── Route ────────────────────────────────────────────────────────────────────
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const defaults = getEnvDefaults()
 
+  // Optional ?teamId=<uuid> — lets the client request config for a specific team
+  const teamId = req.nextUrl.searchParams.get('teamId') ?? undefined
+
   try {
-    const row = await sp_GetTeamConfig()
+    const row = await sp_GetTeamConfig(teamId ? { teamId } : undefined)
     if (row) {
       const data = normalizeConfigRow(row, defaults)
       return NextResponse.json({ success: true, data }, { status: 200 })

@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/providers/AuthProvider'
-import { useTeamConfig, applyTheme, triggerThemeRefresh } from '@/providers/ThemeProvider'
+import { useTeamConfig, applyTheme } from '@/providers/ThemeProvider'
 import type { TeamConfig } from '@/types'
 
 type TeamItem = TeamConfig & { teamId: string }
@@ -46,9 +46,13 @@ export function AppNav() {
       if (lastId) {
         const saved = teams.find((t) => t.teamId === lastId)
         if (saved) {
-          const { teamId: _id, ...configData } = saved
+          const { teamId, ...configData } = saved
           applyTheme(configData)
-          triggerThemeRefresh(configData)
+          window.dispatchEvent(
+            new CustomEvent('team-config-changed', {
+              detail: { config: configData, teamId },
+            }),
+          )
         }
       }
     } catch { /* private browsing — ignore */ }
@@ -81,8 +85,19 @@ export function AppNav() {
     setSwitchError('')
     setDropdownOpen(false)
     const { teamId, ...configData } = team
+
+    // 1. Apply CSS vars instantly from local data for zero-latency visual feedback
     applyTheme(configData)
-    triggerThemeRefresh(configData)
+
+    // 2. Tell ThemeProvider: new team selected — apply locally AND re-fetch from DB
+    //    The event detail now includes teamId so ThemeProvider can hit
+    //    /api/config?teamId=<id> and confirm the authoritative colors.
+    window.dispatchEvent(
+      new CustomEvent('team-config-changed', {
+        detail: { config: configData, teamId },
+      }),
+    )
+
     try { localStorage.setItem('dll_selected_team_id', teamId) } catch { /* ignore */ }
     setSwitching(false)
   }

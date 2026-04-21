@@ -94,9 +94,11 @@ export async function sp_TransferPlayerToAlumni(params: {
 // handled by the normalizeTeamRow() helper in the route handlers.
 export type TeamConfigRow = Record<string, unknown>
 
-/** Returns config for the default (first active) team. */
-export async function sp_GetTeamConfig(): Promise<TeamConfigRow | null> {
-  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_GetTeamConfig')
+/** Returns config for a specific team (or the default team if teamId is omitted). */
+export async function sp_GetTeamConfig(params?: { teamId?: string }): Promise<TeamConfigRow | null> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_GetTeamConfig', (r) => {
+    r.input('TeamId', sql.UniqueIdentifier, params?.teamId ?? null)
+  })
   return (rows as unknown as TeamConfigRow[])[0] ?? null
 }
 

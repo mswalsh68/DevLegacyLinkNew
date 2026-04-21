@@ -3,10 +3,18 @@
 // Fetches team config on mount and applies ALL CSS custom properties to :root.
 // Derives dark/light variants from the primaryColor and accentColor returned by
 // the DB — the DB only stores three colors, so we compute the rest client-side.
-// Exports applyTheme() and triggerThemeRefresh() so AppNav's TeamSwitcher can
-// push a config change and have it propagate instantly without a page reload.
+//
+// Race-condition protection: every call to fetchAndApplyConfig() increments a
+// generation counter. If a newer fetch starts before an older one resolves, the
+// older result is discarded. This prevents a slow default-team fetch from
+// overwriting a team the user already switched to.
+//
+// On every team switch AppNav calls switchTeam(), which:
+//   1. Applies the theme instantly from the local teams-list data
+//   2. Re-fetches /api/config?teamId=<id> to confirm colors from the DB
+//   3. Re-applies and caches the authoritative server response
 
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { TeamConfig } from '@/types'
 
 const DEFAULT_CONFIG: TeamConfig = {
@@ -104,12 +112,12 @@ export function applyTheme(config: Partial<TeamConfig>) {
   }
 }
 
-// Fires a custom DOM event so ThemeProvider and any listener can pick up a
-// team switch immediately. Call this after applyTheme().
-export function triggerThemeRefresh(newConfig: Partial<TeamConfig>) {
+// Backward-compat shim — fires the new event format (includes teamId: undefined).
+// Kept so components that haven't been updated yet don't break TypeScript.
+export function triggerThemeRefresh(config: Partial<TeamConfig>) {
   if (typeof window === 'undefined') return
   window.dispatchEvent(
-    new CustomEvent('team-config-changed', { detail: newConfig }),
+    new CustomEvent('team-config-changed', { detail: { config, teamId: undefined } }),
   )
 }
 
@@ -121,60 +129,84 @@ const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [config, setConfig] = useState<TeamConfig>(DEFAULT_CONFIG)
 
-  useEffect(() => {
-    const applyData = (data: Partial<TeamConfig>) => {
-      const merged: TeamConfig = { ...DEFAULT_CONFIG, ...data }
-      setConfig(merged)
-      applyTheme(merged)
-    }
+  // Generation counter — incremented on every fetch. A fetch result is only
+  // applied if its generation matches the current value at resolution time.
+  // This prevents a slow initial fetch from stomping over a team switch.
+  const fetchGen = useRef(0)
 
-    // 1. Serve from sessionStorage immediately for fast paint
+  const fetchAndApply = (teamId?: string) => {
+    const gen = ++fetchGen.current
+    const url = teamId ? `/api/config?teamId=${encodeURIComponent(teamId)}` : '/api/config'
+
+    fetch(url, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((res: { success: boolean; data: TeamConfig }) => {
+        if (gen !== fetchGen.current) return // superseded by a newer fetch
+        if (res.success && res.data) {
+          const merged: TeamConfig = { ...DEFAULT_CONFIG, ...res.data }
+          setConfig(merged)
+          applyTheme(merged)
+          try {
+            sessionStorage.setItem(
+              CACHE_KEY,
+              JSON.stringify({ data: merged, ts: Date.now(), teamId: teamId ?? null }),
+            )
+          } catch { /* Storage quota exceeded */ }
+        }
+      })
+      .catch(() => { /* fall back to whatever is already applied */ })
+  }
+
+  useEffect(() => {
+    // 1. Serve from sessionStorage immediately for fast paint (only if team hasn't changed)
     try {
       const raw = sessionStorage.getItem(CACHE_KEY)
       if (raw) {
         const { data: cached, ts } = JSON.parse(raw) as {
           data: Partial<TeamConfig>
           ts: number
+          teamId?: string | null
         }
-        if (Date.now() - ts < CACHE_TTL) applyData(cached)
+        if (Date.now() - ts < CACHE_TTL) {
+          const merged: TeamConfig = { ...DEFAULT_CONFIG, ...cached }
+          setConfig(merged)
+          applyTheme(merged)
+        }
       }
-    } catch {
-      // Corrupt / unavailable storage — ignore
-    }
+    } catch { /* Corrupt / unavailable storage — ignore */ }
 
-    // 2. Fetch fresh config (auth cookie sent automatically)
-    fetch('/api/config', { credentials: 'include' })
-      .then((r) => r.json())
-      .then((res: { success: boolean; data: TeamConfig }) => {
-        if (res.success && res.data) {
-          applyData(res.data)
-          try {
-            sessionStorage.setItem(
-              CACHE_KEY,
-              JSON.stringify({ data: res.data, ts: Date.now() }),
-            )
-          } catch {
-            // Storage quota exceeded — ignore
-          }
-        }
-      })
-      .catch(() => {
-        // Fall back to defaults silently
-      })
+    // 2. Fetch authoritative config from server (respects the stored teamId if any)
+    let initialTeamId: string | undefined
+    try {
+      const raw = sessionStorage.getItem(CACHE_KEY)
+      if (raw) {
+        const { teamId } = JSON.parse(raw) as { teamId?: string | null }
+        if (teamId) initialTeamId = teamId
+      }
+    } catch { /* ignore */ }
+    fetchAndApply(initialTeamId)
 
     // 3. Listen for team switches pushed by AppNav's TeamSwitcher
     const handleTeamChange = (e: Event) => {
-      const newConfig = (e as CustomEvent<Partial<TeamConfig>>).detail
-      try { sessionStorage.removeItem(CACHE_KEY) } catch { /* ignore */ }
+      const { config: newConfig, teamId } = (
+        e as CustomEvent<{ config: Partial<TeamConfig>; teamId?: string }>
+      ).detail
+
+      // Apply immediately from local data for instant visual feedback
       setConfig((prev) => {
         const merged = { ...prev, ...newConfig }
         applyTheme(merged)
         return merged
       })
+
+      // Then confirm with the server (invalidates any inflight default fetch)
+      try { sessionStorage.removeItem(CACHE_KEY) } catch { /* ignore */ }
+      fetchAndApply(teamId)
     }
 
     window.addEventListener('team-config-changed', handleTeamChange)
     return () => window.removeEventListener('team-config-changed', handleTeamChange)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return (
