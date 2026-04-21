@@ -311,7 +311,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreatePlayer
   @Position              NVARCHAR(10),
   @AcademicYear          NVARCHAR(20),
   @RecruitingClass       SMALLINT,
-  @GlobalTeamId          UNIQUEIDENTIFIER,   -- team ID in LegacyLinkGlobal
+  @UserId                UNIQUEIDENTIFIER,   -- resolved by caller via sp_GetOrCreateUser on Global DB
   @SportId               UNIQUEIDENTIFIER = NULL,
   @JerseyNumber          TINYINT          = NULL,
   @HeightInches          TINYINT          = NULL,
@@ -334,7 +334,6 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreatePlayer
   @Parent2Email          NVARCHAR(255)    = NULL,
   @Notes                 NVARCHAR(MAX)    = NULL,
   @CreatedBy             UNIQUEIDENTIFIER,
-  @NewUserId             UNIQUEIDENTIFIER OUTPUT,
   @ErrorCode             NVARCHAR(50)     OUTPUT,
   @RequestingUserId      UNIQUEIDENTIFIER = NULL,
   @RequestingUserRole    NVARCHAR(50)     = NULL
@@ -366,25 +365,9 @@ BEGIN
     RETURN;
   END
 
-  -- Step 1: Get or create user in LegacyLinkGlobal via synonym
-  -- (replaces: EXEC [GLOBAL_DB].LegacyLinkGlobal.dbo.sp_GetOrCreateUser)
-  DECLARE @globalErr NVARCHAR(50);
-  EXEC dbo.syn_GetOrCreateUser
-    @Email     = @Email,
-    @FirstName = @FirstName,
-    @LastName  = @LastName,
-    @TeamId    = @GlobalTeamId,
-    @UserId    = @NewUserId OUTPUT,
-    @ErrorCode = @globalErr OUTPUT;
-
-  IF @NewUserId IS NULL
-  BEGIN
-    SET @ErrorCode = ISNULL(@globalErr, 'GLOBAL_USER_CREATE_FAILED');
-    RETURN;
-  END
-
-  -- Step 2: Upsert into AppDB dbo.users
-  IF EXISTS (SELECT 1 FROM dbo.users WHERE id = @NewUserId)
+  -- Upsert into AppDB dbo.users
+  -- @UserId was resolved by the caller via sp_GetOrCreateUser on Global DB
+  IF EXISTS (SELECT 1 FROM dbo.users WHERE id = @UserId)
   BEGIN
     UPDATE dbo.users SET
       email                   = @Email,
@@ -417,7 +400,7 @@ BEGIN
       parent2_email           = COALESCE(@Parent2Email,           parent2_email),
       notes                   = COALESCE(@Notes,                  notes),
       updated_at              = SYSUTCDATETIME()
-    WHERE id = @NewUserId;
+    WHERE id = @UserId;
   END
   ELSE
   BEGIN
@@ -432,7 +415,7 @@ BEGIN
       notes
     )
     VALUES (
-      @NewUserId, @Email, @FirstName, @LastName, 1, @SportId,
+      @UserId, @Email, @FirstName, @LastName, 1, @SportId,
       @JerseyNumber, @Position, @AcademicYear, @RecruitingClass,
       @HeightInches, @WeightLbs, @HomeTown, @HomeState, @HighSchool,
       @Major, @Phone, @Email, @Instagram, @Twitter, @Snapchat,
@@ -445,10 +428,10 @@ BEGIN
 
   -- Register in users_sports if we have a sport
   IF @SportId IS NOT NULL
-    AND NOT EXISTS (SELECT 1 FROM dbo.users_sports WHERE user_id = @NewUserId AND sport_id = @SportId)
+    AND NOT EXISTS (SELECT 1 FROM dbo.users_sports WHERE user_id = @UserId AND sport_id = @SportId)
   BEGIN
     INSERT INTO dbo.users_sports (user_id, sport_id, username)
-    VALUES (@NewUserId, @SportId, @FirstName + ' ' + @LastName);
+    VALUES (@UserId, @SportId, @FirstName + ' ' + @LastName);
   END
 END;
 GO
@@ -550,7 +533,8 @@ CREATE OR ALTER PROCEDURE dbo.sp_GraduatePlayer
   @TriggeredBy    NVARCHAR(100),
   @TransactionId  UNIQUEIDENTIFIER OUTPUT,
   @SuccessCount   INT              OUTPUT,
-  @FailureJson    NVARCHAR(MAX)    OUTPUT
+  @FailureJson    NVARCHAR(MAX)    OUTPUT,
+  @SucceededJson  NVARCHAR(MAX)    OUTPUT  -- array of userIds that flipped to alumni; caller uses this to call sp_TransferPlayerToAlumni on Global DB
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -559,8 +543,10 @@ BEGIN
   SET @TransactionId = NEWID();
   SET @SuccessCount  = 0;
   SET @FailureJson   = '[]';
+  SET @SucceededJson = '[]';
 
-  DECLARE @failures   TABLE (user_id NVARCHAR(100), reason NVARCHAR(500));
+  DECLARE @failures  TABLE (user_id NVARCHAR(100), reason NVARCHAR(500));
+  DECLARE @succeeded TABLE (user_id NVARCHAR(100));
   DECLARE @userIds    TABLE (user_id UNIQUEIDENTIFIER);
   DECLARE @currentId  UNIQUEIDENTIFIER;
 
@@ -617,14 +603,11 @@ BEGIN
           (@TransactionId, @currentId, @GraduationYear, @Semester,
            TRY_CAST(@TriggeredBy AS UNIQUEIDENTIFIER), 'success');
 
-        -- Swap permissions in LegacyLinkGlobal via synonym
-        -- (replaces: EXEC [GLOBAL_DB].LegacyLinkGlobal.dbo.sp_TransferPlayerToAlumni)
-        EXEC dbo.syn_TransferPlayerToAlumni
-          @UserId    = @currentId,
-          @GrantedBy = @TriggeredBy;
-
       COMMIT TRANSACTION;
       SET @SuccessCount = @SuccessCount + 1;
+      INSERT INTO @succeeded VALUES (CAST(@currentId AS NVARCHAR(100)));
+      -- Caller (Next.js server action) will call sp_TransferPlayerToAlumni on Global DB
+      -- for each userId returned in @SucceededJson.
 
     END TRY
     BEGIN CATCH
@@ -648,6 +631,8 @@ BEGIN
 
   SELECT @FailureJson = ISNULL(
     (SELECT user_id AS userId, reason FROM @failures FOR JSON PATH), '[]');
+  SELECT @SucceededJson = ISNULL(
+    (SELECT user_id AS userId FROM @succeeded FOR JSON PATH), '[]');
 END;
 GO
 
@@ -1227,9 +1212,8 @@ GO
 -- if the person is already registered.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_BulkCreatePlayers
-  @PlayersJson  NVARCHAR(MAX),
+  @PlayersJson  NVARCHAR(MAX),  -- each row must include "userId" (resolved by caller via GlobalDB)
   @CreatedBy    UNIQUEIDENTIFIER,
-  @GlobalTeamId UNIQUEIDENTIFIER,   -- team ID in LegacyLinkGlobal
   @SportId      UNIQUEIDENTIFIER = NULL,
   @SuccessCount INT OUTPUT,
   @SkippedCount INT OUTPUT,
@@ -1392,33 +1376,10 @@ BEGIN
         SET @SkippedCount += 1; GOTO NextRow;
       END
 
-      -- Get or create global user via synonym.
-      -- If email is NULL: skip Global DB and use the provided userId or generate one.
-      -- (replaces: EXEC [GLOBAL_DB].LegacyLinkGlobal.dbo.sp_GetOrCreateUser)
-      DECLARE @newUserId UNIQUEIDENTIFIER;
-      DECLARE @globalErr NVARCHAR(50);
-
-      IF @email IS NOT NULL AND LEN(LTRIM(RTRIM(@email))) > 0
-      BEGIN
-        EXEC dbo.syn_GetOrCreateUser
-          @Email     = @email,
-          @FirstName = @fn,
-          @LastName  = @ln,
-          @TeamId    = @GlobalTeamId,
-          @UserId    = @newUserId OUTPUT,
-          @ErrorCode = @globalErr OUTPUT;
-
-        IF @newUserId IS NULL
-        BEGIN
-          INSERT INTO @errors VALUES (@rowNum, 'Global user creation failed: ' + ISNULL(@globalErr, 'unknown'));
-          SET @SkippedCount += 1; GOTO NextRow;
-        END
-      END
-      ELSE
-      BEGIN
-        -- No email supplied — use provided userId or generate a new one.
-        SET @newUserId = ISNULL(@providedUserId, NEWID());
-      END
+      -- UserId is resolved by the caller (Next.js server action calls GlobalDB first,
+      -- then passes the userId back in each JSON row as "userId").
+      -- If no userId was provided, generate one (email-less / historical import).
+      DECLARE @newUserId UNIQUEIDENTIFIER = ISNULL(@providedUserId, NEWID());
 
       -- Upsert into AppDB
       IF EXISTS (SELECT 1 FROM dbo.users WHERE id = @newUserId)
@@ -1511,9 +1472,8 @@ GO
 -- Inserts directly as status_id = 2 (alumni).
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_BulkCreateAlumni
-  @AlumniJson   NVARCHAR(MAX),
+  @AlumniJson   NVARCHAR(MAX),  -- each row must include "userId" (resolved by caller via GlobalDB)
   @CreatedBy    UNIQUEIDENTIFIER,
-  @GlobalTeamId UNIQUEIDENTIFIER,
   @SportId      UNIQUEIDENTIFIER = NULL,
   @SuccessCount INT OUTPUT,
   @SkippedCount INT OUTPUT,
@@ -1614,22 +1574,10 @@ BEGIN
       IF @ln IS NULL OR LEN(LTRIM(RTRIM(@ln))) = 0 BEGIN INSERT INTO @errors VALUES (@rowNum, 'Last name required');  SET @SkippedCount += 1; GOTO NextAlumRow; END
       IF @gradYear IS NULL OR @gradYear < 1950 OR @gradYear > 2100 BEGIN INSERT INTO @errors VALUES (@rowNum, 'Invalid graduation year'); SET @SkippedCount += 1; GOTO NextAlumRow; END
 
-      DECLARE @newUserId UNIQUEIDENTIFIER;
-      DECLARE @globalErr NVARCHAR(50);
-
-      IF @email IS NOT NULL AND LEN(LTRIM(RTRIM(@email))) > 0
-      BEGIN
-        -- (replaces: EXEC [GLOBAL_DB].LegacyLinkGlobal.dbo.sp_GetOrCreateUser)
-        EXEC dbo.syn_GetOrCreateUser
-          @Email = @email, @FirstName = @fn, @LastName = @ln, @TeamId = @GlobalTeamId,
-          @UserId = @newUserId OUTPUT, @ErrorCode = @globalErr OUTPUT;
-
-        IF @newUserId IS NULL BEGIN INSERT INTO @errors VALUES (@rowNum, 'Global user creation failed: ' + ISNULL(@globalErr, 'unknown')); SET @SkippedCount += 1; GOTO NextAlumRow; END
-      END
-      ELSE
-      BEGIN
-        SET @newUserId = ISNULL(@providedUserId, NEWID());
-      END
+      -- UserId is resolved by the caller (Next.js server action calls GlobalDB first,
+      -- then passes the userId back in each JSON row as "userId").
+      -- If no userId was provided, generate one (email-less / historical import).
+      DECLARE @newUserId UNIQUEIDENTIFIER = ISNULL(@providedUserId, NEWID());
 
       IF EXISTS (SELECT 1 FROM dbo.users WHERE id = @newUserId)
       BEGIN
