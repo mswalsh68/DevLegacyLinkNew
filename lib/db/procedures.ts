@@ -138,10 +138,46 @@ export async function sp_SwitchTeam(params: {
   }
 }
 
-export async function sp_UpdateTeamConfig(config: Record<string, unknown>) {
-  return exec('global', 'sp_UpdateTeamConfig', (r) => {
-    r.input('ConfigJson', sql.NVarChar(sql.MAX), JSON.stringify(config))
+export async function sp_UpdateTeamConfig(params: {
+  teamId?:           string | null
+  teamName?:         string | null
+  teamAbbr?:         string | null
+  sport?:            string | null
+  level?:            string | null
+  logoUrl?:          string | null
+  colorPrimary?:     string | null
+  colorPrimaryDark?: string | null
+  colorPrimaryLight?:string | null
+  colorAccent?:      string | null
+  colorAccentDark?:  string | null
+  colorAccentLight?: string | null
+  positionsJson?:    string | null
+  academicYearsJson?:string | null
+  alumniLabel?:      string | null
+  rosterLabel?:      string | null
+  classLabel?:       string | null
+}): Promise<{ errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_UpdateTeamConfig', (r) => {
+    r.input ('TeamId',            sql.UniqueIdentifier, params.teamId            ?? null)
+    r.input ('TeamName',          sql.NVarChar(100),    params.teamName          ?? null)
+    r.input ('TeamAbbr',          sql.NVarChar(10),     params.teamAbbr          ?? null)
+    r.input ('Sport',             sql.NVarChar(50),     params.sport             ?? null)
+    r.input ('Level',             sql.NVarChar(20),     params.level             ?? null)
+    r.input ('LogoUrl',           sql.NVarChar(500),    params.logoUrl           ?? null)
+    r.input ('ColorPrimary',      sql.NVarChar(7),      params.colorPrimary      ?? null)
+    r.input ('ColorPrimaryDark',  sql.NVarChar(7),      params.colorPrimaryDark  ?? null)
+    r.input ('ColorPrimaryLight', sql.NVarChar(7),      params.colorPrimaryLight ?? null)
+    r.input ('ColorAccent',       sql.NVarChar(7),      params.colorAccent       ?? null)
+    r.input ('ColorAccentDark',   sql.NVarChar(7),      params.colorAccentDark   ?? null)
+    r.input ('ColorAccentLight',  sql.NVarChar(7),      params.colorAccentLight  ?? null)
+    r.input ('PositionsJson',     sql.NVarChar(sql.MAX),params.positionsJson     ?? null)
+    r.input ('AcademicYearsJson', sql.NVarChar(sql.MAX),params.academicYearsJson ?? null)
+    r.input ('AlumniLabel',       sql.NVarChar(50),     params.alumniLabel       ?? null)
+    r.input ('RosterLabel',       sql.NVarChar(50),     params.rosterLabel       ?? null)
+    r.input ('ClassLabel',        sql.NVarChar(50),     params.classLabel        ?? null)
+    r.output('ErrorCode',         sql.NVarChar(50))
   })
+  return { errorCode: (output.ErrorCode as string | null) ?? null }
 }
 
 // ─── App DB — Players ─────────────────────────────────────────────────────────
