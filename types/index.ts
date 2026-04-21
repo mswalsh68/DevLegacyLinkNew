@@ -7,7 +7,8 @@ import type { UserRole, Semester, TransferReason } from '@/lib/constants'
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 export interface UserSession {
-  userId: number
+  userId: string   // UUID — JWT stores this in the 'sub' claim; getServerSession() maps sub → userId
+  sub?: string     // Raw JWT subject (same UUID, kept for completeness)
   username: string
   email: string
   role: UserRole

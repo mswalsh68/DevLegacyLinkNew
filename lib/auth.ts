@@ -17,6 +17,10 @@ export async function getServerSession(): Promise<UserSession | null> {
     const payload = JSON.parse(
       Buffer.from(token.split('.')[1], 'base64url').toString(),
     )
+    // JWT stores userId in the 'sub' claim (UUID). Map it to userId if absent.
+    if (payload.sub && !payload.userId) {
+      payload.userId = payload.sub
+    }
     return payload as UserSession
   } catch {
     return null

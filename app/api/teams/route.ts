@@ -56,18 +56,28 @@ function normalizeRows(rows: Record<string, unknown>[]): TeamListItem[] {
   const DEFAULT_POSITIONS      = ['QB', 'RB', 'WR', 'TE', 'OL', 'DL', 'LB', 'DB', 'K', 'P']
   const DEFAULT_ACADEMIC_YEARS = ['Freshman', 'Sophomore', 'Junior', 'Senior', 'Graduate']
 
-  return rows.map((row) => ({
-    teamId:         pick(row, 'TeamId',        'teamId')         ?? '',
-    teamName:       pick(row, 'TeamName',       'teamName')       ?? 'Unknown Team',
-    sport:          pick(row, 'Sport',          'sport')          ?? 'Football',
-    level:          pick(row, 'Level',          'level')          ?? 'College',
-    primaryColor:   pick(row, 'PrimaryColor',   'primaryColor')   ?? '#006747',
-    secondaryColor: pick(row, 'SecondaryColor', 'secondaryColor') ?? '#CFC493',
-    accentColor:    pick(row, 'AccentColor',    'accentColor')    ?? '#CFC493',
-    positions:      tryArray(row,  'Positions',     'positions')      ?? DEFAULT_POSITIONS,
-    academicYears:  tryArray(row,  'AcademicYears', 'academicYears')  ?? DEFAULT_ACADEMIC_YEARS,
-    customLabels:   tryObject(row, 'CustomLabels',  'customLabels')   ?? {},
-  }))
+  return rows.map((row) => {
+    // Pick with old SP aliases: PascalCase → camelCase → old colorXxx naming → 'name' alias
+    const primaryColor   = pick(row, 'PrimaryColor',   'primaryColor',   'colorPrimary')   ?? '#006747'
+    const accentColor    = pick(row, 'AccentColor',    'accentColor',    'colorAccent')    ?? '#CFC493'
+    const secondaryColor = pick(row, 'SecondaryColor', 'secondaryColor', 'colorSecondary',
+                                     'AccentColor',    'accentColor',    'colorAccent')    ?? '#CFC493'
+
+    return {
+      teamId:   pick(row, 'TeamId',  'teamId',  'id',    'Id')    ?? '',
+      teamName: pick(row, 'TeamName','teamName', 'name',  'Name')  ?? 'Unknown Team',
+      sport:    pick(row, 'Sport',   'sport')                      ?? 'Football',
+      level:    pick(row, 'Level',   'level')                      ?? 'College',
+      primaryColor,
+      secondaryColor,
+      accentColor,
+      positions:     tryArray(row,  'Positions',        'positions',
+                                    'PositionsJson',    'positionsJson')    ?? DEFAULT_POSITIONS,
+      academicYears: tryArray(row,  'AcademicYears',    'academicYears',
+                                    'AcademicYearsJson','academicYearsJson') ?? DEFAULT_ACADEMIC_YEARS,
+      customLabels:  tryObject(row, 'CustomLabels',     'customLabels')     ?? {},
+    }
+  })
 }
 
 // ─── Public types ─────────────────────────────────────────────────────────────
