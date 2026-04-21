@@ -10,6 +10,7 @@
 // route works whether the SP is from the old project or a future refactor.
 import { NextRequest, NextResponse } from 'next/server'
 import { sp_GetTeamConfig } from '@/lib/db/procedures'
+import { getServerSession } from '@/lib/auth'
 import type { TeamConfig } from '@/types'
 
 // ─── Flexible column pickers ──────────────────────────────────────────────────
@@ -112,8 +113,18 @@ function normalizeConfigRow(row: Record<string, unknown>, defaults: TeamConfig):
 export async function GET(req: NextRequest) {
   const defaults = getEnvDefaults()
 
-  // Optional ?teamId=<uuid> — lets the client request config for a specific team
-  const teamId = req.nextUrl.searchParams.get('teamId') ?? undefined
+  // Team resolution priority:
+  //   1. ?teamId=<uuid> query param (explicit client request)
+  //   2. session.currentTeamId from JWT (set by POST /api/auth/switch-team)
+  //   3. No teamId → sp_GetTeamConfig falls back to the default team
+  const qsTeamId = req.nextUrl.searchParams.get('teamId') ?? undefined
+  let teamId = qsTeamId
+  if (!teamId) {
+    try {
+      const session = await getServerSession()
+      teamId = session?.currentTeamId ?? undefined
+    } catch { /* session unavailable — continue without teamId */ }
+  }
 
   try {
     const row = await sp_GetTeamConfig(teamId ? { teamId } : undefined)

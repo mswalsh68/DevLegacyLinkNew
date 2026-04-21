@@ -118,6 +118,26 @@ export async function sp_GetUserTeams(params: {
   return rows as unknown as TeamConfigRow[]
 }
 
+/**
+ * Validates user access to the new team and returns team details for re-issuing the JWT.
+ * platform_owner bypasses the user_teams membership check.
+ */
+export async function sp_SwitchTeam(params: {
+  userId:    string
+  newTeamId: string
+}): Promise<{ teamJson: string | null; errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_SwitchTeam', (r) => {
+    r.input ('UserId',    sql.UniqueIdentifier, params.userId)
+    r.input ('NewTeamId', sql.UniqueIdentifier, params.newTeamId)
+    r.output('TeamJson',  sql.NVarChar(sql.MAX))
+    r.output('ErrorCode', sql.NVarChar(50))
+  })
+  return {
+    teamJson:  (output.TeamJson  as string | null) ?? null,
+    errorCode: (output.ErrorCode as string | null) ?? null,
+  }
+}
+
 export async function sp_UpdateTeamConfig(config: Record<string, unknown>) {
   return exec('global', 'sp_UpdateTeamConfig', (r) => {
     r.input('ConfigJson', sql.NVarChar(sql.MAX), JSON.stringify(config))

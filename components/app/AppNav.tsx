@@ -38,7 +38,9 @@ export function AppNav() {
       .catch(() => {}) // silent — switcher just won't show if teams unavailable
   }, [])
 
-  // Restore last selected team from localStorage (survives reload)
+  // Highlight the active team in the switcher dropdown based on localStorage.
+  // Theme is already correct (JWT has currentTeamId; ThemeProvider fetched right config).
+  // This effect only drives the visual "active" indicator in the dropdown.
   useEffect(() => {
     if (teams.length === 0) return
     try {
@@ -46,13 +48,8 @@ export function AppNav() {
       if (lastId) {
         const saved = teams.find((t) => t.teamId === lastId)
         if (saved) {
-          const { teamId, ...configData } = saved
+          const { teamId: _id, ...configData } = saved
           applyTheme(configData)
-          window.dispatchEvent(
-            new CustomEvent('team-config-changed', {
-              detail: { config: configData, teamId },
-            }),
-          )
         }
       }
     } catch { /* private browsing — ignore */ }
@@ -79,27 +76,37 @@ export function AppNav() {
     router.push('/login')
   }
 
-  const handleSwitch = (team: TeamItem) => {
+  const handleSwitch = async (team: TeamItem) => {
     if (switching) return
     setSwitching(true)
     setSwitchError('')
     setDropdownOpen(false)
-    const { teamId, ...configData } = team
 
-    // 1. Apply CSS vars instantly from local data for zero-latency visual feedback
-    applyTheme(configData)
+    try {
+      const res = await fetch('/api/auth/switch-team', {
+        method:      'POST',
+        headers:     { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body:        JSON.stringify({ teamId: team.teamId }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setSwitchError((err as { error?: string }).error ?? 'Failed to switch team.')
+        setSwitching(false)
+        return
+      }
+    } catch {
+      setSwitchError('Failed to switch team.')
+      setSwitching(false)
+      return
+    }
 
-    // 2. Tell ThemeProvider: new team selected — apply locally AND re-fetch from DB
-    //    The event detail now includes teamId so ThemeProvider can hit
-    //    /api/config?teamId=<id> and confirm the authoritative colors.
-    window.dispatchEvent(
-      new CustomEvent('team-config-changed', {
-        detail: { config: configData, teamId },
-      }),
-    )
+    try { localStorage.setItem('dll_selected_team_id', team.teamId) } catch { /* ignore */ }
 
-    try { localStorage.setItem('dll_selected_team_id', teamId) } catch { /* ignore */ }
-    setSwitching(false)
+    // Hard reload — same pattern as the original project.
+    // ThemeProvider re-mounts fresh and /api/config returns the new team's config
+    // because the JWT now has currentTeamId set.
+    window.location.href = '/dashboard'
   }
 
   const displayName  = user?.username ?? user?.email ?? ''
