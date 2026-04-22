@@ -1,32 +1,76 @@
-import { cn } from '@/lib/utils'
-import type { InputHTMLAttributes } from 'react'
+'use client'
 
-interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
-  label?: string
-  error?: string
+import { useId } from 'react'
+
+export interface InputProps {
+  label?:       string
+  value:        string
+  onChange:     (val: string) => void
+  type?:        string
+  placeholder?: string
+  required?:    boolean
+  error?:       string
+  helper?:      string
+  disabled?:    boolean
 }
 
-export function Input({ label, error, className, id, ...props }: InputProps) {
+export function Input({
+  label,
+  value,
+  onChange,
+  type        = 'text',
+  placeholder,
+  required,
+  error,
+  helper,
+  disabled,
+}: InputProps) {
+  const id      = useId()
+  const errorId = `${id}-error`
+  const helpId  = `${id}-help`
+
   return (
-    <div className="flex flex-col gap-1">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       {label && (
-        <label htmlFor={id} className="text-sm font-medium text-gray-700">
+        <label
+          htmlFor={id}
+          style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-gray-600)' }}
+        >
           {label}
+          {required && (
+            <span style={{ color: 'var(--color-danger)' }} aria-hidden="true"> *</span>
+          )}
         </label>
       )}
       <input
         id={id}
-        className={cn(
-          'rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900',
-          'placeholder:text-gray-400',
-          'focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500',
-          'disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500',
-          error && 'border-red-500 focus:border-red-500 focus:ring-red-500',
-          className,
-        )}
-        {...props}
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        required={required}
+        disabled={disabled}
+        aria-invalid={error ? 'true' : undefined}
+        aria-describedby={error ? errorId : helper ? helpId : undefined}
+        style={{
+          border:          `1.5px solid ${error ? 'var(--color-danger)' : 'var(--color-gray-200)'}`,
+          borderRadius:    'var(--radius-sm)',
+          padding:         '10px 14px',
+          fontSize:        14,
+          color:           'var(--color-gray-900)',
+          backgroundColor: disabled ? 'var(--color-gray-50)' : 'var(--color-card-bg)',
+          outline:         'none',
+          width:           '100%',
+          boxSizing:       'border-box',
+          transition:      'border-color 0.15s',
+        }}
+        onFocus={(e) => { if (!error) e.target.style.borderColor = 'var(--color-primary)' }}
+        onBlur={(e)  => { if (!error) e.target.style.borderColor = 'var(--color-gray-200)' }}
       />
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {error  && <span id={errorId} role="alert" style={{ fontSize: 12, color: 'var(--color-danger)' }}>{error}</span>}
+      {helper && !error && <span id={helpId} style={{ fontSize: 12, color: 'var(--color-gray-400)' }}>{helper}</span>}
     </div>
   )
 }
+
+export default Input

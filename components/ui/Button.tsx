@@ -1,59 +1,75 @@
-import { cn } from '@/lib/utils'
-import type { ButtonHTMLAttributes } from 'react'
+'use client'
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger'
-type Size = 'sm' | 'md' | 'lg'
+import { type CSSProperties, type MouseEvent } from 'react'
 
-interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: Variant
-  size?: Size
-  isLoading?: boolean
+type Variant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'outline'
+type Size    = 'sm' | 'md' | 'lg'
+
+export interface ButtonProps {
+  label:       string
+  onClick?:    (e?: MouseEvent<HTMLButtonElement>) => void
+  type?:       'button' | 'submit' | 'reset'
+  variant?:    Variant
+  size?:       Size
+  disabled?:   boolean
+  loading?:    boolean
+  fullWidth?:  boolean
+  ariaLabel?:  string
 }
 
-const variantClasses: Record<Variant, string> = {
-  primary:
-    'bg-blue-600 text-white hover:bg-blue-700 focus-visible:ring-blue-500',
-  secondary:
-    'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 focus-visible:ring-gray-400',
-  ghost: 'bg-transparent text-gray-600 hover:bg-gray-100 focus-visible:ring-gray-400',
-  danger: 'bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500',
+const variantStyles: Record<Variant, CSSProperties> = {
+  primary:   { backgroundColor: 'var(--color-primary)',      color: '#fff',                      border: 'none' },
+  secondary: { backgroundColor: 'var(--color-accent)',       color: 'var(--color-primary)',      border: 'none' },
+  danger:    { backgroundColor: 'var(--color-danger-light)', color: 'var(--color-danger)',       border: 'none' },
+  ghost:     { backgroundColor: 'transparent',               color: 'var(--color-primary)',      border: 'none' },
+  outline:   { backgroundColor: 'transparent',               color: 'var(--color-primary)',      border: '1.5px solid var(--color-primary)' },
 }
 
-const sizeClasses: Record<Size, string> = {
-  sm: 'px-3 py-1.5 text-sm',
-  md: 'px-4 py-2 text-sm',
-  lg: 'px-5 py-2.5 text-base',
+const sizeStyles: Record<Size, CSSProperties> = {
+  sm: { padding: '5px 12px',  fontSize: 12, borderRadius: 'var(--radius-sm)' },
+  md: { padding: '9px 18px',  fontSize: 14, borderRadius: 'var(--radius-md)' },
+  lg: { padding: '12px 24px', fontSize: 15, borderRadius: 'var(--radius-md)' },
 }
 
 export function Button({
-  variant = 'primary',
-  size = 'md',
-  isLoading = false,
-  className,
-  disabled,
-  children,
-  ...props
+  label,
+  onClick,
+  type      = 'button',
+  variant   = 'primary',
+  size      = 'md',
+  disabled  = false,
+  loading   = false,
+  fullWidth = false,
+  ariaLabel,
 }: ButtonProps) {
   return (
     <button
-      className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-md font-medium',
-        'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
-        'disabled:pointer-events-none disabled:opacity-50',
-        variantClasses[variant],
-        sizeClasses[size],
-        className,
-      )}
-      disabled={disabled || isLoading}
-      {...props}
+      type={type}
+      onClick={onClick}
+      disabled={disabled || loading}
+      aria-label={ariaLabel}
+      aria-busy={loading ? 'true' : undefined}
+      aria-disabled={disabled || loading ? 'true' : undefined}
+      style={{
+        ...variantStyles[variant],
+        ...sizeStyles[size],
+        fontWeight:     600,
+        cursor:         disabled || loading ? 'not-allowed' : 'pointer',
+        opacity:        disabled || loading ? 0.5 : 1,
+        width:          fullWidth ? '100%' : undefined,
+        transition:     'opacity 0.15s, background-color 0.15s',
+        display:        'inline-flex',
+        alignItems:     'center',
+        justifyContent: 'center',
+        whiteSpace:     'nowrap',
+        boxSizing:      'border-box',
+      }}
     >
-      {isLoading && (
-        <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-        </svg>
-      )}
-      {children}
+      {loading
+        ? <><span aria-hidden="true">Loading…</span><span className="sr-only">Please wait</span></>
+        : label}
     </button>
   )
 }
+
+export default Button
