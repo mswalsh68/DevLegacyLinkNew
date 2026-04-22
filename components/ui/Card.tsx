@@ -1,39 +1,31 @@
-import { cn } from '@/lib/utils'
+import type { CSSProperties, ReactNode } from 'react'
+
+// Simple card container — all values via CSS custom properties so they
+// respond to runtime theme switches without a re-render.
 
 interface CardProps {
+  children:  ReactNode
+  style?:    CSSProperties
+  padding?:  number | string
   className?: string
-  children: React.ReactNode
 }
 
-export function Card({ className, children }: CardProps) {
+export function Card({ children, style, padding = 24, className }: CardProps) {
   return (
     <div
-      className={cn(
-        'rounded-lg border border-gray-200 bg-white shadow-sm',
-        className,
-      )}
+      className={className}
+      style={{
+        backgroundColor: 'var(--color-card-bg)',
+        border:          '1px solid var(--color-card-border)',
+        borderRadius:    'var(--radius-lg)',
+        boxShadow:       'var(--shadow-sm)',
+        padding,
+        ...style,
+      }}
     >
       {children}
     </div>
   )
 }
 
-export function CardHeader({ className, children }: CardProps) {
-  return (
-    <div className={cn('border-b border-gray-200 px-6 py-4', className)}>
-      {children}
-    </div>
-  )
-}
-
-export function CardBody({ className, children }: CardProps) {
-  return <div className={cn('px-6 py-4', className)}>{children}</div>
-}
-
-export function CardFooter({ className, children }: CardProps) {
-  return (
-    <div className={cn('border-t border-gray-200 px-6 py-4', className)}>
-      {children}
-    </div>
-  )
-}
+export default Card

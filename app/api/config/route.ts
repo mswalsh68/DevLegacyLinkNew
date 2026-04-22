@@ -87,24 +87,55 @@ function getEnvDefaults(): TeamConfig {
 //   academicYearsJson / academicYears  → academicYears[]
 
 function normalizeConfigRow(row: Record<string, unknown>, defaults: TeamConfig): TeamConfig {
-  // Primary: try new naming first, then old SP aliases, then env defaults
-  const primaryColor  = pick(row, 'PrimaryColor',  'primaryColor',  'colorPrimary')      ?? defaults.primaryColor
-  const accentColor   = pick(row, 'AccentColor',   'accentColor',   'colorAccent')       ?? defaults.accentColor
-  const secondaryColor= pick(row, 'SecondaryColor','secondaryColor','colorSecondary',
-                                  'AccentColor',   'accentColor',   'colorAccent')       ?? defaults.secondaryColor
+  // ── Base colors (try new naming first, then old SP aliases) ──────────────────
+  const primaryColor   = pick(row, 'PrimaryColor',  'primaryColor',  'colorPrimary')    ?? defaults.primaryColor
+  const accentColor    = pick(row, 'AccentColor',   'accentColor',   'colorAccent')     ?? defaults.accentColor
+  const secondaryColor = pick(row, 'SecondaryColor','secondaryColor','colorSecondary',
+                                   'AccentColor',   'accentColor',   'colorAccent')     ?? defaults.secondaryColor
+
+  // ── Dark / light variants (raw SP values — used by settings page) ─────────────
+  const colorPrimaryDark  = pick(row, 'PrimaryColorDark',  'primaryColorDark',  'colorPrimaryDark')
+                            ?? undefined
+  const colorPrimaryLight = pick(row, 'PrimaryColorLight', 'primaryColorLight', 'colorPrimaryLight')
+                            ?? undefined
+  const colorAccentDark   = pick(row, 'AccentColorDark',   'accentColorDark',   'colorAccentDark')
+                            ?? undefined
+  const colorAccentLight  = pick(row, 'AccentColorLight',  'accentColorLight',  'colorAccentLight')
+                            ?? undefined
 
   return {
-    teamName:      pick(row,  'TeamName',      'teamName')                                  ?? defaults.teamName,
-    sport:         pick(row,  'Sport',         'sport')                                     ?? defaults.sport,
-    level:         pick(row,  'Level',         'level')                                     ?? defaults.level,
+    // ── Identity ────────────────────────────────────────────────────────────────
+    teamName:         pick(row, 'TeamName',  'teamName')  ?? defaults.teamName,
+    teamAbbr:         pick(row, 'TeamAbbr',  'teamAbbr',  'Abbr', 'abbr') ?? undefined,
+    logoUrl:          pick(row, 'LogoUrl',   'logoUrl')   ?? undefined,
+    sport:            pick(row, 'Sport',     'sport')     ?? defaults.sport,
+    level:            pick(row, 'Level',     'level')     ?? defaults.level,
+    subscriptionTier: pick(row, 'SubscriptionTier', 'subscriptionTier', 'tier') ?? undefined,
+
+    // ── Normalized colors (ThemeProvider uses these) ─────────────────────────────
     primaryColor,
     secondaryColor,
     accentColor,
-    positions:     tryArray(row,  'Positions',     'positions',
-                                  'PositionsJson',  'positionsJson')                        ?? defaults.positions,
-    academicYears: tryArray(row,  'AcademicYears',  'academicYears',
-                                  'AcademicYearsJson','academicYearsJson')                 ?? defaults.academicYears,
-    customLabels:  tryObject(row, 'CustomLabels',   'customLabels')                        ?? defaults.customLabels,
+
+    // ── Raw DB color values (settings page uses these to show per-field inputs) ──
+    colorPrimary:      primaryColor,
+    colorPrimaryDark,
+    colorPrimaryLight,
+    colorAccent:       accentColor,
+    colorAccentDark,
+    colorAccentLight,
+
+    // ── Roster / alumni ──────────────────────────────────────────────────────────
+    positions:    tryArray(row,  'Positions',        'positions',
+                                 'PositionsJson',    'positionsJson')     ?? defaults.positions,
+    academicYears: tryArray(row, 'AcademicYears',    'academicYears',
+                                 'AcademicYearsJson','academicYearsJson') ?? defaults.academicYears,
+    customLabels:  tryObject(row,'CustomLabels',     'customLabels')      ?? defaults.customLabels,
+
+    // ── Terminology labels ────────────────────────────────────────────────────────
+    alumniLabel: pick(row, 'AlumniLabel', 'alumniLabel') ?? undefined,
+    rosterLabel: pick(row, 'RosterLabel', 'rosterLabel') ?? undefined,
+    classLabel:  pick(row, 'ClassLabel',  'classLabel')  ?? undefined,
   }
 }
 

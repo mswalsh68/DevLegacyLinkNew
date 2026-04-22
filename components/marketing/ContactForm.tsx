@@ -1,36 +1,43 @@
 'use client'
 
+// Marketing contact form — intentionally uses raw HTML + Tailwind, not the
+// app's CSS-var component library, so it stays visually consistent with the
+// marketing pages regardless of team theme switches.
+
 import { useState } from 'react'
 import { contactSchema, type ContactFormData } from '@/lib/validations/contact'
-import { Input } from '@/components/ui/Input'
-import { Button } from '@/components/ui/Button'
 
 type FormState = 'idle' | 'loading' | 'success' | 'error'
-
 type FieldErrors = Partial<Record<keyof ContactFormData, string>>
 
 const EMPTY_FORM: ContactFormData = {
-  name: '',
-  email: '',
+  name:         '',
+  email:        '',
   organization: '',
-  subject: '',
-  message: '',
+  subject:      '',
+  message:      '',
 }
 
-export function ContactForm() {
-  const [form, setForm] = useState<ContactFormData>(EMPTY_FORM)
-  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
-  const [state, setState] = useState<FormState>('idle')
-  const [serverError, setServerError] = useState<string | null>(null)
+const inputClass = (hasError?: string) =>
+  [
+    'w-full rounded-md border px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400',
+    'focus:outline-none focus:ring-2 focus:ring-offset-1',
+    'disabled:cursor-not-allowed disabled:bg-gray-50',
+    hasError
+      ? 'border-red-400 focus:border-red-500 focus:ring-red-400'
+      : 'border-gray-300 focus:border-gold focus:ring-gold/50',
+  ].join(' ')
 
-  function handleChange(
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
-  ) {
-    const { name, value } = e.target
-    setForm((prev) => ({ ...prev, [name]: value }))
-    // Clear field error on change
-    if (fieldErrors[name as keyof ContactFormData]) {
-      setFieldErrors((prev) => ({ ...prev, [name]: undefined }))
+export function ContactForm() {
+  const [form,         setForm]         = useState<ContactFormData>(EMPTY_FORM)
+  const [fieldErrors,  setFieldErrors]  = useState<FieldErrors>({})
+  const [state,        setState]        = useState<FormState>('idle')
+  const [serverError,  setServerError]  = useState<string | null>(null)
+
+  function setField<K extends keyof ContactFormData>(key: K, value: ContactFormData[K]) {
+    setForm((prev) => ({ ...prev, [key]: value }))
+    if (fieldErrors[key]) {
+      setFieldErrors((prev) => ({ ...prev, [key]: undefined }))
     }
   }
 
@@ -38,7 +45,6 @@ export function ContactForm() {
     e.preventDefault()
     setServerError(null)
 
-    // Client-side validation
     const result = contactSchema.safeParse(form)
     if (!result.success) {
       const errors: FieldErrors = {}
@@ -51,22 +57,18 @@ export function ContactForm() {
     }
 
     setState('loading')
-
     try {
-      const res = await fetch('/api/contact', {
-        method: 'POST',
+      const res  = await fetch('/api/contact', {
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(result.data),
+        body:    JSON.stringify(result.data),
       })
-
       const body = await res.json()
-
       if (!res.ok) {
         setServerError(body.error ?? 'Something went wrong. Please try again.')
         setState('error')
         return
       }
-
       setState('success')
       setForm(EMPTY_FORM)
     } catch {
@@ -84,9 +86,7 @@ export function ContactForm() {
           </svg>
         </div>
         <h3 className="text-lg font-semibold text-green-900">Message sent!</h3>
-        <p className="mt-2 text-sm text-green-700">
-          We&apos;ll get back to you within 1 business day.
-        </p>
+        <p className="mt-2 text-sm text-green-700">We&apos;ll get back to you within 1 business day.</p>
         <button
           onClick={() => setState('idle')}
           className="mt-6 text-sm font-medium text-green-700 hover:underline"
@@ -100,90 +100,102 @@ export function ContactForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-5" noValidate>
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-        <Input
-          id="name"
-          name="name"
-          label="Full name *"
-          placeholder="Jane Smith"
-          autoComplete="name"
-          value={form.name}
-          onChange={handleChange}
-          error={fieldErrors.name}
-          disabled={state === 'loading'}
-        />
-        <Input
-          id="email"
-          name="email"
-          type="email"
-          label="Email address *"
-          placeholder="jane@university.edu"
-          autoComplete="email"
-          value={form.email}
-          onChange={handleChange}
-          error={fieldErrors.email}
-          disabled={state === 'loading'}
-        />
+        {/* Full name */}
+        <div className="flex flex-col gap-1">
+          <label htmlFor="cf-name" className="text-sm font-medium text-gray-700">Full name *</label>
+          <input
+            id="cf-name"
+            name="name"
+            autoComplete="name"
+            placeholder="Jane Smith"
+            value={form.name}
+            onChange={(e) => setField('name', e.target.value)}
+            disabled={state === 'loading'}
+            className={inputClass(fieldErrors.name)}
+          />
+          {fieldErrors.name && <p className="text-xs text-red-600">{fieldErrors.name}</p>}
+        </div>
+
+        {/* Email */}
+        <div className="flex flex-col gap-1">
+          <label htmlFor="cf-email" className="text-sm font-medium text-gray-700">Email address *</label>
+          <input
+            id="cf-email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            placeholder="jane@university.edu"
+            value={form.email}
+            onChange={(e) => setField('email', e.target.value)}
+            disabled={state === 'loading'}
+            className={inputClass(fieldErrors.email)}
+          />
+          {fieldErrors.email && <p className="text-xs text-red-600">{fieldErrors.email}</p>}
+        </div>
       </div>
 
-      <Input
-        id="organization"
-        name="organization"
-        label="School / Organization"
-        placeholder="University of South Florida"
-        autoComplete="organization"
-        value={form.organization}
-        onChange={handleChange}
-        error={fieldErrors.organization}
-        disabled={state === 'loading'}
-      />
-
-      <Input
-        id="subject"
-        name="subject"
-        label="Subject *"
-        placeholder="I'd like to request a demo"
-        value={form.subject}
-        onChange={handleChange}
-        error={fieldErrors.subject}
-        disabled={state === 'loading'}
-      />
-
+      {/* Organization */}
       <div className="flex flex-col gap-1">
-        <label htmlFor="message" className="text-sm font-medium text-gray-700">
-          Message *
-        </label>
+        <label htmlFor="cf-org" className="text-sm font-medium text-gray-700">School / Organization</label>
+        <input
+          id="cf-org"
+          name="organization"
+          autoComplete="organization"
+          placeholder="University of South Florida"
+          value={form.organization ?? ''}
+          onChange={(e) => setField('organization', e.target.value)}
+          disabled={state === 'loading'}
+          className={inputClass(fieldErrors.organization)}
+        />
+        {fieldErrors.organization && <p className="text-xs text-red-600">{fieldErrors.organization}</p>}
+      </div>
+
+      {/* Subject */}
+      <div className="flex flex-col gap-1">
+        <label htmlFor="cf-subject" className="text-sm font-medium text-gray-700">Subject *</label>
+        <input
+          id="cf-subject"
+          name="subject"
+          placeholder="I'd like to request a demo"
+          value={form.subject}
+          onChange={(e) => setField('subject', e.target.value)}
+          disabled={state === 'loading'}
+          className={inputClass(fieldErrors.subject)}
+        />
+        {fieldErrors.subject && <p className="text-xs text-red-600">{fieldErrors.subject}</p>}
+      </div>
+
+      {/* Message */}
+      <div className="flex flex-col gap-1">
+        <label htmlFor="cf-message" className="text-sm font-medium text-gray-700">Message *</label>
         <textarea
-          id="message"
+          id="cf-message"
           name="message"
           rows={5}
           placeholder="Tell us about your program and what you're looking for..."
           value={form.message}
-          onChange={handleChange}
+          onChange={(e) => setField('message', e.target.value)}
           disabled={state === 'loading'}
-          className={`rounded-md border px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400
-            focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500
-            disabled:cursor-not-allowed disabled:bg-gray-50
-            ${fieldErrors.message ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : 'border-gray-300'}`}
+          className={inputClass(fieldErrors.message)}
         />
-        {fieldErrors.message && (
-          <p className="text-xs text-red-600">{fieldErrors.message}</p>
-        )}
+        {fieldErrors.message && <p className="text-xs text-red-600">{fieldErrors.message}</p>}
       </div>
 
+      {/* Server error */}
       {state === 'error' && serverError && (
         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {serverError}
         </div>
       )}
 
-      <Button
+      {/* Submit */}
+      <button
         type="submit"
-        size="lg"
-        isLoading={state === 'loading'}
-        className="w-full"
+        disabled={state === 'loading'}
+        className="btn-gold w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
       >
-        Send Message
-      </Button>
+        {state === 'loading' ? 'Sending…' : 'Send Message'}
+      </button>
 
       <p className="text-center text-xs text-gray-400">
         We typically respond within 1 business day.

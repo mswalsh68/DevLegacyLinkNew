@@ -21,15 +21,36 @@ export interface UserSession {
 // ─── Team Config ──────────────────────────────────────────────────────────────
 
 export interface TeamConfig {
-  teamName: string
-  sport: string
-  level: string
-  primaryColor: string
-  secondaryColor: string
-  accentColor: string
-  positions: string[]
-  academicYears: string[]
-  customLabels: Record<string, string>
+  // ── Identity ─────────────────────────────────────────────
+  teamName:        string
+  teamAbbr?:       string
+  logoUrl?:        string
+  sport:           string
+  level:           string
+  subscriptionTier?: string
+
+  // ── Colors (normalized — ThemeProvider derives dark/light variants) ──
+  primaryColor:    string
+  secondaryColor:  string
+  accentColor:     string
+
+  // ── Colors (raw DB values — used by settings page, returned by /api/config) ──
+  colorPrimary?:      string
+  colorPrimaryDark?:  string
+  colorPrimaryLight?: string
+  colorAccent?:       string
+  colorAccentDark?:   string
+  colorAccentLight?:  string
+
+  // ── Roster / alumni ──────────────────────────────────────
+  positions:      string[]
+  academicYears:  string[]
+  customLabels:   Record<string, string>
+
+  // ── Terminology labels ───────────────────────────────────
+  alumniLabel?:   string
+  rosterLabel?:   string
+  classLabel?:    string
 }
 
 // ─── Player / Roster ──────────────────────────────────────────────────────────

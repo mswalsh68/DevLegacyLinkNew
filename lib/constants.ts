@@ -2,6 +2,48 @@
 
 export const APP_NAME = 'DevLegacyLink'
 
+// ─── Select-option arrays used across pages ───────────────────────────────────
+
+export const SEMESTER_OPTIONS = [
+  { value: 'spring', label: 'Spring' },
+  { value: 'fall',   label: 'Fall'   },
+  { value: 'summer', label: 'Summer' },
+]
+
+export const ROLE_OPTIONS = [
+  { value: 'readonly',       label: 'Read Only'      },
+  { value: 'coach_staff',    label: 'Coach / Staff'  },
+  { value: 'app_admin',      label: 'App Admin'      },
+  { value: 'global_admin',   label: 'Global Admin'   },
+  { value: 'platform_owner', label: 'Platform Owner' },
+]
+
+// ─── Roster defaults ──────────────────────────────────────────────────────────
+
+/** Default positions used when a team has not customised their config. */
+export const DEFAULT_POSITIONS = [
+  'QB', 'RB', 'WR', 'TE', 'OL', 'DL', 'LB', 'DB', 'K', 'P', 'LS', 'ATH',
+]
+
+export const DEFAULT_ACADEMIC_YEARS = [
+  'Freshman',
+  'RS Freshman',
+  'Sophomore',
+  'RS Sophomore',
+  'Junior',
+  'RS Junior',
+  'Senior',
+  'RS Senior',
+  'Graduate',
+  'Graduate Transfer',
+]
+
+/** Build a descending array of calendar years starting from the current year. */
+export function makeYearOptions(count: number): number[] {
+  const currentYear = new Date().getFullYear()
+  return Array.from({ length: count }, (_, i) => currentYear - i)
+}
+
 export const COOKIE_NAMES = {
   ACCESS_TOKEN: 'access_token',
   REFRESH_TOKEN: 'refresh_token',
