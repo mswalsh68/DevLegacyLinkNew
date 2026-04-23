@@ -1,16 +1,23 @@
-// Server Component shell — form state lives in LoginForm ('use client').
-// No nav/footer: login is a standalone full-screen page.
+// /join — public self-signup page.
+// Matches the login page layout exactly (full-screen background + dark card).
+// The ?code= query param auto-fills the invite code input.
 import type { Metadata } from 'next'
 import Image from 'next/image'
-import { LoginForm } from '@/components/marketing/LoginForm'
+import { JoinContent } from './JoinContent'
 
-export const metadata: Metadata = { title: 'Sign In' }
+export const metadata: Metadata = { title: 'Request Access — LegacyLink' }
 
-export default function LoginPage() {
+export default async function JoinPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ code?: string }>
+}) {
+  const { code } = await searchParams
+
   return (
     <div className="relative min-h-screen flex items-center justify-center px-4 py-12">
 
-      {/* Full-screen background */}
+      {/* Full-screen background — same as login */}
       <Image
         src="/login-background.jpg"
         alt=""
@@ -28,7 +35,7 @@ export default function LoginPage() {
         style={{ boxShadow: '0 32px 80px rgba(0,0,0,0.8)' }}
       >
 
-        {/* ── White logo panel ── */}
+        {/* White logo panel */}
         <div className="flex items-center justify-center px-6 py-8 bg-white">
           <Image
             src="/logo-full.jpg"
@@ -43,23 +50,14 @@ export default function LoginPage() {
         {/* Gold divider */}
         <div style={{ height: 3, backgroundColor: '#CFC493' }} />
 
-        {/* ── Dark form panel ── */}
+        {/* Dark content panel */}
         <div className="px-8 py-8 bg-brand-dark">
-
           <h2 className="text-base font-semibold mb-6 tracking-wide text-white/65">
-            Sign in to your account
+            Request access to your program
           </h2>
-
-          <LoginForm />
-
-          <p className="text-center text-xs mt-6 text-white/30">
-            Have an invite code?{' '}
-            <a href="/join" className="text-[#CFC493]/60 hover:text-[#CFC493] underline">
-              Request access
-            </a>
-          </p>
-
+          <JoinContent initialCode={code ?? ''} />
         </div>
+
       </div>
 
       {/* Footer */}

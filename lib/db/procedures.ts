@@ -675,3 +675,165 @@ export async function sp_GetAlumniStats(params: {
     r.input('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole ?? null)
   })
 }
+
+// ─── Global DB — Invite Codes & Access Requests ───────────────────────────────
+
+/** Creates a new user account for self-signup via invite code. */
+export async function sp_RegisterUserViaInvite(params: {
+  email:        string
+  passwordHash: string
+  firstName:    string
+  lastName:     string
+}): Promise<{ userId: string | null; errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_RegisterUserViaInvite', (r) => {
+    r.input ('Email',        sql.NVarChar(255), params.email)
+    r.input ('PasswordHash', sql.NVarChar(sql.MAX), params.passwordHash)
+    r.input ('FirstName',    sql.NVarChar(100), params.firstName)
+    r.input ('LastName',     sql.NVarChar(100), params.lastName)
+    r.output('UserId',       sql.UniqueIdentifier)
+    r.output('ErrorCode',    sql.NVarChar(50))
+  })
+  return {
+    userId:    (output.UserId    as string | null) ?? null,
+    errorCode: (output.ErrorCode as string | null) ?? null,
+  }
+}
+
+/** Validates an invite token and returns team + role info. Returns null if token not found. */
+export async function sp_ValidateInviteCode(params: {
+  token: string
+}): Promise<Record<string, unknown> | null> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_ValidateInviteCode', (r) => {
+    r.input('Token', sql.NVarChar(128), params.token)
+  })
+  return rows[0] ?? null
+}
+
+/** Creates a new invite code. */
+export async function sp_CreateInviteCode(params: {
+  teamId:    string
+  role:      string
+  token:     string
+  createdBy: string
+  expiresAt?: Date | null
+  maxUses?:   number | null
+}): Promise<{ inviteCodeId: string | null; errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_CreateInviteCode', (r) => {
+    r.input ('TeamId',       sql.UniqueIdentifier, params.teamId)
+    r.input ('Role',         sql.NVarChar(30),     params.role)
+    r.input ('Token',        sql.NVarChar(128),    params.token)
+    r.input ('CreatedBy',    sql.UniqueIdentifier, params.createdBy)
+    r.input ('ExpiresAt',    sql.DateTime2,        params.expiresAt ?? null)
+    r.input ('MaxUses',      sql.Int,              params.maxUses   ?? null)
+    r.output('InviteCodeId', sql.UniqueIdentifier)
+    r.output('ErrorCode',    sql.NVarChar(50))
+  })
+  return {
+    inviteCodeId: (output.InviteCodeId as string | null) ?? null,
+    errorCode:    (output.ErrorCode    as string | null) ?? null,
+  }
+}
+
+/** Lists all invite codes for a team. */
+export async function sp_ListInviteCodes(params: {
+  teamId: string
+}): Promise<sql.IRecordSet<Record<string, unknown>>> {
+  return exec('global', 'sp_ListInviteCodes', (r) => {
+    r.input('TeamId', sql.UniqueIdentifier, params.teamId)
+  })
+}
+
+/** Deactivates an invite code. */
+export async function sp_DeactivateInviteCode(params: {
+  inviteCodeId:  string
+  deactivatedBy: string
+}): Promise<{ errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_DeactivateInviteCode', (r) => {
+    r.input ('InviteCodeId',  sql.UniqueIdentifier, params.inviteCodeId)
+    r.input ('DeactivatedBy', sql.UniqueIdentifier, params.deactivatedBy)
+    r.output('ErrorCode',     sql.NVarChar(50))
+  })
+  return { errorCode: (output.ErrorCode as string | null) ?? null }
+}
+
+/** Submits an access request. Increments invite code use_count. */
+export async function sp_SubmitAccessRequest(params: {
+  userId: string
+  token:  string
+}): Promise<{ requestId: string | null; errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_SubmitAccessRequest', (r) => {
+    r.input ('UserId',    sql.UniqueIdentifier, params.userId)
+    r.input ('Token',     sql.NVarChar(128),    params.token)
+    r.output('RequestId', sql.UniqueIdentifier)
+    r.output('ErrorCode', sql.NVarChar(50))
+  })
+  return {
+    requestId: (output.RequestId as string | null) ?? null,
+    errorCode: (output.ErrorCode as string | null) ?? null,
+  }
+}
+
+/** Returns all access requests for the calling user. */
+export async function sp_GetMyAccessRequests(params: {
+  userId: string
+}): Promise<sql.IRecordSet<Record<string, unknown>>> {
+  return exec('global', 'sp_GetMyAccessRequests', (r) => {
+    r.input('UserId', sql.UniqueIdentifier, params.userId)
+  })
+}
+
+/** Returns access requests visible to an admin (scoped by team membership). */
+export async function sp_GetPendingAccessRequests(params: {
+  adminUserId:   string
+  statusFilter?: 'pending' | 'approved' | 'denied' | 'all'
+}): Promise<sql.IRecordSet<Record<string, unknown>>> {
+  return exec('global', 'sp_GetPendingAccessRequests', (r) => {
+    r.input('AdminUserId',  sql.UniqueIdentifier, params.adminUserId)
+    r.input('StatusFilter', sql.NVarChar(20),     params.statusFilter ?? 'pending')
+  })
+}
+
+/** Approves or denies an access request. */
+export async function sp_ReviewAccessRequest(params: {
+  requestId:    string
+  reviewedBy:   string
+  action:       'approve' | 'deny'
+  role?:        string | null
+  denialReason?: string | null
+}): Promise<{
+  userId:    string | null
+  teamId:    string | null
+  finalRole: string | null
+  errorCode: string | null
+}> {
+  const { output } = await execFull('global', 'sp_ReviewAccessRequest', (r) => {
+    r.input ('RequestId',    sql.UniqueIdentifier, params.requestId)
+    r.input ('ReviewedBy',   sql.UniqueIdentifier, params.reviewedBy)
+    r.input ('Action',       sql.NVarChar(10),     params.action)
+    r.input ('Role',         sql.NVarChar(30),     params.role         ?? null)
+    r.input ('DenialReason', sql.NVarChar(sql.MAX),params.denialReason ?? null)
+    r.output('UserId',       sql.UniqueIdentifier)
+    r.output('TeamId',       sql.UniqueIdentifier)
+    r.output('FinalRole',    sql.NVarChar(30))
+    r.output('ErrorCode',    sql.NVarChar(50))
+  })
+  return {
+    userId:    (output.UserId    as string | null) ?? null,
+    teamId:    (output.TeamId    as string | null) ?? null,
+    finalRole: (output.FinalRole as string | null) ?? null,
+    errorCode: (output.ErrorCode as string | null) ?? null,
+  }
+}
+
+/** Updates reminder_sent_at. Only allowed if null or older than 48 hours. */
+export async function sp_SendRequestReminder(params: {
+  requestId: string
+  userId:    string
+}): Promise<{ errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_SendRequestReminder', (r) => {
+    r.input ('RequestId', sql.UniqueIdentifier, params.requestId)
+    r.input ('UserId',    sql.UniqueIdentifier, params.userId)
+    r.output('ErrorCode', sql.NVarChar(50))
+  })
+  return { errorCode: (output.ErrorCode as string | null) ?? null }
+}
