@@ -21,6 +21,22 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export interface CreateAlumniInput {
+  email:          string
+  firstName:      string
+  lastName:       string
+  position?:      string
+  graduationYear?: number
+  city?:          string
+  state?:         string
+  currentEmployer?: string
+  currentJobTitle?: string
+  notes?:         string
+  globalTeamId:   string
+  createdBy:      string
+  sportId?:       string
+}
+
 export interface BulkCreateAlumniInput {
   alumni:       (Omit<BulkAlumniRow, 'userId'> & { email?: string })[]
   createdBy:    string
@@ -29,6 +45,56 @@ export interface BulkCreateAlumniInput {
 }
 
 // ─── Actions ─────────────────────────────────────────────────────────────────
+
+/**
+ * Creates a single alumni record.
+ * Step 1: Global DB — resolve or create the canonical user account.
+ * Step 2: App DB   — upsert alumni record via sp_BulkCreateAlumni (single row).
+ */
+export async function createAlumni(
+  input: CreateAlumniInput,
+): Promise<{ success: boolean; userId?: string; error?: string }> {
+  try {
+    const { userId, errorCode: globalErr } = await sp_GetOrCreateUser({
+      email:     input.email,
+      firstName: input.firstName,
+      lastName:  input.lastName,
+      teamId:    input.globalTeamId,
+    })
+
+    if (!userId) {
+      return { success: false, error: globalErr ?? 'GLOBAL_USER_CREATE_FAILED' }
+    }
+
+    const row: BulkAlumniRow = {
+      userId,
+      email:            input.email,
+      firstName:        input.firstName,
+      lastName:         input.lastName,
+      graduationYear:   input.graduationYear,
+      currentCity:      input.city,
+      currentState:     input.state,
+      currentEmployer:  input.currentEmployer,
+      currentJobTitle:  input.currentJobTitle,
+      notes:            input.notes,
+    }
+
+    const result = await sp_BulkCreateAlumni({
+      alumni:    [row],
+      createdBy: input.createdBy,
+      sportId:   input.sportId,
+    })
+
+    if (result.successCount === 0) {
+      return { success: false, error: result.errorJson || 'ALUMNI_CREATE_FAILED' }
+    }
+
+    return { success: true, userId }
+  } catch (err) {
+    console.error('[createAlumni]', err)
+    return { success: false, error: 'INTERNAL_ERROR' }
+  }
+}
 
 /**
  * Bulk-creates alumni records (e.g. from a CSV import).
