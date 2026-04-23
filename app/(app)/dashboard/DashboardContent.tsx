@@ -144,27 +144,6 @@ function ButtonCard({
   )
 }
 
-// ─── Config row ───────────────────────────────────────────────────────────────
-
-function ConfigRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div
-      style={{
-        display:        'flex',
-        justifyContent: 'space-between',
-        alignItems:     'center',
-        padding:        '10px 0',
-        borderBottom:   '1px solid var(--color-gray-100)',
-      }}
-    >
-      <dt style={{ fontSize: 13, color: 'var(--color-gray-500)' }}>{label}</dt>
-      <dd style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-gray-900)', margin: 0 }}>
-        {value}
-      </dd>
-    </div>
-  )
-}
-
 // ─── Quick links ──────────────────────────────────────────────────────────────
 
 const QUICK_LINKS = [
@@ -180,12 +159,9 @@ const QUICK_LINKS = [
     title:       'Alumni',
     description: 'Track graduates and run outreach',
   },
-  {
-    href:        '/roster/transfer',
-    icon:        '↗️',
-    title:       'Transfer',
-    description: 'Move players to the alumni database',
-  },
+] as const
+
+const ADMIN_LINKS = [
   {
     href:        '/settings',
     icon:        '⚙️',
@@ -209,6 +185,8 @@ export default function DashboardContent({ role }: DashboardContentProps) {
     .replace(/\b\w/g, (c) => c.toUpperCase())
 
   const [wizardOpen, setWizardOpen] = useState(false)
+
+  const isAdmin = ['global_admin', 'platform_owner', 'app_admin'].includes(user?.role ?? '')
 
   return (
     <>
@@ -246,6 +224,9 @@ export default function DashboardContent({ role }: DashboardContentProps) {
         {QUICK_LINKS.map((link) => (
           <NavCard key={link.href} {...link} />
         ))}
+        {isAdmin && ADMIN_LINKS.map((link) => (
+          <NavCard key={link.href} {...link} />
+        ))}
         <ButtonCard
           icon="➕"
           title="Add Members"
@@ -255,6 +236,7 @@ export default function DashboardContent({ role }: DashboardContentProps) {
       </div>
 
       {/* ── Add Members Wizard ── */}
+
       {user?.currentTeamId && (
         <AddMembersWizard
           isOpen={wizardOpen}
@@ -268,121 +250,6 @@ export default function DashboardContent({ role }: DashboardContentProps) {
         />
       )}
 
-      {/* ── Bottom: team config snapshot ── */}
-      <div
-        style={{
-          backgroundColor: '#fff',
-          border:          '1px solid var(--color-card-border)',
-          borderRadius:    16,
-          padding:         24,
-          boxShadow:       '0 1px 3px rgba(0,0,0,0.06)',
-        }}
-      >
-        <div
-          style={{
-            display:        'flex',
-            justifyContent: 'space-between',
-            alignItems:     'center',
-            marginBottom:   16,
-          }}
-        >
-          <h3
-            style={{
-              fontSize:   16,
-              fontWeight: 600,
-              color:      'var(--color-gray-900)',
-              margin:     0,
-            }}
-          >
-            Team Configuration
-          </h3>
-          <a
-            href="/settings"
-            style={{
-              fontSize:       13,
-              fontWeight:     500,
-              color:          'var(--color-primary)',
-              textDecoration: 'none',
-            }}
-          >
-            Edit →
-          </a>
-        </div>
-
-        <dl style={{ margin: 0 }}>
-          <ConfigRow label="Team"           value={config.teamName} />
-          <ConfigRow label="Sport"          value={config.sport} />
-          <ConfigRow label="Level"          value={config.level} />
-          <ConfigRow label="Positions"      value={`${config.positions.length} configured`} />
-          <ConfigRow label="Academic Years" value={`${config.academicYears.length} configured`} />
-
-          {/* Color swatches */}
-          <div
-            style={{
-              display:        'flex',
-              justifyContent: 'space-between',
-              alignItems:     'center',
-              padding:        '10px 0',
-              borderBottom:   '1px solid var(--color-gray-100)',
-            }}
-          >
-            <dt style={{ fontSize: 13, color: 'var(--color-gray-500)' }}>Brand Color</dt>
-            <dd style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
-              <span
-                style={{
-                  width:           16,
-                  height:          16,
-                  borderRadius:    4,
-                  backgroundColor: config.primaryColor,
-                  flexShrink:      0,
-                  border:          '1px solid rgba(0,0,0,0.08)',
-                }}
-              />
-              <span
-                style={{
-                  fontSize:    12,
-                  fontFamily:  'monospace',
-                  color:       'var(--color-gray-600)',
-                }}
-              >
-                {config.primaryColor}
-              </span>
-            </dd>
-          </div>
-
-          <div
-            style={{
-              display:        'flex',
-              justifyContent: 'space-between',
-              alignItems:     'center',
-              padding:        '10px 0',
-            }}
-          >
-            <dt style={{ fontSize: 13, color: 'var(--color-gray-500)' }}>Accent Color</dt>
-            <dd style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
-              <span
-                style={{
-                  width:           16,
-                  height:          16,
-                  borderRadius:    4,
-                  backgroundColor: config.accentColor,
-                  flexShrink:      0,
-                  border:          '1px solid rgba(0,0,0,0.08)',
-                }}
-              />
-              <span
-                style={{
-                  fontSize:    12,
-                  fontFamily:  'monospace',
-                  color:       'var(--color-gray-600)',
-                }}
-              >
-                {config.accentColor}
-              </span>
-            </dd>
-          </div>
-        </dl>
-      </div>
     </>
   )
 }
