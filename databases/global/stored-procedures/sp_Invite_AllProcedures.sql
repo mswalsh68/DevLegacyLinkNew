@@ -37,7 +37,7 @@ BEGIN
   INSERT INTO dbo.users (id, email, password_hash, first_name, last_name, global_role, is_active, created_at)
   VALUES (@UserId, @Email, @PasswordHash, @FirstName, @LastName, 'readonly', 1, SYSUTCDATETIME());
 
-  INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload, created_at)
+  INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload, performed_at)
   VALUES (
     @UserId,
     'user_self_registered',
@@ -64,7 +64,7 @@ BEGIN
     ic.team_id                                              AS teamId,
     t.name                                                  AS teamName,
     t.abbr                                                  AS teamAbbr,
-    t.sport,
+    tc.sport,
     ic.role,
     ic.use_count                                            AS useCount,
     ic.max_uses                                             AS maxUses,
@@ -78,7 +78,8 @@ BEGIN
       ELSE NULL
     END                                                     AS errorReason
   FROM dbo.invite_codes ic
-  JOIN dbo.teams t ON t.id = ic.team_id
+  JOIN dbo.teams t       ON t.id       = ic.team_id
+  LEFT JOIN dbo.team_config tc ON tc.team_id = t.id
   WHERE ic.token = @Token;
 END
 GO
@@ -124,7 +125,7 @@ BEGIN
   INSERT INTO dbo.invite_codes (id, team_id, role, token, created_by, expires_at, max_uses)
   VALUES (@InviteCodeId, @TeamId, @Role, @Token, @CreatedBy, @ExpiresAt, @MaxUses);
 
-  INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload, created_at)
+  INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload, performed_at)
   VALUES (
     @CreatedBy,
     'invite_code_created',
@@ -184,7 +185,7 @@ BEGIN
   SET    is_active = 0
   WHERE  id = @InviteCodeId;
 
-  INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload, created_at)
+  INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload, performed_at)
   VALUES (
     @DeactivatedBy,
     'invite_code_deactivated',
@@ -278,7 +279,7 @@ BEGIN
   SET    use_count = use_count + 1
   WHERE  id = @InviteCodeId;
 
-  INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload, created_at)
+  INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload, performed_at)
   VALUES (
     @UserId,
     'access_request_submitted',
@@ -303,7 +304,7 @@ BEGIN
     ar.id               AS requestId,
     ar.team_id          AS teamId,
     t.name              AS teamName,
-    t.sport,
+    tc.sport,
     ar.role,
     ar.status,
     ar.denial_reason    AS denialReason,
@@ -311,7 +312,8 @@ BEGIN
     ar.created_at       AS createdAt,
     ar.updated_at       AS updatedAt
   FROM dbo.access_requests ar
-  JOIN dbo.teams t ON t.id = ar.team_id
+  JOIN dbo.teams t          ON t.id       = ar.team_id
+  LEFT JOIN dbo.team_config tc ON tc.team_id = t.id
   WHERE ar.user_id = @UserId
   ORDER BY ar.created_at DESC;
 END
@@ -456,7 +458,7 @@ BEGIN
       updated_at  = SYSUTCDATETIME()
     WHERE id = @RequestId;
 
-    INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload, created_at)
+    INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload, performed_at)
     VALUES (
       @ReviewedBy,
       'access_request_approved',
@@ -477,7 +479,7 @@ BEGIN
       updated_at    = SYSUTCDATETIME()
     WHERE id = @RequestId;
 
-    INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload, created_at)
+    INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload, performed_at)
     VALUES (
       @ReviewedBy,
       'access_request_denied',

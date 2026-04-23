@@ -74,7 +74,7 @@ BEGIN
     END
   END
 
-  INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload, created_at)
+  INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload, performed_at)
   VALUES (
     @CreatedBy,
     'team_member_created',
