@@ -22,15 +22,19 @@ const ALL_ROLES = [...COACHES, 'readonly', 'read_only'] as const
 
 type Feature =
   | 'roster:view'
+  | 'roster:edit'
   | 'roster:transfer'
   | 'alumni:view'
+  | 'alumni:edit'
   | 'settings:view'
   | 'settings:requests'
 
 const FEATURE_ROLES: Record<Feature, readonly string[]> = {
   'roster:view':       ALL_ROLES,
+  'roster:edit':       COACHES,
   'roster:transfer':   APP_ADMINS,
   'alumni:view':       COACHES,
+  'alumni:edit':       COACHES,
   'settings:view':     PLATFORM_ADMINS,
   'settings:requests': PLATFORM_ADMINS,
 }
@@ -77,6 +81,8 @@ export function requiredRoleLabel(feature: Feature): string {
     case 'settings:requests':
       return 'App Admin or higher'
     case 'alumni:view':
+    case 'alumni:edit':
+    case 'roster:edit':
       return 'Coach / Staff or higher'
     case 'roster:view':
       return 'any authenticated role'
