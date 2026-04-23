@@ -21,7 +21,8 @@ export async function getServerSession(): Promise<UserSession | null> {
     if (payload.sub && !payload.userId) {
       payload.userId = payload.sub
     }
-    // sp_Login returns globalRole (not role) — normalise so role checks work.
+    // Backward-compat: old JWTs (pre-migration 018) used globalRole instead of role.
+    // Safe to remove once all active sessions have been refreshed post-deployment.
     if (payload.globalRole && !payload.role) {
       payload.role = payload.globalRole
     }
@@ -37,8 +38,9 @@ export function hasAppAccess(session: UserSession, app: string): boolean {
 }
 
 export function isGlobalAdmin(session: UserSession): boolean {
-  // globalRole is normalised to role in getServerSession(); check both for safety.
-  // platform_owner has full admin access (matches original project behaviour).
-  const r = session.role ?? (session as unknown as Record<string, unknown>).globalRole
-  return r === 'global_admin' || r === 'platform_owner'
+  // platform_owner (roleId = 1) is the only truly global admin since migration 018.
+  // Keeping 'global_admin' string check as a legacy alias until all old JWTs expire.
+  return session.roleId === 1
+    || session.role === 'platform_owner'
+    || (session as unknown as Record<string, unknown>).globalRole === 'platform_owner'
 }

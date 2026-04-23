@@ -1,8 +1,17 @@
 -- ============================================================
 -- GLOBAL DB — ALL STORED PROCEDURES
--- Run this file on: CfbGlobal database
+-- Run this file on: LegacyLinkGlobal database
 -- Requires: HASHBYTES support (Azure SQL — built in)
--- Run after: 001_initial_schema.sql
+-- Run after: 018_roles_table.sql
+-- ============================================================
+-- Migration 018 changes reflected here:
+--   • All platform_owner checks use role_id = 1 instead of global_role = 'platform_owner'
+--   • UserJson now emits roleId (INT) + role (role_name string) from dbo.roles
+--   • sp_CreateUser accepts @RoleId INT instead of @GlobalRole NVARCHAR
+--   • sp_UpdateUser accepts @RoleId INT instead of @GlobalRole NVARCHAR
+--   • sp_GetUsers filters by @RoleId INT instead of @GlobalRole NVARCHAR
+--   • sp_GetOrCreateUser inserts role_id = 6 (player)
+--   • DUAL-WRITE: global_role string is kept in sync until migration 019 drops it
 -- ============================================================
 
 -- ============================================================
@@ -45,22 +54,28 @@ BEGIN
     RETURN;
   END
 
-  DECLARE @GlobalRole NVARCHAR(50);
-  SELECT @GlobalRole = global_role FROM dbo.users WHERE id = @UserId;
+  -- Resolve role from normalized table
+  DECLARE @RoleId   INT;
+  DECLARE @RoleName NVARCHAR(50);
+
+  SELECT @RoleId = u.role_id, @RoleName = r.role_name
+  FROM   dbo.users u
+  JOIN   dbo.roles r ON r.id = u.role_id
+  WHERE  u.id = @UserId;
 
   -- Build teams JSON:
-  --   platform_owner  -> all active teams
-  --   everyone else   -> their user_teams rows
+  --   platform_owner (role_id = 1)  -> all active teams
+  --   everyone else                 -> their user_teams rows
   DECLARE @TeamsJson NVARCHAR(MAX);
 
-  IF @GlobalRole = 'platform_owner'
+  IF @RoleId = 1  -- platform_owner
   BEGIN
     SELECT @TeamsJson = (
       SELECT
         t.id               AS teamId,
         t.abbr,
         t.name,
-        'platform_owner'   AS role,
+        @RoleName          AS role,
         tc.logo_url        AS logoUrl,
         ISNULL(tc.color_primary, '#1B1B2F') AS colorPrimary,
         ISNULL(tc.color_accent,  '#B8973D') AS colorAccent
@@ -75,10 +90,10 @@ BEGIN
   BEGIN
     SELECT @TeamsJson = (
       SELECT
-        t.id    AS teamId,
+        t.id        AS teamId,
         t.abbr,
         t.name,
-        ut.role,
+        @RoleName   AS role,
         tc.logo_url AS logoUrl,
         ISNULL(tc.color_primary, '#1B1B2F') AS colorPrimary,
         ISNULL(tc.color_accent,  '#B8973D') AS colorAccent
@@ -99,7 +114,7 @@ BEGIN
   DECLARE @AppDb         NVARCHAR(100) = '';
   DECLARE @DbServer      NVARCHAR(200) = '';
 
-  IF @GlobalRole = 'platform_owner'
+  IF @RoleId = 1  -- platform_owner
   BEGIN
     SELECT TOP 1
       @CurrentTeamId = t.id,
@@ -125,9 +140,8 @@ BEGIN
   -- Resolve preferred team (NULL if not set or team no longer accessible)
   DECLARE @PreferredTeamId NVARCHAR(100) = NULL;
 
-  IF @GlobalRole = 'platform_owner'
+  IF @RoleId = 1  -- platform_owner
   BEGIN
-    -- platform_owner can reach any active team
     SELECT @PreferredTeamId = CAST(utp.preferred_team_id AS NVARCHAR(100))
     FROM dbo.user_team_preferences utp
     JOIN dbo.teams t ON t.id = utp.preferred_team_id
@@ -136,7 +150,6 @@ BEGIN
   END
   ELSE
   BEGIN
-    -- regular users: only honour the preference if they still have access
     SELECT @PreferredTeamId = CAST(utp.preferred_team_id AS NVARCHAR(100))
     FROM dbo.user_team_preferences utp
     JOIN dbo.user_teams ut ON ut.user_id = utp.user_id AND ut.team_id = utp.preferred_team_id
@@ -153,7 +166,8 @@ BEGIN
       u.email,
       u.first_name                          AS firstName,
       u.last_name                           AS lastName,
-      u.global_role                         AS globalRole,
+      u.role_id                             AS roleId,
+      r.role_name                           AS role,
       u.is_active                           AS isActive,
       u.created_at                          AS createdAt,
       CAST(@CurrentTeamId AS NVARCHAR(100)) AS currentTeamId,
@@ -173,6 +187,7 @@ BEGIN
         FOR JSON PATH
       ) AS appPermissions
     FROM dbo.users u
+    JOIN dbo.roles r ON r.id = u.role_id
     WHERE u.id = @UserId
     FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
   );
@@ -260,20 +275,25 @@ BEGIN
   COMMIT TRANSACTION;
 
   -- Build fresh user payload (same structure as sp_Login)
-  DECLARE @GlobalRole NVARCHAR(50);
-  SELECT @GlobalRole = global_role FROM dbo.users WHERE id = @UserId;
+  DECLARE @RoleId   INT;
+  DECLARE @RoleName NVARCHAR(50);
+
+  SELECT @RoleId = u.role_id, @RoleName = r.role_name
+  FROM   dbo.users u
+  JOIN   dbo.roles r ON r.id = u.role_id
+  WHERE  u.id = @UserId;
 
   DECLARE @TeamsJson NVARCHAR(MAX);
 
-  IF @GlobalRole = 'platform_owner'
+  IF @RoleId = 1  -- platform_owner
   BEGIN
     SELECT @TeamsJson = (
       SELECT
-        t.id               AS teamId,
+        t.id        AS teamId,
         t.abbr,
         t.name,
-        'platform_owner'   AS role,
-        tc.logo_url        AS logoUrl,
+        @RoleName   AS role,
+        tc.logo_url AS logoUrl,
         ISNULL(tc.color_primary, '#1B1B2F') AS colorPrimary,
         ISNULL(tc.color_accent,  '#B8973D') AS colorAccent
       FROM dbo.teams t
@@ -287,10 +307,10 @@ BEGIN
   BEGIN
     SELECT @TeamsJson = (
       SELECT
-        t.id    AS teamId,
+        t.id        AS teamId,
         t.abbr,
         t.name,
-        ut.role,
+        @RoleName   AS role,
         tc.logo_url AS logoUrl,
         ISNULL(tc.color_primary, '#1B1B2F') AS colorPrimary,
         ISNULL(tc.color_accent,  '#B8973D') AS colorAccent
@@ -314,7 +334,7 @@ BEGIN
   -- platform_owner can hold any active team; others must have a live user_teams row.
   IF @CurrentTeamId IS NOT NULL
   BEGIN
-    IF @GlobalRole = 'platform_owner'
+    IF @RoleId = 1  -- platform_owner
     BEGIN
       SELECT
         @ResolvedTeamId = t.id,
@@ -343,7 +363,7 @@ BEGIN
   -- not found, not provided, or user lost access since the token was issued.
   IF @ResolvedTeamId IS NULL
   BEGIN
-    IF @GlobalRole = 'platform_owner'
+    IF @RoleId = 1  -- platform_owner
     BEGIN
       SELECT TOP 1
         @ResolvedTeamId = t.id,
@@ -371,7 +391,7 @@ BEGIN
   -- Resolve preferred team (same logic as sp_Login)
   DECLARE @PreferredTeamId NVARCHAR(100) = NULL;
 
-  IF @GlobalRole = 'platform_owner'
+  IF @RoleId = 1  -- platform_owner
   BEGIN
     SELECT @PreferredTeamId = CAST(utp.preferred_team_id AS NVARCHAR(100))
     FROM dbo.user_team_preferences utp
@@ -396,7 +416,8 @@ BEGIN
       u.email,
       u.first_name                             AS firstName,
       u.last_name                              AS lastName,
-      u.global_role                            AS globalRole,
+      u.role_id                                AS roleId,
+      r.role_name                              AS role,
       u.is_active                              AS isActive,
       u.token_version                          AS tokenVersion,
       CAST(@ResolvedTeamId AS NVARCHAR(100))   AS currentTeamId,
@@ -411,6 +432,7 @@ BEGIN
         FOR JSON PATH
       ) AS appPermissions
     FROM dbo.users u
+    JOIN dbo.roles r ON r.id = u.role_id
     WHERE u.id = @UserId
     FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
   );
@@ -438,7 +460,7 @@ GO
 -- sp_SwitchTeam
 -- Validates a user can access @NewTeamId, returns team details
 -- so the API can re-issue the JWT with updated currentTeamId.
--- platform_owner bypasses the user_teams membership check.
+-- platform_owner (role_id = 1) bypasses the user_teams check.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_SwitchTeam
   @UserId    UNIQUEIDENTIFIER,
@@ -460,10 +482,10 @@ BEGIN
   END
 
   -- Validate access (platform_owner bypasses user_teams check)
-  DECLARE @GlobalRole NVARCHAR(50);
-  SELECT @GlobalRole = global_role FROM dbo.users WHERE id = @UserId;
+  DECLARE @RoleId INT;
+  SELECT @RoleId = role_id FROM dbo.users WHERE id = @UserId;
 
-  IF @GlobalRole <> 'platform_owner'
+  IF @RoleId <> 1  -- not platform_owner
   BEGIN
     IF NOT EXISTS (
       SELECT 1 FROM dbo.user_teams
@@ -507,7 +529,7 @@ BEGIN
   INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload)
   VALUES (
     @UserId, 'team_switch', 'team', CAST(@NewTeamId AS NVARCHAR(100)),
-    JSON_OBJECT('isPlatformOwner': CASE WHEN @GlobalRole = 'platform_owner' THEN 'true' ELSE 'false' END)
+    JSON_OBJECT('isPlatformOwner': CASE WHEN @RoleId = 1 THEN 'true' ELSE 'false' END)
   );
 END;
 GO
@@ -515,7 +537,7 @@ GO
 -- ============================================================
 -- sp_GetUserTeams
 -- Returns all teams a user has access to.
--- platform_owner gets all active teams.
+-- platform_owner (role_id = 1) gets all active teams.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetUserTeams
   @UserId UNIQUEIDENTIFIER
@@ -523,10 +545,15 @@ AS
 BEGIN
   SET NOCOUNT ON;
 
-  DECLARE @GlobalRole NVARCHAR(50);
-  SELECT @GlobalRole = global_role FROM dbo.users WHERE id = @UserId;
+  DECLARE @RoleId   INT;
+  DECLARE @RoleName NVARCHAR(50);
 
-  IF @GlobalRole = 'platform_owner'
+  SELECT @RoleId = u.role_id, @RoleName = r.role_name
+  FROM   dbo.users u
+  JOIN   dbo.roles r ON r.id = u.role_id
+  WHERE  u.id = @UserId;
+
+  IF @RoleId = 1  -- platform_owner
   BEGIN
     SELECT
       t.id               AS teamId,
@@ -535,7 +562,7 @@ BEGIN
       t.sport,
       t.level,
       t.is_active        AS isActive,
-      'platform_owner'   AS role,
+      @RoleName          AS role,
       tc.logo_url        AS logoUrl,
       ISNULL(tc.color_primary, '#1B1B2F') AS colorPrimary,
       ISNULL(tc.color_accent,  '#B8973D') AS colorAccent
@@ -547,14 +574,14 @@ BEGIN
   ELSE
   BEGIN
     SELECT
-      t.id    AS teamId,
+      t.id        AS teamId,
       t.abbr,
       t.name,
       t.sport,
       t.level,
-      t.is_active     AS isActive,
-      ut.role,
-      tc.logo_url     AS logoUrl,
+      t.is_active AS isActive,
+      @RoleName   AS role,
+      tc.logo_url AS logoUrl,
       ISNULL(tc.color_primary, '#1B1B2F') AS colorPrimary,
       ISNULL(tc.color_accent,  '#B8973D') AS colorAccent
     FROM dbo.user_teams ut
@@ -569,15 +596,17 @@ GO
 
 -- ============================================================
 -- sp_CreateUser
--- Creates a user and optionally grants initial app permissions.
--- Also inserts into user_teams when @TeamId is provided.
+-- Creates a user and optionally links them to a team.
+-- Accepts @RoleId (INT FK → dbo.roles) instead of a role string.
+-- DUAL-WRITE: also sets global_role string for migration 019
+--   compatibility — dropped after 019 runs.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_CreateUser
   @Email         NVARCHAR(255),
   @PasswordHash  NVARCHAR(255),
   @FirstName     NVARCHAR(100),
   @LastName      NVARCHAR(100),
-  @GlobalRole    NVARCHAR(50),
+  @RoleId        INT,                         -- FK → dbo.roles.id
   @CreatedBy     UNIQUEIDENTIFIER,
   @TeamId        UNIQUEIDENTIFIER = NULL,
   -- Optional: immediately grant access to an app
@@ -592,7 +621,11 @@ BEGIN
   SET XACT_ABORT ON;
   SET @ErrorCode = NULL;
 
-  IF @GlobalRole NOT IN ('global_admin','app_admin','coach_staff','player','readonly','platform_owner')
+  -- Validate the role exists
+  DECLARE @RoleName NVARCHAR(50);
+  SELECT @RoleName = role_name FROM dbo.roles WHERE id = @RoleId;
+
+  IF @RoleName IS NULL
   BEGIN
     SET @ErrorCode = 'INVALID_ROLE';
     RETURN;
@@ -614,22 +647,15 @@ BEGIN
 
     SET @NewUserId = NEWID();
 
-    INSERT INTO dbo.users (id, email, password_hash, first_name, last_name, global_role)
-    VALUES (@NewUserId, @Email, @PasswordHash, @FirstName, @LastName, @GlobalRole);
+    -- DUAL-WRITE: set both role_id and global_role until migration 019 drops global_role
+    INSERT INTO dbo.users (id, email, password_hash, first_name, last_name, role_id, global_role)
+    VALUES (@NewUserId, @Email, @PasswordHash, @FirstName, @LastName, @RoleId, @RoleName);
 
     IF @TeamId IS NOT NULL
     BEGIN
+      -- user_teams.role is a legacy column kept until migration 019
       INSERT INTO dbo.user_teams (user_id, team_id, role)
-      VALUES (
-        @NewUserId,
-        @TeamId,
-        CASE @GlobalRole
-          WHEN 'global_admin' THEN 'global_admin'
-          WHEN 'app_admin'    THEN 'app_admin'
-          WHEN 'coach_staff'  THEN 'coach_staff'
-          ELSE 'readonly'
-        END
-      );
+      VALUES (@NewUserId, @TeamId, @RoleName);
     END
 
     IF @GrantAppName IS NOT NULL AND @GrantAppRole IS NOT NULL
@@ -642,11 +668,12 @@ BEGIN
     VALUES (
       @CreatedBy, 'user_created', 'user', CAST(@NewUserId AS NVARCHAR(100)),
       JSON_OBJECT(
-        'email':       @Email,
-        'globalRole':  @GlobalRole,
-        'teamId':      ISNULL(CAST(@TeamId AS NVARCHAR(100)), ''),
-        'grantedApp':  ISNULL(@GrantAppName, ''),
-        'grantedRole': ISNULL(@GrantAppRole, '')
+        'email':      @Email,
+        'roleId':     CAST(@RoleId AS NVARCHAR),
+        'roleName':   @RoleName,
+        'teamId':     ISNULL(CAST(@TeamId AS NVARCHAR(100)), ''),
+        'grantedApp': ISNULL(@GrantAppName, ''),
+        'grantedRole':ISNULL(@GrantAppRole, '')
       )
     );
 
@@ -656,11 +683,14 @@ GO
 
 -- ============================================================
 -- sp_UpdateUser
--- Updates role and/or active status. Global admin only (enforced in API).
+-- Updates role and/or active status. App Admin or higher only
+-- (enforced in the API layer).
+-- Accepts @RoleId INT instead of @GlobalRole NVARCHAR.
+-- DUAL-WRITE: also updates global_role until migration 019.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_UpdateUser
   @TargetUserId  UNIQUEIDENTIFIER,
-  @GlobalRole    NVARCHAR(50)  = NULL,
+  @RoleId        INT           = NULL,        -- FK → dbo.roles.id; NULL = no change
   @IsActive      BIT           = NULL,
   @ActorId       UNIQUEIDENTIFIER,
   @ErrorCode     NVARCHAR(50)  OUTPUT
@@ -675,26 +705,43 @@ BEGIN
     RETURN;
   END
 
-  IF @GlobalRole IS NOT NULL AND @GlobalRole NOT IN ('global_admin','app_admin','coach_staff','player','readonly','platform_owner')
+  -- Validate role if being changed
+  DECLARE @RoleName NVARCHAR(50) = NULL;
+
+  IF @RoleId IS NOT NULL
   BEGIN
-    SET @ErrorCode = 'INVALID_ROLE';
-    RETURN;
+    SELECT @RoleName = role_name FROM dbo.roles WHERE id = @RoleId;
+    IF @RoleName IS NULL
+    BEGIN
+      SET @ErrorCode = 'INVALID_ROLE';
+      RETURN;
+    END
   END
 
   DECLARE @Before NVARCHAR(MAX);
-  SELECT @Before = JSON_OBJECT('globalRole': global_role, 'isActive': CAST(is_active AS NVARCHAR))
+  SELECT @Before = JSON_OBJECT(
+    'roleId':   CAST(role_id AS NVARCHAR),
+    'isActive': CAST(is_active AS NVARCHAR)
+  )
   FROM dbo.users WHERE id = @TargetUserId;
 
+  -- DUAL-WRITE: update both role_id and global_role until migration 019
   UPDATE dbo.users SET
-    global_role = COALESCE(@GlobalRole, global_role),
-    is_active   = COALESCE(@IsActive,   is_active),
+    role_id     = COALESCE(@RoleId,    role_id),
+    global_role = COALESCE(@RoleName,  global_role),   -- kept in sync until 019
+    is_active   = COALESCE(@IsActive,  is_active),
     updated_at  = SYSUTCDATETIME()
   WHERE id = @TargetUserId;
 
   INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload)
   VALUES (
     @ActorId, 'user_updated', 'user', CAST(@TargetUserId AS NVARCHAR(100)),
-    JSON_OBJECT('before': @Before, 'newRole': ISNULL(@GlobalRole,''), 'newActive': ISNULL(CAST(@IsActive AS NVARCHAR),''))
+    JSON_OBJECT(
+      'before':     @Before,
+      'newRoleId':  ISNULL(CAST(@RoleId AS NVARCHAR), ''),
+      'newRoleName':ISNULL(@RoleName, ''),
+      'newActive':  ISNULL(CAST(@IsActive AS NVARCHAR), '')
+    )
   );
 END;
 GO
@@ -820,10 +867,12 @@ GO
 
 -- ============================================================
 -- sp_GetUsers
+-- Returns paginated user list with role info from dbo.roles.
+-- @RoleId INT = NULL filters to a specific role; NULL = all.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetUsers
   @Search     NVARCHAR(255) = NULL,
-  @GlobalRole NVARCHAR(50)  = NULL,
+  @RoleId     INT           = NULL,   -- FK → dbo.roles.id; NULL = all roles
   @Page       INT           = 1,
   @PageSize   INT           = 50,
   @TotalCount INT           OUTPUT
@@ -837,24 +886,26 @@ BEGIN
   SELECT @TotalCount = COUNT(*)
   FROM dbo.users u
   WHERE (@Search IS NULL OR u.email LIKE @SearchWild OR u.first_name LIKE @SearchWild OR u.last_name LIKE @SearchWild)
-    AND (@GlobalRole IS NULL OR u.global_role = @GlobalRole);
+    AND (@RoleId IS NULL OR u.role_id = @RoleId);
 
   SELECT
     u.id,
     u.email,
-    u.first_name        AS firstName,
-    u.last_name         AS lastName,
-    u.global_role       AS globalRole,
-    u.is_active         AS isActive,
-    u.last_login_at     AS lastLoginAt,
-    u.created_at        AS createdAt,
+    u.first_name    AS firstName,
+    u.last_name     AS lastName,
+    u.role_id       AS roleId,
+    r.role_name     AS role,
+    u.is_active     AS isActive,
+    u.last_login_at AS lastLoginAt,
+    u.created_at    AS createdAt,
     (
       SELECT COUNT(*) FROM dbo.app_permissions ap
       WHERE ap.user_id = u.id AND ap.revoked_at IS NULL
     ) AS activePermissionCount
   FROM dbo.users u
+  JOIN dbo.roles r ON r.id = u.role_id
   WHERE (@Search IS NULL OR u.email LIKE @SearchWild OR u.first_name LIKE @SearchWild OR u.last_name LIKE @SearchWild)
-    AND (@GlobalRole IS NULL OR u.global_role = @GlobalRole)
+    AND (@RoleId IS NULL OR u.role_id = @RoleId)
   ORDER BY u.last_name, u.first_name
   OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;
 END;
@@ -1070,12 +1121,15 @@ GO
 -- and bulk-import flows.
 --
 -- If a user with @Email already exists: returns their ID.
--- If not: creates the account with global_role = 'player' and
+-- If not: creates the account with role_id = 6 (player) and
 --   a placeholder password hash (account requires invite to
 --   set a real password before they can log in).
 --
+-- DUAL-WRITE: also sets global_role = 'player' until migration
+--   019 drops the column.
+--
 -- Called from AppDB stored procedures via linked server:
---   EXEC [GLOBAL_DB].CfbGlobal.dbo.sp_GetOrCreateUser ...
+--   EXEC [GLOBAL_DB].LegacyLinkGlobal.dbo.sp_GetOrCreateUser ...
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetOrCreateUser
   @Email     NVARCHAR(255),
@@ -1109,7 +1163,7 @@ BEGIN
       AND NOT EXISTS (SELECT 1 FROM dbo.user_teams WHERE user_id = @UserId AND team_id = @TeamId)
     BEGIN
       INSERT INTO dbo.user_teams (user_id, team_id, role)
-      VALUES (@UserId, @TeamId, 'readonly');
+      VALUES (@UserId, @TeamId, 'player');   -- legacy role column; dropped in migration 019
     END
     RETURN;   -- @ErrorCode stays NULL — caller treats this as success
   END
@@ -1121,20 +1175,22 @@ BEGIN
 
     SET @UserId = NEWID();
 
-    INSERT INTO dbo.users (id, email, password_hash, first_name, last_name, global_role)
+    -- DUAL-WRITE: set both role_id = 6 (player) and global_role until migration 019
+    INSERT INTO dbo.users (id, email, password_hash, first_name, last_name, role_id, global_role)
     VALUES (
       @UserId,
       @Email,
       'INVITE_PENDING',   -- bcrypt never matches this; login blocked until invite redeemed
       @FirstName,
       @LastName,
-      'player'
+      6,          -- player (dbo.roles.id = 6)
+      'player'    -- legacy dual-write; dropped in migration 019
     );
 
     IF @TeamId IS NOT NULL
     BEGIN
       INSERT INTO dbo.user_teams (user_id, team_id, role)
-      VALUES (@UserId, @TeamId, 'readonly');
+      VALUES (@UserId, @TeamId, 'player');   -- legacy role column; dropped in migration 019
     END
 
     INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload)
@@ -1144,10 +1200,11 @@ BEGIN
       'user',
       CAST(@UserId AS NVARCHAR(100)),
       JSON_OBJECT(
-        'email':      @Email,
-        'globalRole': 'player',
-        'source':     'bulk_import',
-        'teamId':     ISNULL(CAST(@TeamId AS NVARCHAR(100)), '')
+        'email':    @Email,
+        'roleId':   '6',
+        'roleName': 'player',
+        'source':   'bulk_import',
+        'teamId':   ISNULL(CAST(@TeamId AS NVARCHAR(100)), '')
       )
     );
 
@@ -1171,13 +1228,15 @@ BEGIN
   SELECT
     u.id,
     u.email,
-    u.first_name   AS firstName,
-    u.last_name    AS lastName,
-    u.global_role  AS globalRole,
+    u.first_name    AS firstName,
+    u.last_name     AS lastName,
+    u.role_id       AS roleId,
+    r.role_name     AS role,
     u.last_login_at AS lastLoginAt,
-    u.created_at   AS createdAt,
+    u.created_at    AS createdAt,
     CAST(utp.preferred_team_id AS NVARCHAR(100)) AS preferredTeamId
   FROM dbo.users u
+  JOIN dbo.roles r ON r.id = u.role_id
   LEFT JOIN dbo.user_team_preferences utp ON utp.user_id = u.id
   WHERE u.id = @UserId;
 END;
@@ -1336,7 +1395,8 @@ GO
 -- sp_SetPreferredTeam
 -- Upserts a user's preferred default team.
 -- Validates the user still has access to the requested team
--- before persisting. platform_owner can pin any active team.
+-- before persisting. platform_owner (role_id = 1) can pin any
+-- active team.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_SetPreferredTeam
   @UserId    UNIQUEIDENTIFIER,
@@ -1354,17 +1414,18 @@ BEGIN
     RETURN;
   END
 
-  -- Verify the user has access (platform_owner bypasses user_teams check)
-  DECLARE @GlobalRole NVARCHAR(50);
-  SELECT @GlobalRole = global_role FROM dbo.users WHERE id = @UserId AND is_active = 1;
+  -- Verify the user exists and get their role
+  DECLARE @RoleId INT;
+  SELECT @RoleId = role_id FROM dbo.users WHERE id = @UserId AND is_active = 1;
 
-  IF @GlobalRole IS NULL
+  IF @RoleId IS NULL
   BEGIN
     SET @ErrorCode = 'USER_NOT_FOUND';
     RETURN;
   END
 
-  IF @GlobalRole <> 'platform_owner'
+  -- platform_owner (role_id = 1) can pin any active team; others must have user_teams access
+  IF @RoleId <> 1
     AND NOT EXISTS (
       SELECT 1 FROM dbo.user_teams
       WHERE user_id = @UserId AND team_id = @TeamId AND is_active = 1

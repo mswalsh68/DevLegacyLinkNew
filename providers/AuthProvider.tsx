@@ -30,8 +30,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const raw = localStorage.getItem('cfb_user')
       if (raw) {
         const parsed = JSON.parse(raw) as UserSession & { globalRole?: string }
-        // sp_Login returns globalRole (FOR JSON alias). Normalise → role so
-        // all client-side role checks (user.role) work without knowing the alias.
+        // Backward-compat: JWTs issued before migration 018 used globalRole instead of role.
+        // Safe to remove once all active sessions have been refreshed post-deployment.
         if (parsed.globalRole && !parsed.role) {
           parsed.role = parsed.globalRole as UserSession['role']
         }

@@ -7,13 +7,14 @@ import type { UserRole, Semester, TransferReason } from '@/lib/constants'
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 export interface UserSession {
-  userId: string        // UUID — JWT stores this in the 'sub' claim; getServerSession() maps sub → userId
-  sub?: string          // Raw JWT subject (same UUID, kept for completeness)
+  userId: string         // UUID — JWT stores this in the 'sub' claim; getServerSession() maps sub → userId
+  sub?: string           // Raw JWT subject (same UUID, kept for completeness)
   currentTeamId?: string // Set by POST /api/auth/switch-team; tells /api/config which team to load
-  appDb?: string        // Tenant App DB name from dbo.teams.app_db — embedded in JWT by sp_Login / sp_SwitchTeam
+  appDb?: string         // Tenant App DB name from dbo.teams.app_db — embedded in JWT by sp_Login / sp_SwitchTeam
   username: string
   email: string
-  role: UserRole
+  roleId: number         // dbo.roles.id (1 = platform_owner … 7 = alumni) — source of truth since migration 018
+  role: UserRole         // dbo.roles.role_name — human-readable alias, used by permissions.ts can()
   apps: string[]
   exp: number
   iat: number
