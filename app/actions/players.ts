@@ -27,10 +27,12 @@ import {
   sp_BulkCreatePlayers,
   type BulkPlayerRow,
 } from '@/lib/db/procedures'
+import { appDbContext } from '@/lib/db/connection'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface CreatePlayerInput {
+  appDb:                 string   // tenant App DB name from session.appDb
   email:                 string
   firstName:             string
   lastName:              string
@@ -65,6 +67,7 @@ export interface CreatePlayerInput {
 }
 
 export interface GraduatePlayersInput {
+  appDb:          string   // tenant App DB name from session.appDb
   playerIds:      string[]
   graduationYear: number
   semester:       'spring' | 'fall' | 'summer'
@@ -72,6 +75,7 @@ export interface GraduatePlayersInput {
 }
 
 export interface BulkCreatePlayersInput {
+  appDb:        string   // tenant App DB name from session.appDb
   players:      (Omit<BulkPlayerRow, 'userId'> & { email?: string })[]
   createdBy:    string
   globalTeamId: string   // used for Global DB user registration
@@ -88,6 +92,7 @@ export interface BulkCreatePlayersInput {
 export async function createPlayer(
   input: CreatePlayerInput,
 ): Promise<{ success: boolean; userId?: string; error?: string }> {
+  return appDbContext.run(input.appDb, async () => {
   try {
     // 1. Global DB
     const { userId, errorCode: globalErr } = await sp_GetOrCreateUser({
@@ -145,6 +150,7 @@ export async function createPlayer(
     console.error('[createPlayer]', err)
     return { success: false, error: 'INTERNAL_ERROR' }
   }
+  }) // end appDbContext.run
 }
 
 /**
@@ -167,6 +173,7 @@ export async function graduatePlayers(
   transferErrors: string[]   // userIds where Global DB permission swap failed
   error?:         string
 }> {
+  return appDbContext.run(input.appDb, async () => {
   try {
     // 1. App DB — flip statuses
     const result = await sp_GraduatePlayer({
@@ -214,6 +221,7 @@ export async function graduatePlayers(
       error:          'INTERNAL_ERROR',
     }
   }
+  }) // end appDbContext.run
 }
 
 /**
@@ -221,32 +229,38 @@ export async function graduatePlayers(
  * null / undefined fields are left unchanged by the stored procedure.
  */
 export async function updatePlayer(
+  appDb: string,
   params: Parameters<typeof sp_UpdatePlayer>[0],
 ): Promise<{ success: boolean; error?: string }> {
-  try {
-    const { errorCode } = await sp_UpdatePlayer(params)
-    if (errorCode) return { success: false, error: errorCode }
-    return { success: true }
-  } catch (err) {
-    console.error('[updatePlayer]', err)
-    return { success: false, error: 'INTERNAL_ERROR' }
-  }
+  return appDbContext.run(appDb, async () => {
+    try {
+      const { errorCode } = await sp_UpdatePlayer(params)
+      if (errorCode) return { success: false, error: errorCode }
+      return { success: true }
+    } catch (err) {
+      console.error('[updatePlayer]', err)
+      return { success: false, error: 'INTERNAL_ERROR' }
+    }
+  })
 }
 
 /**
  * Removes a player (sets status_id = 3).
  */
 export async function removePlayer(
+  appDb: string,
   params: Parameters<typeof sp_RemovePlayer>[0],
 ): Promise<{ success: boolean; error?: string }> {
-  try {
-    const { errorCode } = await sp_RemovePlayer(params)
-    if (errorCode) return { success: false, error: errorCode }
-    return { success: true }
-  } catch (err) {
-    console.error('[removePlayer]', err)
-    return { success: false, error: 'INTERNAL_ERROR' }
-  }
+  return appDbContext.run(appDb, async () => {
+    try {
+      const { errorCode } = await sp_RemovePlayer(params)
+      if (errorCode) return { success: false, error: errorCode }
+      return { success: true }
+    } catch (err) {
+      console.error('[removePlayer]', err)
+      return { success: false, error: 'INTERNAL_ERROR' }
+    }
+  })
 }
 
 /**
@@ -257,30 +271,32 @@ export async function removePlayer(
 export async function bulkCreatePlayers(
   input: BulkCreatePlayersInput,
 ): Promise<{ successCount: number; skippedCount: number; errorJson: string }> {
-  // Resolve Global DB userIds for rows that have an email
-  const enriched: BulkPlayerRow[] = await Promise.all(
-    input.players.map(async (row) => {
-      if (!row.email) return row  // no email → SP will generate a userId
+  return appDbContext.run(input.appDb, async () => {
+    // Resolve Global DB userIds for rows that have an email
+    const enriched: BulkPlayerRow[] = await Promise.all(
+      input.players.map(async (row) => {
+        if (!row.email) return row  // no email → SP will generate a userId
 
-      try {
-        const { userId } = await sp_GetOrCreateUser({
-          email:     row.email,
-          firstName: row.firstName,
-          lastName:  row.lastName,
-          teamId:    input.globalTeamId,
-        })
-        return { ...row, userId: userId ?? undefined }
-      } catch {
-        // If Global DB lookup fails for one row, pass without userId —
-        // the SP will generate a provisional one so the row isn't silently lost.
-        return row
-      }
-    }),
-  )
+        try {
+          const { userId } = await sp_GetOrCreateUser({
+            email:     row.email,
+            firstName: row.firstName,
+            lastName:  row.lastName,
+            teamId:    input.globalTeamId,
+          })
+          return { ...row, userId: userId ?? undefined }
+        } catch {
+          // If Global DB lookup fails for one row, pass without userId —
+          // the SP will generate a provisional one so the row isn't silently lost.
+          return row
+        }
+      }),
+    )
 
-  return sp_BulkCreatePlayers({
-    players:   enriched,
-    createdBy: input.createdBy,
-    sportId:   input.sportId,
+    return sp_BulkCreatePlayers({
+      players:   enriched,
+      createdBy: input.createdBy,
+      sportId:   input.sportId,
+    })
   })
 }

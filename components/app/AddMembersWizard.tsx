@@ -38,6 +38,7 @@ export interface AddMembersWizardProps {
   positions:     string[]
   academicYears: string[]
   userId:        string
+  appDb:         string   // tenant App DB name from session.appDb
 }
 
 // ─── Shared style tokens ──────────────────────────────────────────────────────
@@ -185,7 +186,7 @@ function parseCSV(text: string, type: MemberType): Record<string, string>[] {
 
 export function AddMembersWizard({
   isOpen, onClose,
-  teamId, teamName, sport, positions, academicYears, userId,
+  teamId, teamName, sport, positions, academicYears, userId, appDb,
 }: AddMembersWizardProps) {
 
   const [step,       setStep]       = useState<WizardStep>('type')
@@ -289,6 +290,7 @@ export function AddMembersWizard({
   async function submitCreate() {
     if (memberType === 'player') {
       const res = await createPlayer({
+        appDb,
         email, firstName, lastName,
         position:        position || 'ATH',
         academicYear:    academicYear || 'Freshman',
@@ -305,6 +307,7 @@ export function AddMembersWizard({
 
     } else if (memberType === 'alumni') {
       const res = await createAlumni({
+        appDb,
         email, firstName, lastName,
         position:       position || undefined,
         graduationYear: graduationYear ? parseInt(graduationYear) : undefined,
@@ -346,7 +349,7 @@ export function AddMembersWizard({
         academicYear:   r.academicYear   || r.academic_year || 'Freshman',
         recruitingClass: parseInt(r.recruitingClass || r.recruiting_class || '') || new Date().getFullYear(),
       }))
-      const res = await bulkCreatePlayers({ players, createdBy: userId, globalTeamId: teamId })
+      const res = await bulkCreatePlayers({ appDb, players, createdBy: userId, globalTeamId: teamId })
       setResult({
         success: res.successCount > 0,
         message: `${res.successCount} player(s) added.`,
@@ -364,7 +367,7 @@ export function AddMembersWizard({
         currentCity:    r.city  || undefined,
         currentState:   r.state || undefined,
       }))
-      const res = await bulkCreateAlumni({ alumni, createdBy: userId, globalTeamId: teamId })
+      const res = await bulkCreateAlumni({ appDb, alumni, createdBy: userId, globalTeamId: teamId })
       setResult({
         success: res.successCount > 0,
         message: `${res.successCount} alumni added.`,
