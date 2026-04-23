@@ -28,7 +28,9 @@ export async function GET(req: Request) {
         requestingUserId:   session.userId,
         requestingUserRole: session.role,
       })
-      return NextResponse.json({ success: true, data: players, total: totalCount })
+      // SP returns 'id' — normalise to 'userId' so client navigation works
+      const data = players.map((p) => ({ ...p, userId: p.id ?? p.userId }))
+      return NextResponse.json({ success: true, data, total: totalCount })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error('[GET /api/players]', msg)

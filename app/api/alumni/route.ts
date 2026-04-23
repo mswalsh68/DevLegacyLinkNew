@@ -28,7 +28,9 @@ export async function GET(req: Request) {
         requestingUserId:   session.userId,
         requestingUserRole: session.role,
       })
-      return NextResponse.json({ success: true, data: alumni, total: totalCount })
+      // SP returns 'id' — normalise to 'userId' so client navigation works
+      const data = alumni.map((a) => ({ ...a, userId: a.id ?? a.userId }))
+      return NextResponse.json({ success: true, data, total: totalCount })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error('[GET /api/alumni]', msg)
