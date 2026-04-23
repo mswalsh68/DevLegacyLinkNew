@@ -121,7 +121,9 @@ export async function POST(req: NextRequest) {
     success: true,
     timestamp,
     data: {
-      user: { id: userId, ...userJson },
+      // Normalize globalRole → role so client-side user.role works consistently.
+      // sp_Login returns globalRole (FOR JSON alias); we keep both for compat.
+      user: { id: userId, ...userJson, role: userJson.globalRole ?? userJson.role },
       accessToken,
       refreshToken,
     },

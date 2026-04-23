@@ -28,7 +28,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     try {
       const raw = localStorage.getItem('cfb_user')
-      if (raw) setUser(JSON.parse(raw) as UserSession)
+      if (raw) {
+        const parsed = JSON.parse(raw) as UserSession & { globalRole?: string }
+        // sp_Login returns globalRole (FOR JSON alias). Normalise → role so
+        // all client-side role checks (user.role) work without knowing the alias.
+        if (parsed.globalRole && !parsed.role) {
+          parsed.role = parsed.globalRole as UserSession['role']
+        }
+        setUser(parsed)
+      }
     } catch {
       // Corrupt storage — ignore and treat as logged out
     } finally {
