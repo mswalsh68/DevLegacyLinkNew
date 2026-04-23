@@ -12,7 +12,9 @@ import { Badge }         from '@/components/ui/Badge'
 import { Alert }         from '@/components/ui/Alert'
 import { TableRow }      from '@/components/ui/TableRow'
 import { Pagination }    from '@/components/ui/Pagination'
+import { AccessDenied }  from '@/components/ui/AccessDenied'
 import { alumniStatusBadge } from '@/lib/statusMappings'
+import { can, roleLabel, requiredRoleLabel } from '@/lib/permissions'
 import { theme } from '@/lib/theme'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -53,10 +55,9 @@ const STATUS_OPTIONS = [
 export default function AlumniPage() {
   const router = useRouter()
   const config = useTeamConfig()
-  const { user } = useAuth()
+  const { user, isLoading } = useAuth()
 
-  const isAdmin = ['global_admin', 'platform_owner', 'app_admin'].includes(user?.role ?? '')
-
+  // All hooks called unconditionally before any early return.
   const { filters: { search, status, position, isDonor }, setFilter, page, setPage } =
     useFilteredPagination({ search: '', status: '', position: '', isDonor: false })
 
@@ -66,6 +67,8 @@ export default function AlumniPage() {
   const [error,    setError]   = useState<string | null>(null)
 
   useEffect(() => {
+    if (!can(user, 'alumni:view')) return  // don't fetch if no access
+
     setLoading(true)
     setError(null)
 
@@ -84,7 +87,7 @@ export default function AlumniPage() {
       })
       .catch(() => setError('Failed to load alumni.'))
       .finally(() => setLoading(false))
-  }, [page, search, status, position, isDonor])
+  }, [page, search, status, position, isDonor, user]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const positionOptions = [
     { value: '', label: 'All Positions' },
@@ -92,6 +95,12 @@ export default function AlumniPage() {
   ]
 
   const alumniLabel = config.alumniLabel ?? 'Alumni'
+
+  // ── Access control ──────────────────────────────────────────────────────────
+  if (isLoading) return null
+  if (!can(user, 'alumni:view')) {
+    return <AccessDenied currentRole={roleLabel(user?.role)} requiredRole={requiredRoleLabel('alumni:view')} />
+  }
 
   return (
     <DataTablePage

@@ -1,8 +1,9 @@
 // /settings/requests — admin view of access requests.
-// global_admin only. Redirects to /dashboard otherwise.
+// global_admin / platform_owner only. Shows AccessDenied otherwise.
 import type { Metadata } from 'next'
-import { redirect } from 'next/navigation'
 import { getServerSession, isGlobalAdmin } from '@/lib/auth'
+import { AccessDenied } from '@/components/ui/AccessDenied'
+import { roleLabel, requiredRoleLabel } from '@/lib/permissions'
 import { sp_GetPendingAccessRequests } from '@/lib/db/procedures'
 import { RequestsContent } from './RequestsContent'
 
@@ -12,7 +13,12 @@ export default async function RequestsPage() {
   const session = await getServerSession()
 
   if (!session || !isGlobalAdmin(session)) {
-    redirect('/dashboard')
+    return (
+      <AccessDenied
+        currentRole={roleLabel(session?.role)}
+        requiredRole={requiredRoleLabel('settings:requests')}
+      />
+    )
   }
 
   let pending:  Record<string, unknown>[] = []

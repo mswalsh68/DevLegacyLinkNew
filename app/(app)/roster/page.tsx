@@ -13,7 +13,9 @@ import { Badge }         from '@/components/ui/Badge'
 import { Alert }         from '@/components/ui/Alert'
 import { TableRow }      from '@/components/ui/TableRow'
 import { Pagination }    from '@/components/ui/Pagination'
+import { AccessDenied }  from '@/components/ui/AccessDenied'
 import { playerStatusBadge } from '@/lib/statusMappings'
+import { can, roleLabel, requiredRoleLabel } from '@/lib/permissions'
 import { theme } from '@/lib/theme'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -42,10 +44,11 @@ const PAGE_SIZE = 50
 export default function RosterPage() {
   const router = useRouter()
   const config = useTeamConfig()
-  const { user } = useAuth()
+  const { user, isLoading } = useAuth()
 
   const isAdmin = ['global_admin', 'platform_owner', 'app_admin'].includes(user?.role ?? '')
 
+  // All hooks must be called unconditionally before any early return.
   const { filters: { search, position, year }, setFilter, page, setPage } =
     useFilteredPagination({ search: '', position: '', year: '' })
 
@@ -55,6 +58,8 @@ export default function RosterPage() {
   const [error,    setError]    = useState<string | null>(null)
 
   useEffect(() => {
+    if (!can(user, 'roster:view')) return  // don't fetch if no access
+
     setLoading(true)
     setError(null)
 
@@ -72,7 +77,7 @@ export default function RosterPage() {
       })
       .catch(() => setError('Failed to load players.'))
       .finally(() => setLoading(false))
-  }, [page, search, position, year])
+  }, [page, search, position, year, user]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const positionOptions = [
     { value: '', label: 'All Positions' },
@@ -83,6 +88,12 @@ export default function RosterPage() {
     { value: '', label: 'All Years' },
     ...config.academicYears.map((y) => ({ value: y, label: y })),
   ]
+
+  // ── Access control ──────────────────────────────────────────────────────────
+  if (isLoading) return null
+  if (!can(user, 'roster:view')) {
+    return <AccessDenied currentRole={roleLabel(user?.role)} requiredRole={requiredRoleLabel('roster:view')} />
+  }
 
   return (
     <DataTablePage
