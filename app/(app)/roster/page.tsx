@@ -1,12 +1,186 @@
-import type { Metadata } from 'next'
+'use client'
 
-export const metadata: Metadata = { title: 'Roster' }
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useTeamConfig } from '@/providers/ThemeProvider'
+import { useAuth } from '@/providers/AuthProvider'
+import { useFilteredPagination } from '@/hooks/useFilteredPagination'
+import { DataTablePage } from '@/components/ui/DataTablePage'
+import { Button }        from '@/components/ui/Button'
+import { Input }         from '@/components/ui/Input'
+import { Select }        from '@/components/ui/Select'
+import { Badge }         from '@/components/ui/Badge'
+import { Alert }         from '@/components/ui/Alert'
+import { TableRow }      from '@/components/ui/TableRow'
+import { Pagination }    from '@/components/ui/Pagination'
+import { playerStatusBadge } from '@/lib/statusMappings'
+import { theme } from '@/lib/theme'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface Player {
+  userId:       string
+  firstName:    string
+  lastName:     string
+  jerseyNumber: number | null
+  position:     string
+  academicYear: string
+  status:       string
+  major?:       string
+}
+
+interface PlayersResponse {
+  success: boolean
+  data:    Player[]
+  total:   number
+}
+
+const PAGE_SIZE = 50
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function RosterPage() {
+  const router = useRouter()
+  const config = useTeamConfig()
+  const { user } = useAuth()
+
+  const isAdmin = ['global_admin', 'platform_owner', 'app_admin'].includes(user?.role ?? '')
+
+  const { filters: { search, position, year }, setFilter, page, setPage } =
+    useFilteredPagination({ search: '', position: '', year: '' })
+
+  const [players,  setPlayers]  = useState<Player[]>([])
+  const [total,    setTotal]    = useState(0)
+  const [loading,  setLoading]  = useState(true)
+  const [error,    setError]    = useState<string | null>(null)
+
+  useEffect(() => {
+    setLoading(true)
+    setError(null)
+
+    const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) })
+    if (search)   params.set('search',      search)
+    if (position) params.set('position',    position)
+    if (year)     params.set('academicYear', year)
+
+    fetch(`/api/players?${params}`, { credentials: 'include' })
+      .then((r) => r.json() as Promise<PlayersResponse>)
+      .then((res) => {
+        if (!res.success) throw new Error('Failed to load players')
+        setPlayers(res.data)
+        setTotal(res.total)
+      })
+      .catch(() => setError('Failed to load players.'))
+      .finally(() => setLoading(false))
+  }, [page, search, position, year])
+
+  const positionOptions = [
+    { value: '', label: 'All Positions' },
+    ...config.positions.map((p) => ({ value: p, label: p })),
+  ]
+
+  const yearOptions = [
+    { value: '', label: 'All Years' },
+    ...config.academicYears.map((y) => ({ value: y, label: y })),
+  ]
+
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-900">Roster</h1>
-      <p className="mt-2 text-gray-600">Player roster will appear here.</p>
-    </div>
+    <DataTablePage
+      title={config.rosterLabel ?? 'Roster'}
+      subtitle={`${total} players`}
+      actions={isAdmin ? (
+        <>
+          <Button label="Transfer to Alumni" variant="outline" onClick={() => router.push('/roster/transfer')} />
+        </>
+      ) : undefined}
+      alerts={error ? <Alert message={error} variant="error" onClose={() => setError(null)} /> : undefined}
+      filters={
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
+          <Input
+            value={search}
+            onChange={(v) => setFilter('search', v)}
+            placeholder="Search name or jersey #..."
+          />
+          <Select value={year}     onChange={(v) => setFilter('year', v)}     options={yearOptions}     />
+          <Select value={position} onChange={(v) => setFilter('position', v)} options={positionOptions} />
+        </div>
+      }
+    >
+      <div style={{ backgroundColor: '#fff', borderRadius: 12, border: '1px solid var(--color-card-border)', overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }} aria-label="Player roster">
+          <thead>
+            <tr style={{ backgroundColor: theme.gray50, borderBottom: `1px solid ${theme.gray200}` }}>
+              {['#', 'Name', 'Position', 'Year', 'Status', ''].map((h) => (
+                <th
+                  key={h}
+                  scope="col"
+                  style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}
+                >
+                  {h || <span className="sr-only">View</span>}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={6} style={{ textAlign: 'center', padding: 48, color: theme.gray400 }}>Loading...</td></tr>
+            ) : players.length === 0 ? (
+              <tr><td colSpan={6} style={{ textAlign: 'center', padding: 48, color: theme.gray400 }}>No players found</td></tr>
+            ) : players.map((player, i) => (
+              <TableRow
+                key={player.userId}
+                index={i}
+                onActivate={() => router.push(`/roster/${player.userId}`)}
+                ariaLabel={`View ${player.firstName} ${player.lastName}`}
+              >
+                {/* Jersey */}
+                <td style={{ padding: '12px 20px' }}>
+                  <div style={{
+                    width: 36, height: 36, borderRadius: 8,
+                    backgroundColor: 'var(--color-primary)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: '#fff', fontSize: 13, fontWeight: 700,
+                  }}>
+                    {player.jerseyNumber ?? '—'}
+                  </div>
+                </td>
+
+                {/* Name */}
+                <td style={{ padding: '12px 20px' }}>
+                  <span style={{ fontWeight: 600, fontSize: 14, color: theme.gray900 }}>
+                    {player.lastName}, {player.firstName}
+                  </span>
+                  {config.level === 'college' && player.major && (
+                    <div style={{ fontSize: 12, color: theme.gray400, marginTop: 2 }}>{player.major}</div>
+                  )}
+                </td>
+
+                {/* Position */}
+                <td style={{ padding: '12px 20px' }}>
+                  <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--color-primary)' }}>
+                    {player.position}
+                  </span>
+                </td>
+
+                {/* Year */}
+                <td style={{ padding: '12px 20px', fontSize: 13, color: theme.gray600, textTransform: 'capitalize' }}>
+                  {player.academicYear ?? '—'}
+                </td>
+
+                {/* Status */}
+                <td style={{ padding: '12px 20px' }}>
+                  <Badge label={player.status} variant={playerStatusBadge(player.status)} />
+                </td>
+
+                {/* Arrow */}
+                <td style={{ padding: '12px 20px', color: theme.gray300, fontSize: 18 }}>›</td>
+              </TableRow>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <Pagination page={page} total={total} pageSize={PAGE_SIZE} onPage={setPage} />
+    </DataTablePage>
   )
 }

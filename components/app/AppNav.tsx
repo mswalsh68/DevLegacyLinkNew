@@ -146,18 +146,28 @@ export function AppNav() {
               alignItems:      'center',
               justifyContent:  'center',
               flexShrink:      0,
+              overflow:        'hidden',
             }}
           >
-            <span
-              style={{
-                fontSize:      13,
-                fontWeight:    800,
-                color:         'var(--color-primary)',
-                letterSpacing: '-0.5px',
-              }}
-            >
-              {config.teamName.slice(0, 2).toUpperCase()}
-            </span>
+            {config.logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={config.logoUrl}
+                alt={config.teamName}
+                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+              />
+            ) : (
+              <span
+                style={{
+                  fontSize:      13,
+                  fontWeight:    800,
+                  color:         'var(--color-primary)',
+                  letterSpacing: '-0.5px',
+                }}
+              >
+                {config.teamName.slice(0, 2).toUpperCase()}
+              </span>
+            )}
           </div>
           <span
             style={{
