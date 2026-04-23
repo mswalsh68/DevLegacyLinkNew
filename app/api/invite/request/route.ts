@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
     }
 
     userId   = newId
-    userJson = { email, firstName, lastName, globalRole: 'readonly', appPermissions: [], teams: [] }
+    userJson = { email, firstName, lastName, roleId: 7, role: 'alumni', appPermissions: [], teams: [] }
 
   } else {
     // Login flow — call sp_Login directly (same pattern as /api/auth/login)
