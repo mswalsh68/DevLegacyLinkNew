@@ -1,24 +1,52 @@
 // Route-level access control.
 // Define which roles can access each named feature, then call can() in page components.
 // Server pages use getServerSession(); client pages use useAuth().
+//
+// One role per user. The role defines what the user can do.
+// Sport scope (head_coach / position_coach see only their sport's records) is
+// enforced by the App DB stored procedures via dbo.users_sports — not here.
+// These checks only gate route/feature access (can they reach the page at all).
 
 import type { UserSession } from '@/types'
 
 // ─── Role groups ──────────────────────────────────────────────────────────────
 
-/** Full platform administrators — unrestricted access. */
-const PLATFORM_ADMINS = ['platform_owner', 'global_admin'] as const
+/** Platform-level — unrestricted across all teams. */
+const PLATFORM      = ['platform_owner'] as const
 
-/** Team-level administrators (e.g. Athletic Director). */
-const APP_ADMINS = [...PLATFORM_ADMINS, 'app_admin'] as const
+/** Full client access — platform owners plus team administrators. */
+const ADMINS        = [...PLATFORM, 'app_admin'] as const
 
-/** Coaches and staff — view access to roster and alumni, no admin actions. */
-const COACHES = [...APP_ADMINS, 'coach_staff', 'coach', 'staff'] as const
+/** Coaching staff — admins plus head coaches. */
+const HEAD_COACHES  = [...ADMINS, 'head_coach'] as const
 
-/** All authenticated roles, including read-only observers. */
-const ALL_ROLES = [...COACHES, 'readonly', 'read_only'] as const
+/** All staff with any roster visibility. */
+const ALL_STAFF     = [...HEAD_COACHES, 'position_coach', 'alumni_director'] as const
+
+/** Players — their own profile and player feed/messaging. */
+const PLAYERS       = ['player'] as const
+
+/** Alumni — their own profile and alumni feed/messaging. */
+const ALUMNI_ROLE   = ['alumni'] as const
 
 // ─── Feature map ──────────────────────────────────────────────────────────────
+//
+// Access matrix summary:
+//
+//   Feature             platform  app_admin  head_coach  position_coach  alumni_director  player  alumni
+//   roster:view         ✓         ✓           ✓ (sport)   ✓ (sport/curr)  ✓                –       –
+//   roster:edit         ✓         ✓           ✓ (sport)   ✓ (sport/curr)  –                –       –
+//   roster:transfer     ✓         ✓           ✓           –               ✓                –       –
+//   alumni:view         ✓         ✓           ✓ (sport)   –               ✓                –       –
+//   alumni:edit         ✓         ✓           ✓ (sport)   –               ✓                –       –
+//   message:players     ✓         ✓           ✓           ✓ (sport/curr)  –                ✓       –
+//   message:alumni      ✓         ✓           ✓           –               ✓                –       ✓
+//   feed:players        ✓         ✓           ✓           ✓               ✓                ✓       –
+//   feed:alumni         ✓         ✓           ✓           –               ✓                –       ✓
+//   settings:view       ✓         ✓           –           –               –                –       –
+//   settings:requests   ✓         ✓           –           –               –                –       –
+//
+// ✓ (sport) = access is granted here; row-level sport filtering is enforced by the SP.
 
 type Feature =
   | 'roster:view'
@@ -26,17 +54,25 @@ type Feature =
   | 'roster:transfer'
   | 'alumni:view'
   | 'alumni:edit'
+  | 'message:players'
+  | 'message:alumni'
+  | 'feed:players'
+  | 'feed:alumni'
   | 'settings:view'
   | 'settings:requests'
 
 const FEATURE_ROLES: Record<Feature, readonly string[]> = {
-  'roster:view':       ALL_ROLES,
-  'roster:edit':       COACHES,
-  'roster:transfer':   APP_ADMINS,
-  'alumni:view':       COACHES,
-  'alumni:edit':       COACHES,
-  'settings:view':     PLATFORM_ADMINS,
-  'settings:requests': PLATFORM_ADMINS,
+  'roster:view':        [...ALL_STAFF],
+  'roster:edit':        [...HEAD_COACHES, 'position_coach'],
+  'roster:transfer':    [...HEAD_COACHES, 'alumni_director'],
+  'alumni:view':        [...HEAD_COACHES, 'alumni_director'],
+  'alumni:edit':        [...HEAD_COACHES, 'alumni_director'],
+  'message:players':    [...HEAD_COACHES, 'position_coach', ...PLAYERS],
+  'message:alumni':     [...HEAD_COACHES, 'alumni_director', ...ALUMNI_ROLE],
+  'feed:players':       [...ALL_STAFF, ...PLAYERS],
+  'feed:alumni':        [...HEAD_COACHES, 'alumni_director', ...ALUMNI_ROLE],
+  'settings:view':      [...ADMINS],
+  'settings:requests':  [...ADMINS],
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -55,19 +91,23 @@ export function can(
 }
 
 /**
- * Human-readable label for a role — used in the AccessDenied message.
+ * Human-readable label for a role.
  */
 export function roleLabel(role: string | undefined): string {
   switch (role) {
-    case 'platform_owner': return 'Platform Owner'
-    case 'global_admin':   return 'Global Admin'
-    case 'app_admin':      return 'App Admin'
-    case 'coach_staff':
-    case 'coach':
-    case 'staff':          return 'Coach / Staff'
+    case 'platform_owner':  return 'Platform Owner'
+    case 'app_admin':       return 'App Admin'
+    case 'head_coach':      return 'Head Coach'
+    case 'position_coach':  return 'Position Coach'
+    case 'alumni_director': return 'Alumni Director'
+    case 'player':          return 'Player'
+    case 'alumni':          return 'Alumni'
+    // Legacy aliases (kept until SP migration is complete)
+    case 'global_admin':    return 'Global Admin'
+    case 'coach_staff':     return 'Coach / Staff'
     case 'readonly':
-    case 'read_only':      return 'Read Only'
-    default:               return role ?? 'Unknown'
+    case 'read_only':       return 'Read Only'
+    default:                return role ?? 'Unknown'
   }
 }
 
@@ -76,16 +116,25 @@ export function roleLabel(role: string | undefined): string {
  */
 export function requiredRoleLabel(feature: Feature): string {
   switch (feature) {
-    case 'roster:transfer':
     case 'settings:view':
     case 'settings:requests':
       return 'App Admin or higher'
+    case 'roster:transfer':
     case 'alumni:view':
     case 'alumni:edit':
+      return 'Head Coach or higher'
     case 'roster:edit':
-      return 'Coach / Staff or higher'
+      return 'Position Coach or higher'
     case 'roster:view':
-      return 'any authenticated role'
+      return 'Coach or Alumni Director'
+    case 'message:players':
+      return 'Coach or Player'
+    case 'message:alumni':
+      return 'Head Coach, Alumni Director, or Alumni'
+    case 'feed:players':
+      return 'Staff or Player'
+    case 'feed:alumni':
+      return 'Head Coach, Alumni Director, or Alumni'
     default:
       return 'a higher permission level'
   }

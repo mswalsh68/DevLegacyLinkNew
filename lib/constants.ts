@@ -11,11 +11,13 @@ export const SEMESTER_OPTIONS = [
 ]
 
 export const ROLE_OPTIONS = [
-  { value: 'readonly',       label: 'Read Only'      },
-  { value: 'coach_staff',    label: 'Coach / Staff'  },
-  { value: 'app_admin',      label: 'App Admin'      },
-  { value: 'global_admin',   label: 'Global Admin'   },
-  { value: 'platform_owner', label: 'Platform Owner' },
+  { value: 'alumni',          label: 'Alumni'          },
+  { value: 'player',          label: 'Player'          },
+  { value: 'alumni_director', label: 'Alumni Director' },
+  { value: 'position_coach',  label: 'Position Coach'  },
+  { value: 'head_coach',      label: 'Head Coach'      },
+  { value: 'app_admin',       label: 'App Admin'       },
+  { value: 'platform_owner',  label: 'Platform Owner'  },
 ]
 
 // ─── Roster defaults ──────────────────────────────────────────────────────────
@@ -62,16 +64,22 @@ export const TRANSFER_REASONS = [
 ] as const
 export type TransferReason = (typeof TRANSFER_REASONS)[number]
 
-// Values must match the global_role CHECK constraint in the DB:
-//   platform_owner | global_admin | coach_staff | readonly
-// Legacy aliases (coach, staff, read_only) kept for backwards compat.
+// Values must match dbo.roles.role_name in LegacyLinkGlobal.
+// Legacy aliases kept until migration 019 drops the old string columns.
 export const USER_ROLES = [
   'platform_owner',
+  'app_admin',
+  'head_coach',
+  'position_coach',
+  'alumni_director',
+  'player',
+  'alumni',
+  // Legacy aliases (active until SP migration 019 is complete)
   'global_admin',
   'coach_staff',
-  'readonly',
   'coach',
   'staff',
+  'readonly',
   'read_only',
 ] as const
 export type UserRole = (typeof USER_ROLES)[number]
