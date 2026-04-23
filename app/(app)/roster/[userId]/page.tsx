@@ -9,7 +9,6 @@ import { AccessDenied } from '@/components/ui/AccessDenied'
 import { can, roleLabel, requiredRoleLabel } from '@/lib/permissions'
 import { playerStatusBadge } from '@/lib/statusMappings'
 import { theme } from '@/lib/theme'
-import { updatePlayer } from '@/app/actions/players'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -196,43 +195,52 @@ export default function PlayerDetailPage() {
   }
 
   async function handleSave() {
-    if (!editState || !player || !user?.appDb) return
+    if (!editState || !player) return
     setSaving(true)
     setSaveError(null)
-    const result = await updatePlayer(user.appDb, {
-      userId,
-      updatedBy:             user.userId,
-      jerseyNumber:          editState.jerseyNumber  !== '' ? Number(editState.jerseyNumber)  : undefined,
-      position:              editState.position      || undefined,
-      academicYear:          editState.academicYear  || undefined,
-      heightInches:          editState.heightInches  !== '' ? Number(editState.heightInches)  : undefined,
-      weightLbs:             editState.weightLbs     !== '' ? Number(editState.weightLbs)     : undefined,
-      major:                 editState.major         || undefined,
-      phone:                 editState.phone         || undefined,
-      email:                 editState.email         || undefined,
-      instagram:             editState.instagram     || undefined,
-      twitter:               editState.twitter       || undefined,
-      snapchat:              editState.snapchat      || undefined,
-      emergencyContactName:  editState.emergencyContactName  || undefined,
-      emergencyContactPhone: editState.emergencyContactPhone || undefined,
-      parent1Name:           editState.parent1Name   || undefined,
-      parent1Phone:          editState.parent1Phone  || undefined,
-      parent1Email:          editState.parent1Email  || undefined,
-      parent2Name:           editState.parent2Name   || undefined,
-      parent2Phone:          editState.parent2Phone  || undefined,
-      parent2Email:          editState.parent2Email  || undefined,
-      notes:                 editState.notes         || undefined,
-      requestingUserId:      user.userId,
-      requestingUserRole:    user.role,
-    })
-    setSaving(false)
-    if (!result.success) {
-      setSaveError(result.error ?? 'Save failed.')
+    try {
+      const res = await fetch(`/api/players/${userId}`, {
+        method:      'PATCH',
+        credentials: 'include',
+        headers:     { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jerseyNumber:          editState.jerseyNumber  !== '' ? Number(editState.jerseyNumber)  : null,
+          position:              editState.position      || null,
+          academicYear:          editState.academicYear  || null,
+          heightInches:          editState.heightInches  !== '' ? Number(editState.heightInches)  : null,
+          weightLbs:             editState.weightLbs     !== '' ? Number(editState.weightLbs)     : null,
+          major:                 editState.major         || null,
+          phone:                 editState.phone         || null,
+          email:                 editState.email         || null,
+          instagram:             editState.instagram     || null,
+          twitter:               editState.twitter       || null,
+          snapchat:              editState.snapchat      || null,
+          emergencyContactName:  editState.emergencyContactName  || null,
+          emergencyContactPhone: editState.emergencyContactPhone || null,
+          parent1Name:           editState.parent1Name   || null,
+          parent1Phone:          editState.parent1Phone  || null,
+          parent1Email:          editState.parent1Email  || null,
+          parent2Name:           editState.parent2Name   || null,
+          parent2Phone:          editState.parent2Phone  || null,
+          parent2Email:          editState.parent2Email  || null,
+          notes:                 editState.notes         || null,
+        }),
+      })
+      const result = await res.json() as { success: boolean; error?: string }
+      if (!result.success) {
+        setSaveError(result.error ?? 'Save failed.')
+        setSaving(false)
+        return
+      }
+    } catch {
+      setSaveError('Network error. Please try again.')
+      setSaving(false)
       return
     }
+    setSaving(false)
     // Refresh player data
-    const res = await fetch(`/api/players/${userId}`, { credentials: 'include' }).then((r) => r.json()) as { success: boolean; data: Player }
-    if (res.success) setPlayer(res.data)
+    const refresh = await fetch(`/api/players/${userId}`, { credentials: 'include' }).then((r) => r.json()) as { success: boolean; data: Player }
+    if (refresh.success) setPlayer(refresh.data)
     setIsEditing(false)
     setEditState(null)
   }

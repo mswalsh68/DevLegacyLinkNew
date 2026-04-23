@@ -9,7 +9,6 @@ import { AccessDenied } from '@/components/ui/AccessDenied'
 import { can, roleLabel, requiredRoleLabel } from '@/lib/permissions'
 import { alumniStatusBadge } from '@/lib/statusMappings'
 import { theme } from '@/lib/theme'
-import { updateAlumni } from '@/app/actions/alumni'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -225,40 +224,49 @@ export default function AlumniDetailPage() {
   }
 
   async function handleSave() {
-    if (!editState || !alumni || !user?.appDb) return
+    if (!editState || !alumni) return
     setSaving(true)
     setSaveError(null)
-    const result = await updateAlumni(user.appDb, {
-      userId,
-      updatedBy:           user.userId,
-      phone:               editState.phone            || undefined,
-      personalEmail:       editState.personalEmail    || undefined,
-      linkedInUrl:         editState.linkedInUrl      || undefined,
-      twitterUrl:          editState.twitterUrl       || undefined,
-      currentEmployer:     editState.currentEmployer  || undefined,
-      currentJobTitle:     editState.currentJobTitle  || undefined,
-      currentCity:         editState.currentCity      || undefined,
-      currentState:        editState.currentState     || undefined,
-      isDonor:             editState.isDonor,
-      lastDonationDate:    editState.lastDonationDate || undefined,
-      totalDonations:      editState.totalDonations   !== '' ? Number(editState.totalDonations)  : undefined,
-      engagementScore:     editState.engagementScore  !== '' ? Number(editState.engagementScore) : undefined,
-      communicationConsent: editState.communicationConsent,
-      yearsOnRoster:       editState.yearsOnRoster    !== '' ? Number(editState.yearsOnRoster)   : undefined,
-      notes:               editState.notes            || undefined,
-      requestingUserId:    user.userId,
-      requestingUserRole:  user.role,
-    })
-    setSaving(false)
-    if (!result.success) {
-      setSaveError(result.error ?? 'Save failed.')
+    try {
+      const res = await fetch(`/api/alumni/${userId}`, {
+        method:      'PATCH',
+        credentials: 'include',
+        headers:     { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone:               editState.phone            || null,
+          personalEmail:       editState.personalEmail    || null,
+          linkedInUrl:         editState.linkedInUrl      || null,
+          twitterUrl:          editState.twitterUrl       || null,
+          currentEmployer:     editState.currentEmployer  || null,
+          currentJobTitle:     editState.currentJobTitle  || null,
+          currentCity:         editState.currentCity      || null,
+          currentState:        editState.currentState     || null,
+          isDonor:             editState.isDonor,
+          lastDonationDate:    editState.lastDonationDate || null,
+          totalDonations:      editState.totalDonations   !== '' ? Number(editState.totalDonations)   : null,
+          engagementScore:     editState.engagementScore  !== '' ? Number(editState.engagementScore)  : null,
+          communicationConsent: editState.communicationConsent,
+          yearsOnRoster:       editState.yearsOnRoster    !== '' ? Number(editState.yearsOnRoster)    : null,
+          notes:               editState.notes            || null,
+        }),
+      })
+      const result = await res.json() as { success: boolean; error?: string }
+      if (!result.success) {
+        setSaveError(result.error ?? 'Save failed.')
+        setSaving(false)
+        return
+      }
+    } catch {
+      setSaveError('Network error. Please try again.')
+      setSaving(false)
       return
     }
+    setSaving(false)
     // Refresh alumni data
-    const res = await fetch(`/api/alumni/${userId}`, { credentials: 'include' }).then((r) => r.json()) as { success: boolean; data: AlumniRecord; interactions: Interaction[] }
-    if (res.success) {
-      setAlumni(res.data)
-      setInteractions(res.interactions ?? [])
+    const refresh = await fetch(`/api/alumni/${userId}`, { credentials: 'include' }).then((r) => r.json()) as { success: boolean; data: AlumniRecord; interactions: Interaction[] }
+    if (refresh.success) {
+      setAlumni(refresh.data)
+      setInteractions(refresh.interactions ?? [])
     }
     setIsEditing(false)
     setEditState(null)
