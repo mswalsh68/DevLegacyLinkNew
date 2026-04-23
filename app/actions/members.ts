@@ -1,0 +1,112 @@
+'use server'
+
+// ─── Member Management Server Actions ────────────────────────────────────────
+//
+// Handles member types that don't fit cleanly into players.ts / alumni.ts:
+//
+//   createCoachStaff:
+//     Global DB only → sp_CreateTeamMember
+//     Coaches don't have an App DB player/alumni record — they just need
+//     a user account + team role + app_permissions (roster + alumni).
+//
+//   generateInviteCode:
+//     Global DB → sp_CreateInviteCode
+//     Thin server action wrapper so the wizard (client component) can call
+//     it directly without going through the /api/invite/codes route handler.
+
+import { randomUUID } from 'crypto'
+import { getServerSession } from '@/lib/auth'
+import { sp_CreateTeamMember, sp_CreateInviteCode } from '@/lib/db/procedures'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface CreateCoachStaffInput {
+  email:     string
+  firstName: string
+  lastName:  string
+  teamId:    string
+  role:      'coach_staff' | 'readonly' | 'global_admin'
+}
+
+export interface GenerateInviteCodeInput {
+  teamId:    string
+  role:      string          // 'roster' | 'alumni' | 'coach_staff'
+  expiresAt?: Date | null
+  maxUses?:   number | null
+}
+
+// ─── Actions ─────────────────────────────────────────────────────────────────
+
+/**
+ * Creates a coach/staff member account with immediate team access.
+ * Unlike players/alumni, coaches have no App DB record — only Global DB.
+ */
+export async function createCoachStaff(
+  input: CreateCoachStaffInput,
+): Promise<{ success: boolean; userId?: string; error?: string }> {
+  try {
+    const session = await getServerSession()
+    if (!session) return { success: false, error: 'Unauthorized' }
+
+    const { userId, errorCode } = await sp_CreateTeamMember({
+      email:     input.email,
+      firstName: input.firstName,
+      lastName:  input.lastName,
+      teamId:    input.teamId,
+      role:      input.role,
+      createdBy: session.userId,
+    })
+
+    if (errorCode) {
+      const messages: Record<string, string> = {
+        TEAM_NOT_FOUND: 'Team not found.',
+      }
+      return { success: false, error: messages[errorCode] ?? errorCode }
+    }
+
+    return { success: true, userId: userId ?? undefined }
+  } catch (err) {
+    console.error('[createCoachStaff]', err)
+    return { success: false, error: 'INTERNAL_ERROR' }
+  }
+}
+
+/**
+ * Generates a scoped invite code and returns the shareable URL.
+ * Called from the Add Members wizard (client component).
+ */
+export async function generateInviteCode(
+  input: GenerateInviteCodeInput,
+): Promise<{ success: boolean; inviteUrl?: string; token?: string; error?: string }> {
+  try {
+    const session = await getServerSession()
+    if (!session) return { success: false, error: 'Unauthorized' }
+
+    const token = randomUUID()
+
+    const { inviteCodeId, errorCode } = await sp_CreateInviteCode({
+      teamId:    input.teamId,
+      role:      input.role,
+      token,
+      createdBy: session.userId,
+      expiresAt: input.expiresAt ?? null,
+      maxUses:   input.maxUses   ?? null,
+    })
+
+    if (errorCode || !inviteCodeId) {
+      const messages: Record<string, string> = {
+        TEAM_NOT_FOUND: 'Team not found.',
+        FORBIDDEN:      'You do not have access to this team.',
+      }
+      return { success: false, error: messages[errorCode ?? ''] ?? (errorCode ?? 'Failed to generate code') }
+    }
+
+    const baseUrl   = process.env.NEXT_PUBLIC_APP_URL ?? ''
+    const inviteUrl = `${baseUrl}/join?code=${token}`
+
+    return { success: true, inviteUrl, token }
+  } catch (err) {
+    console.error('[generateInviteCode]', err)
+    return { success: false, error: 'INTERNAL_ERROR' }
+  }
+}

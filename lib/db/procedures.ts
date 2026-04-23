@@ -602,7 +602,7 @@ export interface BulkAlumniRow {
   email?:             string
   firstName:          string
   lastName:           string
-  graduationYear:     number
+  graduationYear?:    number
   graduationSemester?: string
   phone?:             string
   linkedInUrl?:       string
@@ -674,6 +674,33 @@ export async function sp_GetAlumniStats(params: {
     r.input('RequestingUserId',   sql.UniqueIdentifier, params.requestingUserId   ?? null)
     r.input('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole ?? null)
   })
+}
+
+// ─── Global DB — Team Member Creation ────────────────────────────────────────
+
+/** Creates or looks up a user, assigns the given role, grants app_permissions. */
+export async function sp_CreateTeamMember(params: {
+  email:     string
+  firstName: string
+  lastName:  string
+  teamId:    string
+  role:      string
+  createdBy: string
+}): Promise<{ userId: string | null; errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_CreateTeamMember', (r) => {
+    r.input ('Email',     sql.NVarChar(255),    params.email)
+    r.input ('FirstName', sql.NVarChar(100),    params.firstName)
+    r.input ('LastName',  sql.NVarChar(100),    params.lastName)
+    r.input ('TeamId',    sql.UniqueIdentifier, params.teamId)
+    r.input ('Role',      sql.NVarChar(30),     params.role)
+    r.input ('CreatedBy', sql.UniqueIdentifier, params.createdBy)
+    r.output('UserId',    sql.UniqueIdentifier)
+    r.output('ErrorCode', sql.NVarChar(50))
+  })
+  return {
+    userId:    (output.UserId    as string | null) ?? null,
+    errorCode: (output.ErrorCode as string | null) ?? null,
+  }
 }
 
 // ─── Global DB — Invite Codes & Access Requests ───────────────────────────────

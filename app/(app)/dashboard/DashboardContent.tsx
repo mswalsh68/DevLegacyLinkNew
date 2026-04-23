@@ -3,8 +3,10 @@
 // Dashboard content — matches the original project's light card design.
 // White cards on a light page background, team-color accents, no dark shell.
 
+import { useState } from 'react'
 import { useTeamConfig } from '@/providers/ThemeProvider'
 import { useAuth } from '@/providers/AuthProvider'
+import { AddMembersWizard } from '@/components/app/AddMembersWizard'
 
 // ─── Quick-access tile (icon + title + description) ───────────────────────────
 
@@ -80,6 +82,68 @@ function NavCard({
   )
 }
 
+// ─── Button tile (opens modal — same visual as NavCard but a <button>) ────────
+
+function ButtonCard({
+  icon,
+  title,
+  description,
+  onClick,
+}: {
+  icon:        string
+  title:       string
+  description: string
+  onClick:     () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        backgroundColor: '#fff',
+        border:          '1px solid var(--color-card-border)',
+        borderRadius:    16,
+        padding:         24,
+        textAlign:       'left',
+        cursor:          'pointer',
+        display:         'block',
+        width:           '100%',
+        boxShadow:       '0 1px 3px rgba(0,0,0,0.06)',
+        transition:      'border-color 0.15s, box-shadow 0.15s',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = 'var(--color-primary)'
+        e.currentTarget.style.boxShadow   = '0 4px 12px rgba(0,0,0,0.10)'
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = 'var(--color-card-border)'
+        e.currentTarget.style.boxShadow   = '0 1px 3px rgba(0,0,0,0.06)'
+      }}
+    >
+      <div
+        style={{
+          width:           48,
+          height:          48,
+          borderRadius:    12,
+          backgroundColor: 'var(--color-primary)',
+          display:         'flex',
+          alignItems:      'center',
+          justifyContent:  'center',
+          fontSize:        24,
+          marginBottom:    16,
+        }}
+      >
+        {icon}
+      </div>
+      <h2 style={{ fontSize: 17, fontWeight: 600, color: 'var(--color-gray-900)', margin: 0 }}>
+        {title}
+      </h2>
+      <p style={{ fontSize: 13, color: 'var(--color-gray-500)', marginTop: 6, marginBottom: 0 }}>
+        {description}
+      </p>
+    </button>
+  )
+}
+
 // ─── Config row ───────────────────────────────────────────────────────────────
 
 function ConfigRow({ label, value }: { label: string; value: string }) {
@@ -144,6 +208,8 @@ export default function DashboardContent({ role }: DashboardContentProps) {
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase())
 
+  const [wizardOpen, setWizardOpen] = useState(false)
+
   return (
     <>
       {/* ── Welcome header ── */}
@@ -180,7 +246,27 @@ export default function DashboardContent({ role }: DashboardContentProps) {
         {QUICK_LINKS.map((link) => (
           <NavCard key={link.href} {...link} />
         ))}
+        <ButtonCard
+          icon="➕"
+          title="Add Members"
+          description="Create players, alumni, or staff — one at a time, in bulk, or via invite link"
+          onClick={() => setWizardOpen(true)}
+        />
       </div>
+
+      {/* ── Add Members Wizard ── */}
+      {user?.currentTeamId && (
+        <AddMembersWizard
+          isOpen={wizardOpen}
+          onClose={() => setWizardOpen(false)}
+          teamId={user.currentTeamId}
+          teamName={config.teamName}
+          sport={config.sport}
+          positions={config.positions}
+          academicYears={config.academicYears}
+          userId={user.userId}
+        />
+      )}
 
       {/* ── Bottom: team config snapshot ── */}
       <div
