@@ -237,7 +237,7 @@ export default function DashboardContent({ role }: DashboardContentProps) {
 
       {/* ── Add Members Wizard ── */}
 
-      {user?.currentTeamId && (
+      {user?.currentTeamId && user?.appDb && (
         <AddMembersWizard
           isOpen={wizardOpen}
           onClose={() => setWizardOpen(false)}
@@ -247,6 +247,7 @@ export default function DashboardContent({ role }: DashboardContentProps) {
           positions={config.positions}
           academicYears={config.academicYears}
           userId={user.userId}
+          appDb={user.appDb}
         />
       )}
 

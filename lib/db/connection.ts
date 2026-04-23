@@ -6,9 +6,13 @@
 // Local SQLEXPRESS (everything else):
 //   → encrypt=false, trustServerCertificate=true
 //
-// All route handlers and procedures import from here — never create a pool
-// directly anywhere else.
+// App DB is multi-tenant: each team has its own database name stored in
+// dbo.teams.app_db (Global DB). The JWT carries appDb so we don't need
+// a hardcoded APP_DB_NAME env var. Wrap API routes and server actions with:
+//   return appDbContext.run(session.appDb, async () => { ... })
+// before calling any App DB procedures.
 
+import { AsyncLocalStorage } from 'async_hooks'
 import sql from 'mssql'
 
 const DB_SERVER = process.env.DB_SERVER ?? ''
@@ -18,21 +22,30 @@ const isAzure =
   process.env.NODE_ENV === 'production' ||
   DB_SERVER.toLowerCase().includes('.database.windows.net')
 
-// ─── Logical DB identifiers → actual database names (from env vars) ───────────
+// ─── Logical DB identifiers → actual database names ───────────────────────────
 
-// 'app'    — the per-tenant App DB (players + alumni, single DB)
-// 'global' — the shared Global DB (users, auth, team config)
-// 'roster' / 'alumni' kept as aliases for backward compat — both point to APP_DB_NAME
+// 'global' — shared Global DB (users, auth, team config)
+// 'app' / 'roster' / 'alumni' — per-tenant App DB; actual name resolved at
+//   request time from appDbContext (falls back to APP_DB_NAME env var for local dev)
 export type DbKey = 'global' | 'app' | 'roster' | 'alumni'
 
 const DB_NAMES: Record<DbKey, string> = {
-  global: process.env.GLOBAL_DB_NAME ?? 'DevLegacyLinkGlobal',
-  app:    process.env.APP_DB_NAME    ?? 'DevLegacyLinkApp',
-  roster: process.env.APP_DB_NAME    ?? 'DevLegacyLinkApp',
-  alumni: process.env.APP_DB_NAME    ?? 'DevLegacyLinkApp',
+  global: process.env.GLOBAL_DB_NAME ?? 'LegacyLinkGlobal',
+  // App DB fallback — only used in local dev. Production reads from JWT appDb.
+  app:    process.env.APP_DB_NAME    ?? '',
+  roster: process.env.APP_DB_NAME    ?? '',
+  alumni: process.env.APP_DB_NAME    ?? '',
 }
 
-// ─── Base config — switches per environment ───────────────────────────────────
+// ─── Per-request App DB context ───────────────────────────────────────────────
+// Stores the tenant's database name for the duration of a single request.
+// Avoids threading appDb through every SP wrapper function.
+//
+// Usage in API routes / server actions:
+//   return appDbContext.run(session.appDb, async () => { ... all DB calls ... })
+export const appDbContext = new AsyncLocalStorage<string>()
+
+// ─── Base config ──────────────────────────────────────────────────────────────
 
 function buildBaseConfig(database: string): sql.config {
   const server = DB_SERVER || (isAzure ? '' : 'localhost\\SQLEXPRESS')
@@ -48,7 +61,6 @@ function buildBaseConfig(database: string): sql.config {
       },
     },
     options: {
-      // Azure SQL mandates encryption; local SQLEXPRESS rejects it.
       encrypt:                isAzure,
       trustServerCertificate: !isAzure,
       enableArithAbort:       true,
@@ -64,35 +76,62 @@ function buildBaseConfig(database: string): sql.config {
   }
 }
 
-// ─── Lazy connection pools — one per database ─────────────────────────────────
+// ─── Connection pools ─────────────────────────────────────────────────────────
+// Global pool: keyed by DbKey (only 'global' in practice)
+// App pools: keyed by actual database name (one pool per tenant DB)
 
-const pools = new Map<DbKey, sql.ConnectionPool>()
+const globalPool = new Map<DbKey, sql.ConnectionPool>()
+const appPools   = new Map<string, sql.ConnectionPool>()
 
-export async function getPool(db: DbKey): Promise<sql.ConnectionPool> {
-  if (pools.has(db)) return pools.get(db)!
-
-  const config = buildBaseConfig(DB_NAMES[db])
-
-  if (isAzure && !config.server) {
+async function createPool(dbName: string): Promise<sql.ConnectionPool> {
+  if (isAzure && !DB_SERVER) {
     throw new Error(
-      `[db/connection] DB_SERVER env var is required when targeting Azure SQL. ` +
-      `Set it to your server hostname (e.g. myserver.database.windows.net).`,
+      `[db/connection] DB_SERVER env var is required when targeting Azure SQL.`,
     )
   }
 
   console.log(
     `[db/connection] Connecting to ${isAzure ? 'Azure' : 'local'} SQL — ` +
-    `${config.server}/${DB_NAMES[db]} (encrypt=${isAzure})`,
+    `${DB_SERVER || 'localhost\\SQLEXPRESS'}/${dbName} (encrypt=${isAzure})`,
   )
 
-  const pool = await new sql.ConnectionPool(config).connect()
+  return new sql.ConnectionPool(buildBaseConfig(dbName)).connect()
+}
 
+export async function getPool(db: DbKey): Promise<sql.ConnectionPool> {
+  // App-family keys: resolve database name from per-request context first,
+  // then fall back to env var (useful for local dev without JWT).
+  if (db === 'app' || db === 'roster' || db === 'alumni') {
+    const dbName = appDbContext.getStore() ?? DB_NAMES[db]
+
+    if (!dbName) {
+      throw new Error(
+        `[db/connection] No App DB name available for key '${db}'. ` +
+        `Wrap the handler in appDbContext.run(session.appDb, fn).`,
+      )
+    }
+
+    if (appPools.has(dbName)) return appPools.get(dbName)!
+
+    const pool = await createPool(dbName)
+    pool.on('error', (err) => {
+      console.error(`[db/connection] Pool error on '${dbName}':`, err)
+      appPools.delete(dbName)
+    })
+    appPools.set(dbName, pool)
+    return pool
+  }
+
+  // Global DB: fixed name, cached by DbKey
+  if (globalPool.has(db)) return globalPool.get(db)!
+
+  const dbName = DB_NAMES[db]
+  const pool   = await createPool(dbName)
   pool.on('error', (err) => {
     console.error(`[db/connection] Pool error on '${db}':`, err)
-    pools.delete(db) // allow reconnect on next request
+    globalPool.delete(db)
   })
-
-  pools.set(db, pool)
+  globalPool.set(db, pool)
   return pool
 }
 
