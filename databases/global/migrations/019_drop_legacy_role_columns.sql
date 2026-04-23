@@ -12,6 +12,9 @@
 --   dbo.users.global_role           NVARCHAR(50) — replaced by role_id
 --   dbo.user_teams.role             NVARCHAR(50) — role is now on the user, not per-team
 --   dbo.access_requests.role        NVARCHAR(50) — replaced by role_id (added in 018)
+--
+-- NOTE: user_teams.role and access_requests.role were already dropped
+-- if this script was partially run before. All steps are idempotent.
 -- ============================================================
 
 USE LegacyLinkGlobal
@@ -25,14 +28,12 @@ DECLARE @MissingRoleCount INT = (
 
 IF @MissingRoleCount > 0
 BEGIN
-  RAISERROR(
-    'ABORT: %d user(s) have NULL role_id. Fix before running migration 019.',
-    16, 1, @MissingRoleCount
-  );
+  DECLARE @ErrMsg NVARCHAR(200) = 'ABORT: ' + CAST(@MissingRoleCount AS NVARCHAR) + ' user(s) have NULL role_id. Fix before running migration 019.';
+  RAISERROR(@ErrMsg, 16, 1);
   RETURN;
 END
 
-PRINT CONCAT('role_id check passed — all users have a role_id');
+PRINT 'role_id check passed — all users have a role_id';
 GO
 
 -- ─── 1. Drop users.global_role ────────────────────────────────────────────────
@@ -42,7 +43,29 @@ IF EXISTS (
   WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'users' AND COLUMN_NAME = 'global_role'
 )
 BEGIN
-  -- Drop any default constraint first (SQL Server requires this before dropping the column)
+  -- Drop CHECK constraint (e.g. CK_users_global_role) if present
+  DECLARE @CK_global_role NVARCHAR(200);
+
+  SELECT @CK_global_role = cc.name
+  FROM   sys.check_constraints cc
+  JOIN   sys.columns c ON c.object_id = cc.parent_object_id AND c.column_id = cc.parent_column_id
+  JOIN   sys.tables  t ON t.object_id = c.object_id
+  WHERE  t.name = 'users' AND c.name = 'global_role';
+
+  IF @CK_global_role IS NOT NULL
+  BEGIN
+    EXEC ('ALTER TABLE dbo.users DROP CONSTRAINT ' + @CK_global_role);
+    PRINT 'Dropped CHECK constraint on users.global_role';
+  END
+
+  -- Drop index (e.g. IX_users_global_role) if present
+  IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_users_global_role' AND object_id = OBJECT_ID('dbo.users'))
+  BEGIN
+    DROP INDEX IX_users_global_role ON dbo.users;
+    PRINT 'Dropped index IX_users_global_role';
+  END
+
+  -- Drop DEFAULT constraint if present
   DECLARE @DF_global_role NVARCHAR(200);
 
   SELECT @DF_global_role = dc.name
@@ -58,7 +81,7 @@ BEGIN
   PRINT 'Dropped dbo.users.global_role';
 END
 ELSE
-  PRINT 'users.global_role not found — already dropped or never existed';
+  PRINT 'users.global_role not found — already dropped';
 GO
 
 -- ─── 2. Drop user_teams.role ─────────────────────────────────────────────────
@@ -69,7 +92,6 @@ IF EXISTS (
   WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'user_teams' AND COLUMN_NAME = 'role'
 )
 BEGIN
-  -- Drop default constraint if present
   DECLARE @DF_ut_role NVARCHAR(200);
 
   SELECT @DF_ut_role = dc.name
@@ -85,7 +107,7 @@ BEGIN
   PRINT 'Dropped dbo.user_teams.role';
 END
 ELSE
-  PRINT 'user_teams.role not found — already dropped or never existed';
+  PRINT 'user_teams.role not found — already dropped';
 GO
 
 -- ─── 3. Drop access_requests.role ────────────────────────────────────────────
@@ -95,7 +117,6 @@ IF EXISTS (
   WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'access_requests' AND COLUMN_NAME = 'role'
 )
 BEGIN
-  -- Drop default constraint if present
   DECLARE @DF_ar_role NVARCHAR(200);
 
   SELECT @DF_ar_role = dc.name
@@ -111,7 +132,7 @@ BEGIN
   PRINT 'Dropped dbo.access_requests.role';
 END
 ELSE
-  PRINT 'access_requests.role not found — already dropped or never existed';
+  PRINT 'access_requests.role not found — already dropped';
 GO
 
 -- ─── Verification queries ─────────────────────────────────────────────────────
@@ -119,7 +140,7 @@ GO
 -- Run these after the migration to confirm:
 --
 --   -- Confirm columns are gone
---   SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+--   SELECT TABLE_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
 --   WHERE TABLE_SCHEMA = 'dbo'
 --     AND TABLE_NAME IN ('users', 'user_teams', 'access_requests')
 --     AND COLUMN_NAME IN ('global_role', 'role')
