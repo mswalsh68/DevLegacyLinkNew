@@ -9,6 +9,8 @@ import { Alert }   from '@/components/ui/Alert'
 import { Badge }   from '@/components/ui/Badge'
 import { theme }   from '@/lib/theme'
 import { SEMESTER_OPTIONS, makeYearOptions } from '@/lib/constants'
+import { AccessDenied }  from '@/components/ui/AccessDenied'
+import { can, roleLabel, requiredRoleLabel } from '@/lib/permissions'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -34,9 +36,7 @@ const YEAR_OPTIONS = makeYearOptions(10).map((y) => ({ value: String(y), label: 
 
 export default function TransferPage() {
   const router  = useRouter()
-  const { user } = useAuth()
-
-  const isAdmin = ['global_admin', 'platform_owner', 'app_admin'].includes(user?.role ?? '')
+  const { user, isLoading } = useAuth()
 
   const currentYear = new Date().getFullYear()
 
@@ -50,10 +50,12 @@ export default function TransferPage() {
   const [result,           setResult]           = useState<TransferResult | null>(null)
   const [search,           setSearch]           = useState('')
 
+  const allowed = can(user, 'roster:transfer')
+
   useEffect(() => {
-    if (!isAdmin) { router.push('/roster'); return }
+    if (!allowed) return
     fetchPlayers()
-  }, [isAdmin]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [allowed]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchPlayers = () => {
     setLoading(true)
@@ -119,6 +121,11 @@ export default function TransferPage() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  if (isLoading) return null
+  if (!allowed) {
+    return <AccessDenied currentRole={roleLabel(user?.role)} requiredRole={requiredRoleLabel('roster:transfer')} />
   }
 
   return (

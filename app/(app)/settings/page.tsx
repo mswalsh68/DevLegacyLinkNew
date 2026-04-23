@@ -1,9 +1,10 @@
 // Team Settings — server component.
-// Enforces global_admin only. Redirects to /dashboard otherwise.
+// Enforces global_admin / platform_owner only. Shows AccessDenied otherwise.
 // Ported from original project: app/admin/settings/page.tsx
 import type { Metadata } from 'next'
-import { redirect } from 'next/navigation'
 import { getServerSession, isGlobalAdmin } from '@/lib/auth'
+import { AccessDenied } from '@/components/ui/AccessDenied'
+import { roleLabel, requiredRoleLabel } from '@/lib/permissions'
 import Link from 'next/link'
 import SettingsContent from './SettingsContent'
 
@@ -13,9 +14,14 @@ export default async function SettingsPage() {
   const session = await getServerSession()
 
   // Auth enforced by (app) layout — session is guaranteed here.
-  // Additional role check: only global_admin may edit team settings.
+  // Additional role check: only global_admin / platform_owner may edit team settings.
   if (!session || !isGlobalAdmin(session)) {
-    redirect('/dashboard')
+    return (
+      <AccessDenied
+        currentRole={roleLabel(session?.role)}
+        requiredRole={requiredRoleLabel('settings:view')}
+      />
+    )
   }
 
   return (
