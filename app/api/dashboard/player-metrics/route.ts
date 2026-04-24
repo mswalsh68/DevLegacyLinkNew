@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
 import { can } from '@/lib/permissions'
 import { sp_GetDashboardMetrics_Players } from '@/lib/db/procedures'
@@ -6,8 +6,9 @@ import { appDbContext } from '@/lib/db/connection'
 import { featuresForTier, normalizeTier } from '@/lib/features'
 
 // ─── GET /api/dashboard/player-metrics ───────────────────────────────────────
+// Optional query param: ?sportId=<uuid>
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await getServerSession()
   if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
 
@@ -23,10 +24,13 @@ export async function GET() {
     return NextResponse.json({ success: false, error: 'No active team. Please switch teams and try again.' }, { status: 400 })
   }
 
+  const sportId = req.nextUrl.searchParams.get('sportId') || null
+
   return appDbContext.run(session.appDb, async () => {
     try {
       const metrics = await sp_GetDashboardMetrics_Players({
         tenantId:           session.currentTeamId!,
+        sportId,
         requestingUserId:   session.userId,
         requestingUserRole: session.role,
       })

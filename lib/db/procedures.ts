@@ -1036,11 +1036,13 @@ export interface AlumniDashboardMetrics {
 
 export async function sp_GetDashboardMetrics_Alumni(params: {
   tenantId:           string
+  sportId?:           string | null
   requestingUserId:   string
   requestingUserRole: string
 }): Promise<AlumniDashboardMetrics> {
   const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetDashboardMetrics_Alumni', (r) => {
     r.input('TenantId',           sql.UniqueIdentifier, params.tenantId)
+    r.input('SportId',            sql.UniqueIdentifier, params.sportId ?? null)
     r.input('RequestingUserId',   sql.UniqueIdentifier, params.requestingUserId)
     r.input('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole)
   })
@@ -1064,11 +1066,13 @@ export interface PlayerDashboardMetrics {
 
 export async function sp_GetDashboardMetrics_Players(params: {
   tenantId:           string
+  sportId?:           string | null
   requestingUserId:   string
   requestingUserRole: string
 }): Promise<PlayerDashboardMetrics> {
   const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetDashboardMetrics_Players', (r) => {
     r.input('TenantId',           sql.UniqueIdentifier, params.tenantId)
+    r.input('SportId',            sql.UniqueIdentifier, params.sportId ?? null)
     r.input('RequestingUserId',   sql.UniqueIdentifier, params.requestingUserId)
     r.input('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole)
   })
@@ -1078,5 +1082,68 @@ export async function sp_GetDashboardMetrics_Players(params: {
     monthEmailsSent: (row.monthEmailsSent as number) ?? 0,
     totalFeedPosts:  (row.totalFeedPosts  as number) ?? 0,
     monthFeedPosts:  (row.monthFeedPosts  as number) ?? 0,
+  }
+}
+
+// ─── Sports ───────────────────────────────────────────────────────────────────
+
+export interface SportOption {
+  id:   string
+  name: string
+  abbr: string
+}
+
+export async function sp_GetUserSports(params: {
+  tenantId:          string
+  requestingUserId?: string | null
+}): Promise<SportOption[]> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetUserSports', (r) => {
+    r.input('TenantId',         sql.UniqueIdentifier, params.tenantId)
+    r.input('RequestingUserId', sql.UniqueIdentifier, params.requestingUserId ?? null)
+  })
+  return rows.map(r => ({
+    id:   r.id   as string,
+    name: r.name as string,
+    abbr: r.abbr as string,
+  }))
+}
+
+// ─── All Engagement Dashboard Metrics ────────────────────────────────────────
+
+export interface AllEngagementMetrics {
+  totalInteractions:      number
+  monthInteractions:      number
+  alumniEmailsTotal:      number
+  alumniEmailsMonth:      number
+  alumniLoginsLast30Days: number
+  playerEmailsTotal:      number
+  playerEmailsMonth:      number
+  totalFeedPosts:         number
+  monthFeedPosts:         number
+}
+
+export async function sp_GetDashboardMetrics_All(params: {
+  tenantId:           string
+  sportId?:           string | null
+  requestingUserId:   string
+  requestingUserRole: string
+}): Promise<AllEngagementMetrics> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetDashboardMetrics_All', (r) => {
+    r.input('TenantId',           sql.UniqueIdentifier, params.tenantId)
+    r.input('SportId',            sql.UniqueIdentifier, params.sportId ?? null)
+    r.input('RequestingUserId',   sql.UniqueIdentifier, params.requestingUserId)
+    r.input('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole)
+  })
+  const row = rows[0] ?? {}
+  return {
+    totalInteractions:      (row.totalInteractions      as number) ?? 0,
+    monthInteractions:      (row.monthInteractions      as number) ?? 0,
+    alumniEmailsTotal:      (row.alumniEmailsTotal      as number) ?? 0,
+    alumniEmailsMonth:      (row.alumniEmailsMonth      as number) ?? 0,
+    alumniLoginsLast30Days: (row.alumniLoginsLast30Days as number) ?? 0,
+    playerEmailsTotal:      (row.playerEmailsTotal      as number) ?? 0,
+    playerEmailsMonth:      (row.playerEmailsMonth      as number) ?? 0,
+    totalFeedPosts:         (row.totalFeedPosts         as number) ?? 0,
+    monthFeedPosts:         (row.monthFeedPosts         as number) ?? 0,
   }
 }

@@ -2487,6 +2487,7 @@ GO
 -- the data wall (RLS on dbo.users applies transparently).
 -- @TenantId is passed explicitly for defense-in-depth even
 -- though this SP runs inside the per-tenant AppDB.
+-- @SportId = NULL → aggregate all sports the user can access.
 --
 -- Phase 1 metrics:
 --   interactions     — logged outreach interactions
@@ -2496,6 +2497,7 @@ GO
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetDashboardMetrics_Alumni
   @TenantId           UNIQUEIDENTIFIER,
+  @SportId            UNIQUEIDENTIFIER = NULL,
   @RequestingUserId   UNIQUEIDENTIFIER = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
@@ -2509,17 +2511,26 @@ BEGIN
 
   -- ── Interactions ──────────────────────────────────────────
   -- Join through vwAlumni to enforce the wall.
+  -- @SportId = NULL → all sports; otherwise filter to that sport.
   DECLARE @TotalInteractions INT;
   DECLARE @MonthInteractions INT;
 
   SELECT @TotalInteractions = COUNT(*)
   FROM   dbo.interaction_log il
-  WHERE  EXISTS (SELECT 1 FROM dbo.vwAlumni va WHERE va.id = il.user_id);
+  WHERE  EXISTS (
+    SELECT 1 FROM dbo.vwAlumni va
+    WHERE  va.id = il.user_id
+      AND  (@SportId IS NULL OR va.sport_id = @SportId)
+  );
 
   SELECT @MonthInteractions = COUNT(*)
   FROM   dbo.interaction_log il
   WHERE  il.logged_at >= @MonthStart
-    AND  EXISTS (SELECT 1 FROM dbo.vwAlumni va WHERE va.id = il.user_id);
+    AND  EXISTS (
+      SELECT 1 FROM dbo.vwAlumni va
+      WHERE  va.id = il.user_id
+        AND  (@SportId IS NULL OR va.sport_id = @SportId)
+    );
 
   -- ── Emails sent to alumni ─────────────────────────────────
   -- outreach_messages.alumni_id references dbo.alumni (status_id=2),
@@ -2532,7 +2543,11 @@ BEGIN
   JOIN   dbo.outreach_campaigns oc ON oc.id = om.campaign_id
   WHERE  om.status        IN ('sent', 'responded')
     AND  oc.target_audience IN ('all', 'alumni_only')
-    AND  EXISTS (SELECT 1 FROM dbo.vwAlumni va WHERE va.id = om.user_id);
+    AND  EXISTS (
+      SELECT 1 FROM dbo.vwAlumni va
+      WHERE  va.id = om.user_id
+        AND  (@SportId IS NULL OR va.sport_id = @SportId)
+    );
 
   SELECT @MonthEmailsSent = COUNT(om.id)
   FROM   dbo.outreach_messages  om
@@ -2540,7 +2555,11 @@ BEGIN
   WHERE  om.status        IN ('sent', 'responded')
     AND  om.sent_at       >= @MonthStart
     AND  oc.target_audience IN ('all', 'alumni_only')
-    AND  EXISTS (SELECT 1 FROM dbo.vwAlumni va WHERE va.id = om.user_id);
+    AND  EXISTS (
+      SELECT 1 FROM dbo.vwAlumni va
+      WHERE  va.id = om.user_id
+        AND  (@SportId IS NULL OR va.sport_id = @SportId)
+    );
 
   -- ── Alumni login frequency (last 30 days) ─────────────────
   -- Counts distinct alumni who logged in; auth_events.user_id
@@ -2552,7 +2571,11 @@ BEGIN
   WHERE  ae.user_type   = 'alumni'
     AND  ae.event_type  = 'login'
     AND  ae.occurred_at >= @ThirtyDaysAgo
-    AND  EXISTS (SELECT 1 FROM dbo.vwAlumni va WHERE va.id = ae.user_id);
+    AND  EXISTS (
+      SELECT 1 FROM dbo.vwAlumni va
+      WHERE  va.id = ae.user_id
+        AND  (@SportId IS NULL OR va.sport_id = @SportId)
+    );
 
   -- ── Result row ────────────────────────────────────────────
   SELECT
@@ -2570,7 +2593,8 @@ GO
 -- Returns headline metrics for the Player Communications tab.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetDashboardMetrics_Players
-  @TenantId           UNIQUEIDENTIFIER = NULL,
+  @TenantId           UNIQUEIDENTIFIER,
+  @SportId            UNIQUEIDENTIFIER = NULL,
   @RequestingUserId   UNIQUEIDENTIFIER = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
@@ -2584,28 +2608,187 @@ BEGIN
     EXEC sp_set_session_context N'user_role', @_role2;
   END
 
-  DECLARE @MonthAgo2 DATETIME2 = DATEADD(MONTH, -1, SYSUTCDATETIME());
+  DECLARE @MonthStart2 DATETIME2 =
+    CAST(DATEADD(DAY, 1 - DAY(GETUTCDATE()), CAST(GETUTCDATE() AS DATE)) AS DATETIME2);
 
+  -- ── Emails sent to players ─────────────────────────────────
+  -- @SportId = NULL → all sports; otherwise filter via vwPlayers.sport_id.
   DECLARE @TotalEmailsSent2 INT, @MonthEmailsSent2 INT;
   SELECT
     @TotalEmailsSent2 = ISNULL(COUNT(*), 0),
-    @MonthEmailsSent2 = ISNULL(SUM(CASE WHEN om.sent_at >= @MonthAgo2 THEN 1 ELSE 0 END), 0)
+    @MonthEmailsSent2 = ISNULL(SUM(CASE WHEN om.sent_at >= @MonthStart2 THEN 1 ELSE 0 END), 0)
   FROM dbo.outreach_messages om
   JOIN dbo.outreach_campaigns oc ON oc.id = om.campaign_id
   WHERE oc.target_audience IN ('all', 'players_only')
-    AND om.status IN ('sent', 'responded');
+    AND om.status IN ('sent', 'responded')
+    AND (@SportId IS NULL OR EXISTS (
+      SELECT 1 FROM dbo.vwPlayers vp
+      WHERE  vp.id = om.user_id AND vp.sport_id = @SportId
+    ));
 
+  -- ── Feed posts for players ─────────────────────────────────
   DECLARE @TotalFeedPosts INT, @MonthFeedPosts INT;
   SELECT
     @TotalFeedPosts = ISNULL(COUNT(*), 0),
-    @MonthFeedPosts = ISNULL(SUM(CASE WHEN fp.published_at >= @MonthAgo2 THEN 1 ELSE 0 END), 0)
+    @MonthFeedPosts = ISNULL(SUM(CASE WHEN fp.published_at >= @MonthStart2 THEN 1 ELSE 0 END), 0)
   FROM dbo.feed_posts fp
   WHERE fp.audience IN ('all', 'players_only');
+  -- Note: feed_posts are not per-player-user rows, so sport filter
+  -- applies at the campaign level above; feed counts remain team-wide.
 
   SELECT
     ISNULL(@TotalEmailsSent2, 0) AS totalEmailsSent,
     ISNULL(@MonthEmailsSent2, 0) AS monthEmailsSent,
     ISNULL(@TotalFeedPosts,   0) AS totalFeedPosts,
     ISNULL(@MonthFeedPosts,   0) AS monthFeedPosts;
+END;
+GO
+
+-- ============================================================
+-- sp_GetUserSports
+-- Returns the sports accessible to a staff user.
+-- Staff users are linked to sports via dbo.users_sports.
+-- @RequestingUserId = NULL → return all active sports (admin).
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_GetUserSports
+  @TenantId         UNIQUEIDENTIFIER,
+  @RequestingUserId UNIQUEIDENTIFIER = NULL
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  IF @RequestingUserId IS NULL
+  BEGIN
+    -- Admins: return every active sport in this tenant DB
+    SELECT s.id, s.name, s.abbr
+    FROM   dbo.sports s
+    WHERE  s.is_active = 1
+    ORDER  BY s.name;
+  END
+  ELSE
+  BEGIN
+    -- Regular staff: only sports linked via users_sports
+    SELECT s.id, s.name, s.abbr
+    FROM   dbo.sports        s
+    JOIN   dbo.users_sports  us ON us.sport_id = s.id
+    WHERE  us.user_id  = @RequestingUserId
+      AND  s.is_active = 1
+    ORDER  BY s.name;
+  END
+END;
+GO
+
+-- ============================================================
+-- sp_GetDashboardMetrics_All
+-- Aggregated alumni + player metrics across all sports (or one).
+-- Used by the "All Engagement" dashboard tab.
+--
+-- @SportId = NULL → totals across every sport the user can see.
+-- @SportId = <id> → filter to that sport only.
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_GetDashboardMetrics_All
+  @TenantId           UNIQUEIDENTIFIER,
+  @SportId            UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserRole NVARCHAR(50)     = NULL
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  IF @RequestingUserId IS NOT NULL
+  BEGIN
+    DECLARE @_uid3  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
+    DECLARE @_role3 NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
+    EXEC sp_set_session_context N'user_id',   @_uid3;
+    EXEC sp_set_session_context N'user_role', @_role3;
+  END
+
+  DECLARE @MonthStart3 DATETIME2 =
+    CAST(DATEADD(DAY, 1 - DAY(GETUTCDATE()), CAST(GETUTCDATE() AS DATE)) AS DATETIME2);
+  DECLARE @ThirtyDaysAgo3 DATETIME2 = DATEADD(DAY, -30, SYSUTCDATETIME());
+
+  -- ── Alumni interactions ────────────────────────────────────
+  DECLARE @TotalInteractions INT, @MonthInteractions INT;
+
+  SELECT @TotalInteractions = COUNT(*)
+  FROM   dbo.interaction_log il
+  WHERE  EXISTS (
+    SELECT 1 FROM dbo.vwAlumni va
+    WHERE  va.id = il.user_id
+      AND  (@SportId IS NULL OR va.sport_id = @SportId)
+  );
+
+  SELECT @MonthInteractions = COUNT(*)
+  FROM   dbo.interaction_log il
+  WHERE  il.logged_at >= @MonthStart3
+    AND  EXISTS (
+      SELECT 1 FROM dbo.vwAlumni va
+      WHERE  va.id = il.user_id
+        AND  (@SportId IS NULL OR va.sport_id = @SportId)
+    );
+
+  -- ── Alumni emails sent ─────────────────────────────────────
+  DECLARE @AlumniEmailsTotal INT, @AlumniEmailsMonth INT;
+
+  SELECT
+    @AlumniEmailsTotal = ISNULL(COUNT(*), 0),
+    @AlumniEmailsMonth = ISNULL(SUM(CASE WHEN om.sent_at >= @MonthStart3 THEN 1 ELSE 0 END), 0)
+  FROM   dbo.outreach_messages  om
+  JOIN   dbo.outreach_campaigns oc ON oc.id = om.campaign_id
+  WHERE  om.status           IN ('sent', 'responded')
+    AND  oc.target_audience  IN ('all', 'alumni_only')
+    AND  (@SportId IS NULL OR EXISTS (
+      SELECT 1 FROM dbo.vwAlumni va
+      WHERE  va.id = om.user_id AND va.sport_id = @SportId
+    ));
+
+  -- ── Alumni logins (last 30 days) ───────────────────────────
+  DECLARE @AlumniLoginsLast30 INT;
+
+  SELECT @AlumniLoginsLast30 = COUNT(DISTINCT ae.user_id)
+  FROM   dbo.auth_events ae
+  WHERE  ae.user_type   = 'alumni'
+    AND  ae.event_type  = 'login'
+    AND  ae.occurred_at >= @ThirtyDaysAgo3
+    AND  EXISTS (
+      SELECT 1 FROM dbo.vwAlumni va
+      WHERE  va.id = ae.user_id
+        AND  (@SportId IS NULL OR va.sport_id = @SportId)
+    );
+
+  -- ── Player emails sent ─────────────────────────────────────
+  DECLARE @PlayerEmailsTotal INT, @PlayerEmailsMonth INT;
+
+  SELECT
+    @PlayerEmailsTotal = ISNULL(COUNT(*), 0),
+    @PlayerEmailsMonth = ISNULL(SUM(CASE WHEN om2.sent_at >= @MonthStart3 THEN 1 ELSE 0 END), 0)
+  FROM   dbo.outreach_messages  om2
+  JOIN   dbo.outreach_campaigns oc2 ON oc2.id = om2.campaign_id
+  WHERE  om2.status          IN ('sent', 'responded')
+    AND  oc2.target_audience IN ('all', 'players_only')
+    AND  (@SportId IS NULL OR EXISTS (
+      SELECT 1 FROM dbo.vwPlayers vp
+      WHERE  vp.id = om2.user_id AND vp.sport_id = @SportId
+    ));
+
+  -- ── Feed posts ─────────────────────────────────────────────
+  DECLARE @TotalFeedPosts INT, @MonthFeedPosts INT;
+
+  SELECT
+    @TotalFeedPosts = ISNULL(COUNT(*), 0),
+    @MonthFeedPosts = ISNULL(SUM(CASE WHEN fp.published_at >= @MonthStart3 THEN 1 ELSE 0 END), 0)
+  FROM dbo.feed_posts fp;
+
+  -- ── Result row ────────────────────────────────────────────
+  SELECT
+    ISNULL(@TotalInteractions,  0) AS totalInteractions,
+    ISNULL(@MonthInteractions,  0) AS monthInteractions,
+    ISNULL(@AlumniEmailsTotal,  0) AS alumniEmailsTotal,
+    ISNULL(@AlumniEmailsMonth,  0) AS alumniEmailsMonth,
+    ISNULL(@AlumniLoginsLast30, 0) AS alumniLoginsLast30Days,
+    ISNULL(@PlayerEmailsTotal,  0) AS playerEmailsTotal,
+    ISNULL(@PlayerEmailsMonth,  0) AS playerEmailsMonth,
+    ISNULL(@TotalFeedPosts,     0) AS totalFeedPosts,
+    ISNULL(@MonthFeedPosts,     0) AS monthFeedPosts;
 END;
 GO

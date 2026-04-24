@@ -22,7 +22,7 @@ const POST_AUDIENCES     = ['all', 'alumni_only'] as const
 
 // ─── Alumni Tab ───────────────────────────────────────────────────────────────
 
-export default function AlumniTab() {
+export default function AlumniTab({ sportId }: { sportId?: string | null }) {
   const config = useTeamConfig()
   const tier   = config.subscriptionTier
 
@@ -31,6 +31,7 @@ export default function AlumniTab() {
       campaignAudiences={CAMPAIGN_AUDIENCES}
       postAudiences={POST_AUDIENCES}
       metricsEndpoint="/dashboard/alumni-metrics"
+      sportId={sportId}
       title="Alumni Engagement"
       subtitle="Outreach interactions, emails, and login activity"
       emailAudience="alumni_only"

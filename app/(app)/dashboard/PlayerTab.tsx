@@ -18,12 +18,13 @@ const POST_AUDIENCES     = ['all', 'players_only', 'by_position'] as const
 
 // ─── Player Tab ───────────────────────────────────────────────────────────────
 
-export default function PlayerTab() {
+export default function PlayerTab({ sportId }: { sportId?: string | null }) {
   return (
     <CommsDashboardTab
       campaignAudiences={CAMPAIGN_AUDIENCES}
       postAudiences={POST_AUDIENCES}
       metricsEndpoint="/dashboard/player-metrics"
+      sportId={sportId}
       title="Player Communications"
       subtitle="Emails and feed posts targeting current roster"
       emailAudience="players_only"

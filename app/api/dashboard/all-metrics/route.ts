@@ -1,18 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
 import { can } from '@/lib/permissions'
-import { sp_GetDashboardMetrics_Alumni } from '@/lib/db/procedures'
+import { sp_GetDashboardMetrics_All } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 import { featuresForTier, normalizeTier } from '@/lib/features'
 
-// ─── GET /api/dashboard/alumni-metrics ───────────────────────────────────────
+// ─── GET /api/dashboard/all-metrics ──────────────────────────────────────────
 // Optional query param: ?sportId=<uuid>
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession()
   if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
 
-  if (!can(session, 'alumni:view')) {
+  // Requires at least one of alumni or roster view
+  if (!can(session, 'alumni:view') && !can(session, 'roster:view')) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
   }
 
@@ -28,14 +29,13 @@ export async function GET(req: NextRequest) {
 
   return appDbContext.run(session.appDb, async () => {
     try {
-      const metrics = await sp_GetDashboardMetrics_Alumni({
+      const metrics = await sp_GetDashboardMetrics_All({
         tenantId:           session.currentTeamId!,
         sportId,
         requestingUserId:   session.userId,
         requestingUserRole: session.role,
       })
-      // features_available drives which MetricCards the AlumniTab renders
-      const tier = normalizeTier(null) // will be overridden by ThemeProvider at client
+      const tier = normalizeTier(null)
       return NextResponse.json({
         success:            true,
         data:               metrics,
@@ -43,8 +43,8 @@ export async function GET(req: NextRequest) {
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      console.error('[GET /api/dashboard/alumni-metrics]', msg)
-      return NextResponse.json({ success: false, error: 'Failed to load alumni metrics' }, { status: 500 })
+      console.error('[GET /api/dashboard/all-metrics]', msg)
+      return NextResponse.json({ success: false, error: 'Failed to load engagement metrics' }, { status: 500 })
     }
   })
 }
