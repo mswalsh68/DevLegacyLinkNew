@@ -556,14 +556,12 @@ BEGIN
   IF @RoleId = 1  -- platform_owner
   BEGIN
     SELECT
-      t.id               AS teamId,
+      t.id        AS teamId,
       t.abbr,
       t.name,
-      t.sport,
-      t.level,
-      t.is_active        AS isActive,
-      @RoleName          AS role,
-      tc.logo_url        AS logoUrl,
+      t.is_active AS isActive,
+      @RoleName   AS role,
+      tc.logo_url AS logoUrl,
       ISNULL(tc.color_primary, '#1B1B2F') AS colorPrimary,
       ISNULL(tc.color_accent,  '#B8973D') AS colorAccent
     FROM dbo.teams t
@@ -577,8 +575,6 @@ BEGIN
       t.id        AS teamId,
       t.abbr,
       t.name,
-      t.sport,
-      t.level,
       t.is_active AS isActive,
       @RoleName   AS role,
       tc.logo_url AS logoUrl,
