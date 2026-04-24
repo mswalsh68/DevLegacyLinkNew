@@ -12,6 +12,7 @@
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
+    "isomorphic-dompurify": "^3.10.0",
     "jose": "^6.2.2",
     "mssql": "^12.3.1",
     "next": "^15.3.0",
