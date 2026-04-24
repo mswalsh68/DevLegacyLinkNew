@@ -123,7 +123,7 @@ export async function POST(req: NextRequest) {
     data: {
       // sp_Login now returns `role` (role_name) + `roleId` (INT) directly.
       // Keeping `globalRole` fallback for any old tokens still in circulation.
-      user: { id: userId, ...userJson, role: userJson.role ?? userJson.globalRole },
+      user: { userId, id: userId, ...userJson, role: userJson.role ?? userJson.globalRole },
       accessToken,
       refreshToken,
     },
