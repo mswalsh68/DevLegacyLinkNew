@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import DOMPurify from 'isomorphic-dompurify'
 import { useAuth } from '@/providers/AuthProvider'
 import { useTeamConfig } from '@/providers/ThemeProvider'
 import { can, requiredRoleLabel, roleLabel } from '@/lib/permissions'
 import { resolvePostTokens } from '@/lib/feedTokens'
 import { AUDIENCE_BADGE } from '@/lib/statusMappings'
+import { useSafeHtml } from '@/hooks/useSafeHtml'
 import { theme } from '@/lib/theme'
 import { Alert }        from '@/components/ui/Alert'
 import { Badge }        from '@/components/ui/Badge'
@@ -38,11 +38,6 @@ const AUDIENCE_LABEL: Record<string, string> = {
   by_position:  'By Position',
   by_grad_year: 'By Grad Year',
   custom:       'Custom',
-}
-
-const SANITIZE_CONFIG = {
-  ALLOWED_TAGS: ['b','i','em','strong','a','p','ul','ol','li','br','h1','h2','h3','span','div'],
-  ALLOWED_ATTR: ['href','style','target'],
 }
 
 const PAGE_SIZE = 20
@@ -92,7 +87,7 @@ function FeedCard({
   const resolvedHtml = post.isWelcomePost
     ? resolvePostTokens(post.bodyHtml, config)
     : post.bodyHtml
-  const safeHtml = DOMPurify.sanitize(resolvedHtml, SANITIZE_CONFIG)
+  const safeHtml = useSafeHtml(resolvedHtml)
 
   const resolvedTitle = post.title
     ? (post.isWelcomePost ? resolvePostTokens(post.title, config) : post.title)

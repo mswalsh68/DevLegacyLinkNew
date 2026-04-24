@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import DOMPurify from 'isomorphic-dompurify'
 import { useAuth } from '@/providers/AuthProvider'
 import { useTeamConfig } from '@/providers/ThemeProvider'
 import { resolvePostTokens } from '@/lib/feedTokens'
 import { AUDIENCE_BADGE } from '@/lib/statusMappings'
+import { useSafeHtml } from '@/hooks/useSafeHtml'
 import { theme } from '@/lib/theme'
 import { Alert }  from '@/components/ui/Alert'
 import { Badge }  from '@/components/ui/Badge'
@@ -44,10 +44,6 @@ const AUDIENCE_LABEL: Record<string, string> = {
   custom:       'Custom',
 }
 
-const SANITIZE_CONFIG = {
-  ALLOWED_TAGS: ['b','i','em','strong','a','p','ul','ol','li','br','h1','h2','h3','span','div'],
-  ALLOWED_ATTR: ['href','style','target'],
-}
 
 const CAN_POST_ROLES = ['platform_owner','app_admin','head_coach','position_coach','alumni_director']
 
@@ -64,6 +60,13 @@ export default function FeedPostPage() {
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState('')
   const [canWrite, setCanWrite] = useState(false)
+
+  // useSafeHtml must be called unconditionally (rules of hooks) — before any early returns.
+  // post is null until loaded; passing '' means the hook returns '' until post arrives.
+  const resolvedHtml = post
+    ? (post.isWelcomePost ? resolvePostTokens(post.bodyHtml, config) : post.bodyHtml)
+    : ''
+  const safeHtml = useSafeHtml(resolvedHtml)
 
   useEffect(() => {
     const load = async () => {
@@ -123,11 +126,6 @@ export default function FeedPostPage() {
   const published = new Date(post.publishedAt).toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   })
-
-  const resolvedHtml = post.isWelcomePost
-    ? resolvePostTokens(post.bodyHtml, config)
-    : post.bodyHtml
-  const safeHtml = DOMPurify.sanitize(resolvedHtml, SANITIZE_CONFIG)
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto' }}>
