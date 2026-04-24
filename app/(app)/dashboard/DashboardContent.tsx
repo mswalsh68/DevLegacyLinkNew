@@ -346,6 +346,7 @@ export default function DashboardContent() {
           teamId={user.currentTeamId}
           teamName={config.teamName}
           sport={config.sport}
+          sports={sports}
           positions={config.positions}
           academicYears={config.academicYears}
           userId={user.userId}

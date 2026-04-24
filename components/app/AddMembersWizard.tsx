@@ -29,12 +29,19 @@ interface WizardResult {
   errors?:    string
 }
 
+interface SportOption {
+  id:   string
+  name: string
+  abbr: string
+}
+
 export interface AddMembersWizardProps {
   isOpen:        boolean
   onClose:       () => void
   teamId:        string
   teamName:      string
   sport:         string
+  sports:        SportOption[]
   positions:     string[]
   academicYears: string[]
   userId:        string
@@ -186,7 +193,7 @@ function parseCSV(text: string, type: MemberType): Record<string, string>[] {
 
 export function AddMembersWizard({
   isOpen, onClose,
-  teamId, teamName, sport, positions, academicYears, userId, appDb,
+  teamId, teamName, sport, sports, positions, academicYears, userId, appDb,
 }: AddMembersWizardProps) {
 
   const [step,       setStep]       = useState<WizardStep>('type')
@@ -194,6 +201,9 @@ export function AddMembersWizard({
   const [action,     setAction]     = useState<WizardAction | null>(null)
   const [result,     setResult]     = useState<WizardResult | null>(null)
   const [isPending,  startTransition] = useTransition()
+
+  // ── Sport selection (only relevant for player + alumni) ──────────────────
+  const [selSportId, setSelSportId] = useState(() => sports[0]?.id ?? '')
 
   // ── Create single: form state ─────────────────────────────────────────────
   const [email,           setEmail]           = useState('')
@@ -221,6 +231,7 @@ export function AddMembersWizard({
   // ── Navigation helpers ────────────────────────────────────────────────────
   function resetWizard() {
     setStep('type'); setMemberType(null); setAction(null); setResult(null)
+    setSelSportId(sports[0]?.id ?? '')
     setEmail(''); setFirstName(''); setLastName(''); setPosition('')
     setAcademicYear(''); setRecruitingClass(''); setGraduationYear('')
     setCoachRole('coach_staff'); setFormError('')
@@ -297,6 +308,7 @@ export function AddMembersWizard({
         recruitingClass: parseInt(recruitingClass) || new Date().getFullYear(),
         globalTeamId:    teamId,
         createdBy:       userId,
+        sportId:         selSportId || undefined,
       })
       if (res.success) {
         setResult({ success: true, message: `${firstName} ${lastName} added to the roster.` })
@@ -349,7 +361,7 @@ export function AddMembersWizard({
         academicYear:   r.academicYear   || r.academic_year || 'Freshman',
         recruitingClass: parseInt(r.recruitingClass || r.recruiting_class || '') || new Date().getFullYear(),
       }))
-      const res = await bulkCreatePlayers({ appDb, players, createdBy: userId, globalTeamId: teamId })
+      const res = await bulkCreatePlayers({ appDb, players, createdBy: userId, globalTeamId: teamId, sportId: selSportId || undefined })
       setResult({
         success: res.successCount > 0,
         message: `${res.successCount} player(s) added.`,
@@ -541,19 +553,37 @@ export function AddMembersWizard({
                   <Field label="Recruiting Class (year)">
                     <TextInput value={recruitingClass} onChange={setRecruitingClass} placeholder={String(new Date().getFullYear())} type="number" />
                   </Field>
+                  {sports.length > 1 && (
+                    <Field label="Sport / Program">
+                      <select value={selSportId} onChange={e => setSelSportId(e.target.value)} style={{ ...inputStyle, appearance: 'auto' }}>
+                        <option value="">Select sport…</option>
+                        {sports.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </Field>
+                  )}
                 </>
               )}
 
               {/* Alumni-specific */}
               {memberType === 'alumni' && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <Field label="Position">
-                    <SelectInput value={position} onChange={setPosition} options={positions} />
-                  </Field>
-                  <Field label="Graduation Year">
-                    <TextInput value={graduationYear} onChange={setGraduationYear} placeholder="2019" type="number" />
-                  </Field>
-                </div>
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <Field label="Position">
+                      <SelectInput value={position} onChange={setPosition} options={positions} />
+                    </Field>
+                    <Field label="Graduation Year">
+                      <TextInput value={graduationYear} onChange={setGraduationYear} placeholder="2019" type="number" />
+                    </Field>
+                  </div>
+                  {sports.length > 1 && (
+                    <Field label="Sport / Program">
+                      <select value={selSportId} onChange={e => setSelSportId(e.target.value)} style={{ ...inputStyle, appearance: 'auto' }}>
+                        <option value="">Select sport…</option>
+                        {sports.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </Field>
+                  )}
+                </>
               )}
 
               {/* Coach-specific */}
