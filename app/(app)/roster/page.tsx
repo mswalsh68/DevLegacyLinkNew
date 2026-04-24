@@ -117,19 +117,18 @@ export default function RosterPage() {
         </div>
       }
     >
-      <div className="table-scroll" style={{ backgroundColor: 'var(--color-card-bg)', borderRadius: 12, border: '1px solid var(--color-card-border)', overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }} aria-label="Player roster">
+      {/* Outer div clips border-radius; inner div scrolls horizontally */}
+      <div style={{ borderRadius: 12, border: '1px solid var(--color-card-border)', overflow: 'hidden' }}>
+      <div className="table-scroll" style={{ backgroundColor: 'var(--color-card-bg)' }}>
+        <table style={{ width: '100%', minWidth: 560, borderCollapse: 'collapse' }} aria-label="Player roster">
           <thead>
             <tr style={{ backgroundColor: theme.gray50, borderBottom: `1px solid ${theme.gray200}` }}>
-              {['#', 'Name', 'Position', 'Year', 'Status', ''].map((h) => (
-                <th
-                  key={h}
-                  scope="col"
-                  style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}
-                >
-                  {h || <span className="sr-only">View</span>}
-                </th>
-              ))}
+              <th scope="col" style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>#</th>
+              <th scope="col" className="sticky-name-th" style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Name</th>
+              <th scope="col" style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Position</th>
+              <th scope="col" style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Year</th>
+              <th scope="col" style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Status</th>
+              <th scope="col" style={{ padding: '12px 20px' }}><span className="sr-only">View</span></th>
             </tr>
           </thead>
           <tbody>
@@ -156,8 +155,8 @@ export default function RosterPage() {
                   </div>
                 </td>
 
-                {/* Name */}
-                <td style={{ padding: '12px 20px' }}>
+                {/* Name — sticky */}
+                <td className="sticky-name-td" style={{ padding: '12px 20px' }}>
                   <span style={{ fontWeight: 600, fontSize: 14, color: theme.gray900 }}>
                     {player.lastName}, {player.firstName}
                   </span>
@@ -189,6 +188,7 @@ export default function RosterPage() {
             ))}
           </tbody>
         </table>
+      </div>
       </div>
 
       <Pagination page={page} total={total} pageSize={PAGE_SIZE} onPage={setPage} />
