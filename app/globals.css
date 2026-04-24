@@ -208,6 +208,26 @@ body {
   .nav-switch-label { display: none !important; }
 }
 
+/* Sticky first data column inside .table-scroll containers.
+   Background must be set explicitly so the cell paints over
+   scrolled-past columns. A faint right shadow marks the freeze line. */
+.sticky-name-th {
+  position:         sticky;
+  left:             0;
+  z-index:          2;
+  background-color: var(--color-gray-50);   /* matches thead row */
+  box-shadow:       2px 0 6px rgba(0,0,0,0.07);
+  clip-path:        inset(0 -8px 0 0);      /* contain shadow to right edge */
+}
+.sticky-name-td {
+  position:         sticky;
+  left:             0;
+  z-index:          1;
+  background-color: var(--color-card-bg);
+  box-shadow:       2px 0 6px rgba(0,0,0,0.07);
+  clip-path:        inset(0 -8px 0 0);
+}
+
 /* ============================================================
    MARKETING COMPONENT CLASSES
    ============================================================ */

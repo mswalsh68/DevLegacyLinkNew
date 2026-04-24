@@ -138,19 +138,20 @@ export default function AlumniPage() {
         </>
       }
     >
-      <div className="table-scroll" style={{ backgroundColor: 'var(--color-card-bg)', borderRadius: 12, border: '1px solid var(--color-card-border)', overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }} aria-label="Alumni list">
+      {/* Outer div clips border-radius; inner div scrolls horizontally */}
+      <div style={{ borderRadius: 12, border: '1px solid var(--color-card-border)', overflow: 'hidden' }}>
+      <div className="table-scroll" style={{ backgroundColor: 'var(--color-card-bg)' }}>
+        <table style={{ width: '100%', minWidth: 740, borderCollapse: 'collapse' }} aria-label="Alumni list">
           <thead>
             <tr style={{ backgroundColor: theme.gray50, borderBottom: `1px solid ${theme.gray200}` }}>
-              {['Class', 'Name', 'Position', 'Employer', 'Location', 'Status', 'Donor', ''].map((h) => (
-                <th
-                  key={h}
-                  scope="col"
-                  style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}
-                >
-                  {h || <span className="sr-only">View</span>}
-                </th>
-              ))}
+              <th scope="col" style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Class</th>
+              <th scope="col" className="sticky-name-th" style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Name</th>
+              <th scope="col" style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Position</th>
+              <th scope="col" style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Employer</th>
+              <th scope="col" style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Location</th>
+              <th scope="col" style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Status</th>
+              <th scope="col" style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Donor</th>
+              <th scope="col" style={{ padding: '12px 20px' }}><span className="sr-only">View</span></th>
             </tr>
           </thead>
           <tbody>
@@ -177,8 +178,8 @@ export default function AlumniPage() {
                   </div>
                 </td>
 
-                {/* Name */}
-                <td style={{ padding: '12px 20px' }}>
+                {/* Name — sticky */}
+                <td className="sticky-name-td" style={{ padding: '12px 20px' }}>
                   <div style={{ fontWeight: 600, fontSize: 14, color: theme.gray900 }}>
                     {a.lastName}, {a.firstName}
                   </div>
@@ -227,6 +228,7 @@ export default function AlumniPage() {
             ))}
           </tbody>
         </table>
+      </div>
       </div>
 
       <Pagination page={page} total={total} pageSize={PAGE_SIZE} onPage={setPage} />
