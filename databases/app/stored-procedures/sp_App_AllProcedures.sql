@@ -2481,49 +2481,87 @@ GO
 
 -- ============================================================
 -- sp_GetDashboardMetrics_Alumni
--- Returns headline metrics for the Alumni Engagement tab.
+-- Returns Phase 1 alumni engagement metrics for the dashboard.
+--
+-- All alumni aggregations flow through dbo.vwAlumni to enforce
+-- the data wall (RLS on dbo.users applies transparently).
+-- @TenantId is passed explicitly for defense-in-depth even
+-- though this SP runs inside the per-tenant AppDB.
+--
+-- Phase 1 metrics:
+--   interactions     — logged outreach interactions
+--   emails_sent      — alumni email messages sent/responded
+--   login_frequency  — distinct alumni who logged in last 30 d
+--   email_open_rate  — 0 placeholder (Phase 2: pixel pipeline)
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetDashboardMetrics_Alumni
+  @TenantId           UNIQUEIDENTIFIER,
   @RequestingUserId   UNIQUEIDENTIFIER = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
-  END
 
-  DECLARE @MonthAgo DATETIME2 = DATEADD(MONTH, -1, SYSUTCDATETIME());
+  -- Time windows
+  DECLARE @MonthStart    DATETIME2 =
+    CAST(DATEADD(DAY, 1 - DAY(GETUTCDATE()), CAST(GETUTCDATE() AS DATE)) AS DATETIME2);
+  DECLARE @ThirtyDaysAgo DATETIME2 = DATEADD(DAY, -30, SYSUTCDATETIME());
 
-  DECLARE @TotalInteractions INT, @MonthInteractions INT;
+  -- ── Interactions ──────────────────────────────────────────
+  -- Join through vwAlumni to enforce the wall.
+  DECLARE @TotalInteractions INT;
+  DECLARE @MonthInteractions INT;
+
+  SELECT @TotalInteractions = COUNT(*)
+  FROM   dbo.interaction_log il
+  WHERE  EXISTS (SELECT 1 FROM dbo.vwAlumni va WHERE va.id = il.user_id);
+
+  SELECT @MonthInteractions = COUNT(*)
+  FROM   dbo.interaction_log il
+  WHERE  il.logged_at >= @MonthStart
+    AND  EXISTS (SELECT 1 FROM dbo.vwAlumni va WHERE va.id = il.user_id);
+
+  -- ── Emails sent to alumni ─────────────────────────────────
+  -- outreach_messages.alumni_id references dbo.alumni (status_id=2),
+  -- which is the same population as vwAlumni.
+  DECLARE @TotalEmailsSent INT;
+  DECLARE @MonthEmailsSent INT;
+
+  SELECT @TotalEmailsSent = COUNT(om.id)
+  FROM   dbo.outreach_messages  om
+  JOIN   dbo.outreach_campaigns oc ON oc.id = om.campaign_id
+  WHERE  om.status        IN ('sent', 'responded')
+    AND  oc.target_audience IN ('all', 'alumni_only')
+    AND  EXISTS (SELECT 1 FROM dbo.vwAlumni va WHERE va.id = om.user_id);
+
+  SELECT @MonthEmailsSent = COUNT(om.id)
+  FROM   dbo.outreach_messages  om
+  JOIN   dbo.outreach_campaigns oc ON oc.id = om.campaign_id
+  WHERE  om.status        IN ('sent', 'responded')
+    AND  om.sent_at       >= @MonthStart
+    AND  oc.target_audience IN ('all', 'alumni_only')
+    AND  EXISTS (SELECT 1 FROM dbo.vwAlumni va WHERE va.id = om.user_id);
+
+  -- ── Alumni login frequency (last 30 days) ─────────────────
+  -- Counts distinct alumni who logged in; auth_events.user_id
+  -- matches dbo.users.id for alumni (status_id = 2 / vwAlumni).
+  DECLARE @AlumniLoginsLast30 INT;
+
+  SELECT @AlumniLoginsLast30 = COUNT(DISTINCT ae.user_id)
+  FROM   dbo.auth_events ae
+  WHERE  ae.user_type   = 'alumni'
+    AND  ae.event_type  = 'login'
+    AND  ae.occurred_at >= @ThirtyDaysAgo
+    AND  EXISTS (SELECT 1 FROM dbo.vwAlumni va WHERE va.id = ae.user_id);
+
+  -- ── Result row ────────────────────────────────────────────
   SELECT
-    @TotalInteractions = COUNT(*),
-    @MonthInteractions = SUM(CASE WHEN logged_at >= @MonthAgo THEN 1 ELSE 0 END)
-  FROM dbo.interaction_log;
-
-  DECLARE @TotalEmailsSent INT, @MonthEmailsSent INT, @TotalOpened INT;
-  SELECT
-    @TotalEmailsSent = ISNULL(COUNT(*), 0),
-    @MonthEmailsSent = ISNULL(SUM(CASE WHEN om.sent_at >= @MonthAgo THEN 1 ELSE 0 END), 0),
-    @TotalOpened     = ISNULL(SUM(CASE WHEN om.opened_at IS NOT NULL THEN 1 ELSE 0 END), 0)
-  FROM dbo.outreach_messages om
-  JOIN dbo.outreach_campaigns oc ON oc.id = om.campaign_id
-  WHERE oc.target_audience IN ('all', 'alumni_only')
-    AND om.status IN ('sent', 'responded');
-
-  SELECT
-    ISNULL(@TotalInteractions, 0) AS totalInteractions,
-    ISNULL(@MonthInteractions,  0) AS monthInteractions,
-    ISNULL(@TotalEmailsSent,   0) AS totalEmailsSent,
-    ISNULL(@MonthEmailsSent,   0) AS monthEmailsSent,
-    0                              AS alumniLoginsLast30Days,
-    CASE WHEN ISNULL(@TotalEmailsSent, 0) = 0 THEN 0
-         ELSE CAST(100.0 * @TotalOpened / @TotalEmailsSent AS DECIMAL(5,1))
-    END                            AS emailOpenRatePct;
+    ISNULL(@TotalInteractions,   0) AS totalInteractions,
+    ISNULL(@MonthInteractions,   0) AS monthInteractions,
+    ISNULL(@TotalEmailsSent,     0) AS totalEmailsSent,
+    ISNULL(@MonthEmailsSent,     0) AS monthEmailsSent,
+    ISNULL(@AlumniLoginsLast30,  0) AS alumniLoginsLast30Days,
+    0                               AS emailOpenRatePct;   -- Phase 2 placeholder
 END;
 GO
 
@@ -2532,6 +2570,7 @@ GO
 -- Returns headline metrics for the Player Communications tab.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetDashboardMetrics_Players
+  @TenantId           UNIQUEIDENTIFIER = NULL,
   @RequestingUserId   UNIQUEIDENTIFIER = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS

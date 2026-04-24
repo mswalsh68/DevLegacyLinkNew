@@ -19,9 +19,14 @@ export async function GET() {
     return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
   }
 
+  if (!session.currentTeamId) {
+    return NextResponse.json({ success: false, error: 'No active team. Please switch teams and try again.' }, { status: 400 })
+  }
+
   return appDbContext.run(session.appDb, async () => {
     try {
       const metrics = await sp_GetDashboardMetrics_Alumni({
+        tenantId:           session.currentTeamId!,
         requestingUserId:   session.userId,
         requestingUserRole: session.role,
       })
