@@ -52,9 +52,10 @@ interface CreateEmailModalProps {
   onSent:             () => void
   emailAudience:      string
   emailAudienceLabel: string
+  sportId?:           string | null
 }
 
-function CreateEmailModal({ onClose, onSent, emailAudience, emailAudienceLabel }: CreateEmailModalProps) {
+function CreateEmailModal({ onClose, onSent, emailAudience, emailAudienceLabel, sportId }: CreateEmailModalProps) {
   const [subject,    setSubject]    = useState('')
   const [body,       setBody]       = useState('')
   const [postToFeed, setPostToFeed] = useState(true)
@@ -80,6 +81,7 @@ function CreateEmailModal({ onClose, onSent, emailAudience, emailAudienceLabel }
             audience:     emailAudience,
             alsoEmail:    true,
             emailSubject: subject,
+            sportId:      sportId ?? null,
           }),
         }).then(r => r.json())
         if (!res.success) throw new Error(res.error ?? 'Failed to send')
@@ -94,6 +96,7 @@ function CreateEmailModal({ onClose, onSent, emailAudience, emailAudienceLabel }
             targetAudience: emailAudience,
             subjectLine:    subject,
             bodyHtml:       body,
+            sportId:        sportId ?? null,
           }),
         }).then(r => r.json())
         if (!campRes.success) throw new Error(campRes.error ?? 'Failed to create campaign')
@@ -353,6 +356,7 @@ export default function CommsDashboardTab({
           onSent={handleSent}
           emailAudience={emailAudience}
           emailAudienceLabel={emailAudienceLabel}
+          sportId={sportId}
         />
       )}
     </>

@@ -1,6 +1,6 @@
 'use client'
 
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/providers/AuthProvider'
 import { useTeamConfig } from '@/providers/ThemeProvider'
@@ -29,14 +29,21 @@ const GRAD_YEAR_OPTIONS = Array.from({ length: 30 }, (_, i) => {
   return { value: String(y), label: String(y) }
 })
 
-// Only staff roles can create posts
 const CAN_POST_ROLES = ['platform_owner','app_admin','head_coach','position_coach','alumni_director']
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface SportOption {
+  id:   string
+  name: string
+  abbr: string
+}
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function NewPostPage() {
-  const router          = useRouter()
-  const config          = useTeamConfig()
+  const router              = useRouter()
+  const config              = useTeamConfig()
   const { user, isLoading } = useAuth()
 
   const [title,        setTitle]        = useState('')
@@ -52,10 +59,34 @@ export default function NewPostPage() {
   const [customPos,    setCustomPos]    = useState('')
   const [customYear,   setCustomYear]   = useState('')
 
+  // Sport selection
+  const [sports,        setSports]        = useState<SportOption[]>([])
+  const [selSportIds,   setSelSportIds]   = useState<string[]>([])
+  const [sportsLoaded,  setSportsLoaded]  = useState(false)
+
+  // Multi-sport confirmation step
+  const [confirming, setConfirming] = useState(false)
+
   const [submitting, setSubmitting] = useState(false)
   const [error,      setError]      = useState('')
 
   const POSITION_OPTIONS = config.positions.map(p => ({ value: p, label: p }))
+
+  // Load sports on mount (after access check passes)
+  useEffect(() => {
+    if (!user || !CAN_POST_ROLES.includes(user.role ?? '')) return
+    fetch('/api/sports', { credentials: 'include' })
+      .then(r => r.json())
+      .then((data: { success: boolean; data: SportOption[] }) => {
+        if (!data.success) return
+        const list = data.data ?? []
+        setSports(list)
+        // Default: all sports selected
+        setSelSportIds(list.map(s => s.id))
+        setSportsLoaded(true)
+      })
+      .catch(() => setSportsLoaded(true))
+  }, [user])
 
   // Access guard
   if (isLoading) return null
@@ -87,10 +118,29 @@ export default function NewPostPage() {
     setSelGradYears(prev => prev.includes(y) ? prev.filter(x => x !== y) : [...prev, y])
   }
 
+  function toggleSport(id: string) {
+    setSelSportIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+
+  // Derive single sportId to send: 1 selected → that id; multiple/all → null
+  function resolvedSportId(): string | null {
+    if (selSportIds.length === 1) return selSportIds[0]
+    return null
+  }
+
+  const isMultiSport = selSportIds.length > 1
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     if (!bodyHtml.trim()) { setError('Post body is required.'); return }
     if (alsoEmail && !emailSubject.trim()) { setError('Email subject is required when sending as email.'); return }
+
+    // If multi-sport and not yet confirmed, show confirmation step
+    if (isMultiSport && sports.length > 1 && !confirming) {
+      setConfirming(true)
+      return
+    }
+
     setError('')
     setSubmitting(true)
     try {
@@ -103,6 +153,7 @@ export default function NewPostPage() {
           bodyHtml,
           audience,
           audienceJson: buildAudienceJson(),
+          sportId:      resolvedSportId(),
           isPinned,
           alsoEmail,
           emailSubject: alsoEmail ? emailSubject.trim() : undefined,
@@ -114,10 +165,15 @@ export default function NewPostPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create post')
       setSubmitting(false)
+      setConfirming(false)
     }
   }
 
   const audienceLabel = AUDIENCE_OPTIONS.find(o => o.value === audience)?.label ?? audience
+
+  const selectedSportNames = sports
+    .filter(s => selSportIds.includes(s.id))
+    .map(s => s.name)
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -271,6 +327,44 @@ export default function NewPostPage() {
             </div>
           )}
 
+          {/* Sport selector — only shown if user has 2+ sports */}
+          {sportsLoaded && sports.length > 1 && (
+            <div style={{ marginBottom: 18 }}>
+              <label
+                style={{ fontSize: 13, fontWeight: 600, color: theme.gray700, display: 'block', marginBottom: 8 }}
+              >
+                Programs
+              </label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {sports.map(s => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => toggleSport(s.id)}
+                    style={{
+                      padding:         '6px 14px',
+                      borderRadius:    'var(--radius-full)',
+                      border:          `1.5px solid ${selSportIds.includes(s.id) ? 'var(--color-primary)' : 'var(--color-gray-200)'}`,
+                      backgroundColor: selSportIds.includes(s.id) ? 'var(--color-primary-light)' : 'var(--color-card-bg)',
+                      color:           selSportIds.includes(s.id) ? 'var(--color-primary-dark)' : theme.gray600,
+                      fontSize:        13,
+                      fontWeight:      600,
+                      cursor:          'pointer',
+                      transition:      'all 0.15s',
+                    }}
+                  >
+                    {s.name}
+                  </button>
+                ))}
+              </div>
+              {selSportIds.length === 0 && (
+                <p style={{ fontSize: 12, color: 'var(--color-danger)', marginTop: 6, marginBottom: 0 }}>
+                  Select at least one program.
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Options: pin + email */}
           <div style={{ display: 'flex', gap: 24, marginBottom: 18, paddingTop: 4 }}>
             <label
@@ -323,7 +417,7 @@ export default function NewPostPage() {
             </div>
           )}
 
-          {/* Audience confirmation */}
+          {/* Audience + sport confirmation bar */}
           <div
             style={{
               padding:         '14px 18px',
@@ -336,24 +430,65 @@ export default function NewPostPage() {
             }}
           >
             <strong>Audience:</strong> {audienceLabel}
+            {sports.length > 1 && selectedSportNames.length > 0 && (
+              <span style={{ marginLeft: 12 }}>
+                · {selectedSportNames.length === sports.length
+                  ? 'all programs'
+                  : selectedSportNames.join(', ')}
+              </span>
+            )}
             {alsoEmail && (
               <span style={{ marginLeft: 12 }}>· will also be sent as email</span>
             )}
           </div>
 
-          {/* Actions */}
-          <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
-            <Button
-              label="Cancel"
-              variant="outline"
-              onClick={() => router.push('/feed')}
-            />
-            <Button
-              label={submitting ? 'Publishing...' : (alsoEmail ? 'Publish + Send Email' : 'Publish')}
-              type="submit"
-              loading={submitting}
-            />
-          </div>
+          {/* Multi-sport confirmation step */}
+          {confirming ? (
+            <div
+              style={{
+                padding:         '16px 18px',
+                backgroundColor: '#fffbeb',
+                borderRadius:    'var(--radius-md)',
+                border:          '1px solid #f59e0b',
+                marginBottom:    0,
+              }}
+            >
+              <p style={{ fontSize: 14, fontWeight: 600, color: '#92400e', margin: '0 0 6px 0' }}>
+                Post to multiple programs?
+              </p>
+              <p style={{ fontSize: 13, color: '#78350f', margin: '0 0 16px 0' }}>
+                This post will be visible to <strong>{selectedSportNames.join(', ')}</strong>.
+                Members across all selected programs will see it in their feed.
+              </p>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <Button
+                  label="Go back"
+                  variant="outline"
+                  onClick={() => setConfirming(false)}
+                />
+                <Button
+                  label={submitting ? 'Publishing...' : (alsoEmail ? 'Yes, publish to all + send email' : 'Yes, publish to all programs')}
+                  type="submit"
+                  loading={submitting}
+                />
+              </div>
+            </div>
+          ) : (
+            /* Normal action row */
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+              <Button
+                label="Cancel"
+                variant="outline"
+                onClick={() => router.push('/feed')}
+              />
+              <Button
+                label={submitting ? 'Publishing...' : (alsoEmail ? 'Publish + Send Email' : 'Publish')}
+                type="submit"
+                loading={submitting}
+                disabled={sports.length > 1 && selSportIds.length === 0}
+              />
+            </div>
+          )}
         </div>
       </form>
     </div>
