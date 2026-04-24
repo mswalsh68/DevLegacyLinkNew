@@ -39,7 +39,17 @@ export interface AddMembersWizardProps {
   academicYears: string[]
   userId:        string
   appDb:         string   // tenant App DB name from session.appDb
+  userRoleId:    number   // creator's roleId — enforces "at or below your level"
 }
+
+// Roles that can be assigned to staff/coach members, ordered by roleId.
+// Only roles with roleId > creator's roleId are shown.
+const STAFF_ROLES: { value: 'app_admin' | 'head_coach' | 'position_coach' | 'alumni_director'; label: string; roleId: number }[] = [
+  { value: 'app_admin',       label: 'App Admin',        roleId: 2 },
+  { value: 'head_coach',      label: 'Head Coach',       roleId: 3 },
+  { value: 'position_coach',  label: 'Position Coach',   roleId: 4 },
+  { value: 'alumni_director', label: 'Alumni Director',  roleId: 5 },
+]
 
 // ─── Shared style tokens ──────────────────────────────────────────────────────
 
@@ -186,8 +196,10 @@ function parseCSV(text: string, type: MemberType): Record<string, string>[] {
 
 export function AddMembersWizard({
   isOpen, onClose,
-  teamId, teamName, sport, positions, academicYears, userId, appDb,
+  teamId, teamName, sport, positions, academicYears, userId, appDb, userRoleId,
 }: AddMembersWizardProps) {
+  // Roles the current user is allowed to assign (must be below their own level)
+  const assignableStaffRoles = STAFF_ROLES.filter(r => r.roleId > userRoleId)
 
   const [step,       setStep]       = useState<WizardStep>('type')
   const [memberType, setMemberType] = useState<MemberType | null>(null)
@@ -203,7 +215,7 @@ export function AddMembersWizard({
   const [academicYear,    setAcademicYear]     = useState('')
   const [recruitingClass, setRecruitingClass] = useState('')
   const [graduationYear,  setGraduationYear]  = useState('')
-  const [coachRole,       setCoachRole]       = useState<'coach_staff' | 'readonly' | 'global_admin'>('coach_staff')
+  const [coachRole,       setCoachRole]       = useState<'app_admin' | 'head_coach' | 'position_coach' | 'alumni_director'>('head_coach')
   const [formError,       setFormError]       = useState('')
 
   // ── Bulk upload state ─────────────────────────────────────────────────────
@@ -212,7 +224,7 @@ export function AddMembersWizard({
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // ── Invite state ──────────────────────────────────────────────────────────
-  const [inviteRole,     setInviteRole]     = useState('roster')
+  const [inviteRole,     setInviteRole]     = useState('player')
   const [inviteExpiry,   setInviteExpiry]   = useState('')
   const [inviteMaxUses,  setInviteMaxUses]  = useState('')
   const [generatedUrl,   setGeneratedUrl]   = useState('')
@@ -223,9 +235,9 @@ export function AddMembersWizard({
     setStep('type'); setMemberType(null); setAction(null); setResult(null)
     setEmail(''); setFirstName(''); setLastName(''); setPosition('')
     setAcademicYear(''); setRecruitingClass(''); setGraduationYear('')
-    setCoachRole('coach_staff'); setFormError('')
+    setCoachRole('head_coach'); setFormError('')
     setCsvRows([]); setCsvFileName('')
-    setInviteRole('roster'); setInviteExpiry(''); setInviteMaxUses('')
+    setInviteRole('player'); setInviteExpiry(''); setInviteMaxUses('')
     setGeneratedUrl(''); setUrlCopied(false)
   }
 
@@ -246,7 +258,7 @@ export function AddMembersWizard({
     setAction(a)
     if (a === 'invite') {
       // Default invite role based on member type
-      setInviteRole(memberType === 'coach' ? 'coach_staff' : memberType === 'alumni' ? 'alumni' : 'roster')
+      setInviteRole(memberType === 'coach' ? (assignableStaffRoles[0]?.value ?? 'head_coach') : memberType === 'alumni' ? 'alumni' : 'player')
     }
     setStep('configure')
   }
@@ -385,7 +397,7 @@ export function AddMembersWizard({
           firstName: r.firstName || r.first_name || '',
           lastName:  r.lastName  || r.last_name  || '',
           teamId,
-          role: 'coach_staff',
+          role: coachRole,
         })
         if (res.success) success++; else failed++
       }
@@ -564,9 +576,9 @@ export function AddMembersWizard({
                     onChange={e => setCoachRole(e.target.value as typeof coachRole)}
                     style={{ ...inputStyle, appearance: 'auto' }}
                   >
-                    <option value="coach_staff">Coach / Staff</option>
-                    <option value="readonly">Read Only</option>
-                    <option value="global_admin">Admin</option>
+                    {assignableStaffRoles.map(r => (
+                      <option key={r.value} value={r.value}>{r.label}</option>
+                    ))}
                   </select>
                 </Field>
               )}
@@ -681,10 +693,11 @@ export function AddMembersWizard({
                   onChange={e => setInviteRole(e.target.value)}
                   style={{ ...inputStyle, appearance: 'auto' }}
                 >
-                  <option value="roster">Player (Roster)</option>
+                  <option value="player">Player</option>
                   <option value="alumni">Alumni</option>
-                  <option value="coach_staff">Coach / Staff</option>
-                  <option value="readonly">Read Only</option>
+                  {assignableStaffRoles.map(r => (
+                    <option key={r.value} value={r.value}>{r.label}</option>
+                  ))}
                 </select>
               </Field>
 

@@ -350,6 +350,7 @@ export default function DashboardContent() {
           academicYears={config.academicYears}
           userId={user.userId}
           appDb={user.appDb}
+          userRoleId={user.roleId}
         />
       )}
     </>
