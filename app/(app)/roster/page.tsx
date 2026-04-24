@@ -20,6 +20,12 @@ import { theme } from '@/lib/theme'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+interface SportOption {
+  id:   string
+  name: string
+  abbr: string
+}
+
 interface Player {
   userId:       string
   firstName:    string
@@ -49,13 +55,23 @@ export default function RosterPage() {
   const isAdmin = ['global_admin', 'platform_owner', 'app_admin'].includes(user?.role ?? '')
 
   // All hooks must be called unconditionally before any early return.
-  const { filters: { search, position, year }, setFilter, page, setPage } =
-    useFilteredPagination({ search: '', position: '', year: '' })
+  const { filters: { search, position, year, sportId }, setFilter, page, setPage } =
+    useFilteredPagination({ search: '', position: '', year: '', sportId: '' })
 
   const [players,  setPlayers]  = useState<Player[]>([])
   const [total,    setTotal]    = useState(0)
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState<string | null>(null)
+  const [sports,   setSports]   = useState<SportOption[]>([])
+
+  useEffect(() => {
+    fetch('/api/sports', { credentials: 'include' })
+      .then(r => r.json())
+      .then((d: { success: boolean; data: SportOption[] }) => {
+        if (d.success) setSports(d.data ?? [])
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!can(user, 'roster:view')) return  // don't fetch if no access
@@ -67,6 +83,7 @@ export default function RosterPage() {
     if (search)   params.set('search',      search)
     if (position) params.set('position',    position)
     if (year)     params.set('academicYear', year)
+    if (sportId)  params.set('sportId',     sportId)
 
     fetch(`/api/players?${params}`, { credentials: 'include' })
       .then((r) => r.json() as Promise<PlayersResponse>)
@@ -77,7 +94,7 @@ export default function RosterPage() {
       })
       .catch(() => setError('Failed to load players.'))
       .finally(() => setLoading(false))
-  }, [page, search, position, year, user]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [page, search, position, year, sportId, user]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const positionOptions = [
     { value: '', label: 'All Positions' },
@@ -87,6 +104,11 @@ export default function RosterPage() {
   const yearOptions = [
     { value: '', label: 'All Years' },
     ...config.academicYears.map((y) => ({ value: y, label: y })),
+  ]
+
+  const sportOptions = [
+    { value: '', label: 'All Sports' },
+    ...sports.map((s) => ({ value: s.id, label: s.name })),
   ]
 
   // ── Access control ──────────────────────────────────────────────────────────
@@ -106,7 +128,7 @@ export default function RosterPage() {
       ) : undefined}
       alerts={error ? <Alert message={error} variant="error" onClose={() => setError(null)} /> : undefined}
       filters={
-        <div className="filters-grid-3">
+        <div className={sports.length > 1 ? 'filters-grid-4' : 'filters-grid-3'}>
           <Input
             value={search}
             onChange={(v) => setFilter('search', v)}
@@ -114,6 +136,9 @@ export default function RosterPage() {
           />
           <Select value={year}     onChange={(v) => setFilter('year', v)}     options={yearOptions}     />
           <Select value={position} onChange={(v) => setFilter('position', v)} options={positionOptions} />
+          {sports.length > 1 && (
+            <Select value={sportId as string} onChange={(v) => setFilter('sportId', v)} options={sportOptions} />
+          )}
         </div>
       }
     >

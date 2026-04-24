@@ -19,6 +19,12 @@ import { theme } from '@/lib/theme'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+interface SportOption {
+  id:   string
+  name: string
+  abbr: string
+}
+
 interface AlumniRecord {
   userId:          string
   firstName:       string
@@ -58,13 +64,23 @@ export default function AlumniPage() {
   const { user, isLoading } = useAuth()
 
   // All hooks called unconditionally before any early return.
-  const { filters: { search, status, position, isDonor }, setFilter, page, setPage } =
-    useFilteredPagination({ search: '', status: '', position: '', isDonor: false })
+  const { filters: { search, status, position, isDonor, sportId }, setFilter, page, setPage } =
+    useFilteredPagination({ search: '', status: '', position: '', isDonor: false, sportId: '' })
 
   const [alumni,   setAlumni]  = useState<AlumniRecord[]>([])
   const [total,    setTotal]   = useState(0)
   const [loading,  setLoading] = useState(true)
   const [error,    setError]   = useState<string | null>(null)
+  const [sports,   setSports]  = useState<SportOption[]>([])
+
+  useEffect(() => {
+    fetch('/api/sports', { credentials: 'include' })
+      .then(r => r.json())
+      .then((d: { success: boolean; data: SportOption[] }) => {
+        if (d.success) setSports(d.data ?? [])
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!can(user, 'alumni:view')) return  // don't fetch if no access
@@ -77,6 +93,7 @@ export default function AlumniPage() {
     if (status)   params.set('status',   status)
     if (position) params.set('position', position)
     if (isDonor)  params.set('isDonor',  'true')
+    if (sportId)  params.set('sportId',  sportId as string)
 
     fetch(`/api/alumni?${params}`, { credentials: 'include' })
       .then((r) => r.json() as Promise<AlumniResponse>)
@@ -87,11 +104,16 @@ export default function AlumniPage() {
       })
       .catch(() => setError('Failed to load alumni.'))
       .finally(() => setLoading(false))
-  }, [page, search, status, position, isDonor, user]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [page, search, status, position, isDonor, sportId, user]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const positionOptions = [
     { value: '', label: 'All Positions' },
     ...config.positions.map((p) => ({ value: p, label: p })),
+  ]
+
+  const sportOptions = [
+    { value: '', label: 'All Sports' },
+    ...sports.map((s) => ({ value: s.id, label: s.name })),
   ]
 
   const alumniLabel = config.alumniLabel ?? 'Alumni'
@@ -109,7 +131,7 @@ export default function AlumniPage() {
       alerts={error ? <Alert message={error} variant="error" onClose={() => setError(null)} /> : undefined}
       filters={
         <>
-          <div className="filters-grid-3" style={{ marginBottom: 12 }}>
+          <div className={sports.length > 1 ? 'filters-grid-4' : 'filters-grid-3'} style={{ marginBottom: 12 }}>
             <Input
               value={search}
               onChange={(v) => setFilter('search', v)}
@@ -117,6 +139,9 @@ export default function AlumniPage() {
             />
             <Select value={status}   onChange={(v) => setFilter('status', v)}   options={STATUS_OPTIONS}   />
             <Select value={position} onChange={(v) => setFilter('position', v)} options={positionOptions}  />
+            {sports.length > 1 && (
+              <Select value={sportId as string} onChange={(v) => setFilter('sportId', v)} options={sportOptions} />
+            )}
           </div>
           <div style={{ marginBottom: 16 }}>
             <button
