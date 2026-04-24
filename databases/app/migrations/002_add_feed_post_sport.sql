@@ -70,11 +70,13 @@ END
 
 IF @FootballId IS NOT NULL
 BEGIN
+  -- Exclude welcome posts — they belong to all sports (sport_id stays NULL)
   UPDATE dbo.feed_posts
   SET    sport_id = @FootballId
-  WHERE  sport_id IS NULL;
+  WHERE  sport_id IS NULL
+    AND  is_welcome_post = 0;
 
-  PRINT '002: Backfilled ' + CAST(@@ROWCOUNT AS NVARCHAR) + ' feed_post row(s) with sport_id ' + CAST(@FootballId AS NVARCHAR(36)) + '.';
+  PRINT '002: Backfilled ' + CAST(@@ROWCOUNT AS NVARCHAR) + ' feed_post row(s) with sport_id ' + CAST(@FootballId AS NVARCHAR(36)) + ' (welcome post excluded).';
 END
 ELSE
 BEGIN
