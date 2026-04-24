@@ -25,7 +25,7 @@ function NavCard({
     <a
       href={href}
       style={{
-        backgroundColor: '#fff',
+        backgroundColor: 'var(--color-card-bg)',
         border:          '1px solid var(--color-card-border)',
         borderRadius:    16,
         padding:         24,
@@ -99,7 +99,7 @@ function ButtonCard({
     <button
       onClick={onClick}
       style={{
-        backgroundColor: '#fff',
+        backgroundColor: 'var(--color-card-bg)',
         border:          '1px solid var(--color-card-border)',
         borderRadius:    16,
         padding:         24,

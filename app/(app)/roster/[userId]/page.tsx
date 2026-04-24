@@ -95,7 +95,7 @@ function playerToEditState(p: Player): EditState {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ backgroundColor: '#fff', border: '1px solid var(--color-card-border)', borderRadius: 12, padding: 24, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', marginBottom: 16 }}>
+    <div style={{ backgroundColor: 'var(--color-card-bg)', border: '1px solid var(--color-card-border)', borderRadius: 12, padding: 24, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', marginBottom: 16 }}>
       <h2 style={{ fontSize: 12, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 16px' }}>{title}</h2>
       {children}
     </div>
@@ -135,7 +135,7 @@ function EditField({
           fontSize: 14, color: theme.gray900,
           border: `1px solid ${theme.gray200}`, borderRadius: 6,
           padding: '6px 10px', outline: 'none',
-          backgroundColor: '#fff',
+          backgroundColor: 'var(--color-card-bg)',
         }}
       />
     </div>
@@ -143,7 +143,7 @@ function EditField({
 }
 
 function Grid({ children }: { children: React.ReactNode }) {
-  return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0 24px' }}>{children}</div>
+  return <div className="field-grid-3">{children}</div>
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -308,12 +308,12 @@ export default function PlayerDetailPage() {
       </div>
 
       {saveError && (
-        <div style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 16px', marginBottom: 16, color: '#dc2626', fontSize: 13 }}>
+        <div style={{ backgroundColor: 'var(--color-danger-light)', border: '1px solid var(--color-danger)', borderRadius: 8, padding: '10px 16px', marginBottom: 16, color: 'var(--color-danger)', fontSize: 13 }}>
           {saveError}
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start' }}>
+      <div className="detail-grid-2">
         {/* Left column */}
         <div>
           <Section title="Personal Info">

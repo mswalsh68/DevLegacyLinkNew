@@ -154,8 +154,8 @@ function RequestCard({
   return (
     <div
       style={{
-        backgroundColor: '#fff',
-        border:          '1px solid #e5e7eb',
+        backgroundColor: 'var(--color-card-bg)',
+        border:          '1px solid var(--color-card-border)',
         borderRadius:    12,
         padding:         24,
         marginBottom:    16,
@@ -200,7 +200,7 @@ function RequestCard({
           {reminderState === 'sent' ? (
             <span style={{ fontSize: 12, color: '#059669' }}>Reminder sent</span>
           ) : reminderState === 'error' ? (
-            <span style={{ fontSize: 12, color: '#dc2626' }}>Could not send</span>
+            <span style={{ fontSize: 12, color: 'var(--color-danger)' }}>Could not send</span>
           ) : canSendReminder(req.reminderSentAt) ? (
             <button
               onClick={onReminder}

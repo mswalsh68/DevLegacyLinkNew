@@ -123,6 +123,92 @@ body {
 }
 
 /* ============================================================
+   RESPONSIVE LAYOUT UTILITIES
+   Used by app/(app) pages for consistent responsive behavior.
+   ============================================================ */
+
+/* Page content wrapper — centered, max 1200px, responsive padding */
+.app-page {
+  max-width: 1200px;
+  margin:    0 auto;
+  padding:   32px 24px;
+}
+@media (max-width: 768px) {
+  .app-page { padding: 20px 16px; }
+}
+@media (max-width: 480px) {
+  .app-page { padding: 16px 12px; }
+}
+
+/* Horizontally scrollable table container for narrow viewports */
+.table-scroll {
+  overflow-x:                scroll;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Two-column filter bar — collapses to single column on mobile */
+.filters-grid-3 {
+  display:               grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap:                   12px;
+  margin-bottom:         16px;
+}
+@media (max-width: 640px) {
+  .filters-grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Two-column detail layout — stacks on mobile */
+.detail-grid-2 {
+  display:               grid;
+  grid-template-columns: 1fr 1fr;
+  gap:                   16px;
+  align-items:           start;
+}
+@media (max-width: 768px) {
+  .detail-grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Three-column field grid inside detail cards — collapses to 2 then 1 */
+.field-grid-3 {
+  display:               grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap:                   0 24px;
+}
+@media (max-width: 640px) {
+  .field-grid-3 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 400px) {
+  .field-grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Transfer page sidebar+main layout — stacks on mobile */
+.transfer-grid {
+  display:               grid;
+  grid-template-columns: 300px 1fr;
+  gap:                   20px;
+  align-items:           start;
+}
+@media (max-width: 768px) {
+  .transfer-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Nav: hide team name text on very small screens to prevent overflow */
+@media (max-width: 420px) {
+  .nav-team-name    { display: none !important; }
+  .nav-switch-label { display: none !important; }
+}
+
+/* ============================================================
    MARKETING COMPONENT CLASSES
    ============================================================ */
 

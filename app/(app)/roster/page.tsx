@@ -106,7 +106,7 @@ export default function RosterPage() {
       ) : undefined}
       alerts={error ? <Alert message={error} variant="error" onClose={() => setError(null)} /> : undefined}
       filters={
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
+        <div className="filters-grid-3">
           <Input
             value={search}
             onChange={(v) => setFilter('search', v)}
@@ -117,7 +117,7 @@ export default function RosterPage() {
         </div>
       }
     >
-      <div style={{ backgroundColor: '#fff', borderRadius: 12, border: '1px solid var(--color-card-border)', overflow: 'hidden' }}>
+      <div className="table-scroll" style={{ backgroundColor: 'var(--color-card-bg)', borderRadius: 12, border: '1px solid var(--color-card-border)', overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }} aria-label="Player roster">
           <thead>
             <tr style={{ backgroundColor: theme.gray50, borderBottom: `1px solid ${theme.gray200}` }}>

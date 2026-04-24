@@ -170,6 +170,7 @@ export function AppNav() {
             )}
           </div>
           <span
+            className="nav-team-name"
             style={{
               fontSize:      16,
               fontWeight:    700,
@@ -208,7 +209,7 @@ export function AppNav() {
                 (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.12)')
               }
             >
-              Switch Team
+              <span className="nav-switch-label">Switch Team</span>
               <svg
                 width="10"
                 height="10"

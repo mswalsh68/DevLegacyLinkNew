@@ -21,14 +21,8 @@ export default async function AppLayout({
       {/* Sticky top nav — background is var(--color-primary), updates on team switch */}
       <AppNav />
 
-      {/* Page content — centered, max 1200px, matches original padding */}
-      <div
-        style={{
-          maxWidth: 1200,
-          margin:   '0 auto',
-          padding:  '32px 24px',
-        }}
-      >
+      {/* Page content — centered, max 1200px, responsive padding via .app-page */}
+      <div className="app-page">
         {children}
       </div>
     </div>

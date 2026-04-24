@@ -143,11 +143,11 @@ export default function TransferPage() {
 
       {alert && <Alert message={alert.msg} variant={alert.type} onClose={() => setAlert(null)} />}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 20, alignItems: 'start' }}>
+      <div className="transfer-grid">
 
         {/* ── Left: Departure period + submit ── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ backgroundColor: '#fff', border: '1px solid var(--color-card-border)', borderRadius: 12, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+          <div style={{ backgroundColor: 'var(--color-card-bg)', border: '1px solid var(--color-card-border)', borderRadius: 12, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
             <h2 style={{ fontSize: 12, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 14, marginTop: 0 }}>
               Departure Period
             </h2>
@@ -179,7 +179,7 @@ export default function TransferPage() {
         </div>
 
         {/* ── Right: Player selection ── */}
-        <div style={{ backgroundColor: '#fff', border: '1px solid var(--color-card-border)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+        <div style={{ backgroundColor: 'var(--color-card-bg)', border: '1px solid var(--color-card-border)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
           {/* Search + select all */}
           <div style={{ padding: '14px 20px', borderBottom: `1px solid ${theme.gray200}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
@@ -221,7 +221,7 @@ export default function TransferPage() {
                       alignItems:      'center',
                       gap:             14,
                       padding:         '12px 20px',
-                      backgroundColor: selected ? 'var(--color-primary-light)' : (i % 2 === 0 ? '#fff' : theme.gray50),
+                      backgroundColor: selected ? 'var(--color-primary-light)' : (i % 2 === 0 ? 'var(--color-card-bg)' : theme.gray50),
                       cursor:          'pointer',
                       transition:      'background-color 0.1s',
                       border:          'none',
@@ -272,7 +272,7 @@ export default function TransferPage() {
 
       {/* Failure summary */}
       {result && result.failures?.length > 0 && (
-        <div style={{ marginTop: 20, backgroundColor: '#fff', border: '1px solid var(--color-card-border)', borderRadius: 12, padding: 20 }}>
+        <div style={{ marginTop: 20, backgroundColor: 'var(--color-card-bg)', border: '1px solid var(--color-card-border)', borderRadius: 12, padding: 20 }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, color: theme.gray900, marginBottom: 12, marginTop: 0 }}>
             Transfer failures ({result.failures.length})
           </h2>
