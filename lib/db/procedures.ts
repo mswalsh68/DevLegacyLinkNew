@@ -864,3 +864,161 @@ export async function sp_SendRequestReminder(params: {
   })
   return { errorCode: (output.ErrorCode as string | null) ?? null }
 }
+
+// ─── App DB — Feed ────────────────────────────────────────────────────────────
+
+export interface FeedPostRow {
+  id:            string
+  title:         string | null
+  bodyHtml:      string
+  audience:      string
+  audienceJson:  string | null
+  sportId:       string | null
+  isPinned:      boolean
+  isWelcomePost: boolean
+  campaignId:    string | null
+  createdBy:     string
+  publishedAt:   string
+  createdAt:     string
+  isRead:        boolean
+}
+
+export async function sp_GetFeed(params: {
+  viewerUserId:       string
+  sportId?:           string
+  page:               number
+  pageSize:           number
+  requestingUserId:   string
+  requestingUserRole: string
+}): Promise<{ posts: FeedPostRow[]; totalCount: number }> {
+  const { recordset, output } = await execFull('app', 'sp_GetFeed', (r) => {
+    r.input ('ViewerUserId',        sql.UniqueIdentifier, params.viewerUserId)
+    r.input ('SportId',             sql.UniqueIdentifier, params.sportId ?? null)
+    r.input ('Page',                sql.Int,              params.page)
+    r.input ('PageSize',            sql.Int,              params.pageSize)
+    r.output('TotalCount',          sql.Int)
+    r.input ('RequestingUserId',    sql.UniqueIdentifier, params.requestingUserId)
+    r.input ('RequestingUserRole',  sql.NVarChar(50),     params.requestingUserRole)
+  })
+  return {
+    posts:      (recordset as unknown as FeedPostRow[]) ?? [],
+    totalCount: (output.TotalCount as number) ?? 0,
+  }
+}
+
+export async function sp_GetFeedPost(params: {
+  postId:             string
+  viewerUserId:       string
+  requestingUserId:   string
+  requestingUserRole: string
+}): Promise<{ post: FeedPostRow | null; errorCode: string | null }> {
+  const { recordset, output } = await execFull('app', 'sp_GetFeedPost', (r) => {
+    r.input ('PostId',              sql.UniqueIdentifier, params.postId)
+    r.input ('ViewerUserId',        sql.UniqueIdentifier, params.viewerUserId)
+    r.output('ErrorCode',           sql.NVarChar(50))
+    r.input ('RequestingUserId',    sql.UniqueIdentifier, params.requestingUserId)
+    r.input ('RequestingUserRole',  sql.NVarChar(50),     params.requestingUserRole)
+  })
+  const rows = recordset as unknown as FeedPostRow[]
+  return {
+    post:      rows?.[0] ?? null,
+    errorCode: (output.ErrorCode as string | null) ?? null,
+  }
+}
+
+export async function sp_CreatePost(params: {
+  createdBy:          string
+  bodyHtml:           string
+  audience:           string
+  title?:             string | null
+  audienceJson?:      string | null
+  sportId?:           string | null
+  isPinned:           boolean
+  alsoEmail:          boolean
+  emailSubject?:      string | null
+  requestingUserId:   string
+  requestingUserRole: string
+}): Promise<{ postId: string | null; campaignId: string | null; errorCode: string | null }> {
+  const { output } = await execFull('app', 'sp_CreatePost', (r) => {
+    r.input ('CreatedBy',           sql.UniqueIdentifier, params.createdBy)
+    r.input ('BodyHtml',            sql.NVarChar(sql.MAX), params.bodyHtml)
+    r.input ('Audience',            sql.NVarChar(30),     params.audience)
+    r.input ('Title',               sql.NVarChar(300),    params.title ?? null)
+    r.input ('AudienceJson',        sql.NVarChar(sql.MAX), params.audienceJson ?? null)
+    r.input ('SportId',             sql.UniqueIdentifier, params.sportId ?? null)
+    r.input ('IsPinned',            sql.Bit,              params.isPinned ? 1 : 0)
+    r.input ('AlsoEmail',           sql.Bit,              params.alsoEmail ? 1 : 0)
+    r.input ('EmailSubject',        sql.NVarChar(500),    params.emailSubject ?? null)
+    r.output('NewPostId',           sql.UniqueIdentifier)
+    r.output('CampaignId',          sql.UniqueIdentifier)
+    r.output('ErrorCode',           sql.NVarChar(50))
+    r.input ('RequestingUserId',    sql.UniqueIdentifier, params.requestingUserId)
+    r.input ('RequestingUserRole',  sql.NVarChar(50),     params.requestingUserRole)
+  })
+  return {
+    postId:     (output.NewPostId   as string | null) ?? null,
+    campaignId: (output.CampaignId  as string | null) ?? null,
+    errorCode:  (output.ErrorCode   as string | null) ?? null,
+  }
+}
+
+export async function sp_MarkPostRead(params: {
+  postId: string
+  userId: string
+}): Promise<void> {
+  await exec('app', 'sp_MarkPostRead', (r) => {
+    r.input('PostId', sql.UniqueIdentifier, params.postId)
+    r.input('UserId', sql.UniqueIdentifier, params.userId)
+  })
+}
+
+export interface PostReadStats {
+  totalEligible:      number
+  totalRead:          number
+  readThroughRatePct: number
+}
+
+export async function sp_GetPostReadStats(params: {
+  postId:             string
+  requestingUserId:   string
+  requestingUserRole: string
+}): Promise<{ stats: PostReadStats | null; errorCode: string | null }> {
+  const { recordset, output } = await execFull('app', 'sp_GetPostReadStats', (r) => {
+    r.input ('PostId',              sql.UniqueIdentifier, params.postId)
+    r.output('ErrorCode',           sql.NVarChar(50))
+    r.input ('RequestingUserId',    sql.UniqueIdentifier, params.requestingUserId)
+    r.input ('RequestingUserRole',  sql.NVarChar(50),     params.requestingUserRole)
+  })
+  const rows = recordset as unknown as PostReadStats[]
+  return {
+    stats:     rows?.[0] ?? null,
+    errorCode: (output.ErrorCode as string | null) ?? null,
+  }
+}
+
+/**
+ * Dispatches an outreach campaign (queues messages for all eligible recipients).
+ * Maps to dbo.sp_DispatchEmailCampaign.
+ * dailyRemaining / monthlyRemaining default to high values — enforce limits
+ * at the application layer if needed.
+ */
+export async function sp_DispatchCampaign(params: {
+  campaignId:       string
+  dispatchedBy:     string
+  dailyRemaining?:  number
+  monthlyRemaining?: number
+}): Promise<{ queuedCount: number; errorCode: string | null }> {
+  const { output } = await execFull('app', 'sp_DispatchEmailCampaign', (r) => {
+    r.input ('CampaignId',        sql.UniqueIdentifier, params.campaignId)
+    r.input ('DailyRemaining',    sql.Int,              params.dailyRemaining  ?? 10000)
+    r.input ('MonthlyRemaining',  sql.Int,              params.monthlyRemaining ?? 100000)
+    r.output('QueuedCount',       sql.Int)
+    r.output('ErrorCode',         sql.NVarChar(50))
+    r.input ('RequestingUserId',  sql.UniqueIdentifier, params.dispatchedBy)
+    r.input ('RequestingUserRole', sql.NVarChar(50),    'platform_owner')
+  })
+  return {
+    queuedCount: (output.QueuedCount as number) ?? 0,
+    errorCode:   (output.ErrorCode   as string | null) ?? null,
+  }
+}
