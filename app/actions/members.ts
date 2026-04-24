@@ -16,7 +16,7 @@
 
 import { randomUUID } from 'crypto'
 import { getServerSession } from '@/lib/auth'
-import { sp_CreateTeamMember, sp_CreateInviteCode } from '@/lib/db/procedures'
+import { sp_CreateTeamMember, sp_CreateInviteCode, sp_CreateInviteToken } from '@/lib/db/procedures'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -107,6 +107,30 @@ export async function generateInviteCode(
     return { success: true, inviteUrl, token }
   } catch (err) {
     console.error('[generateInviteCode]', err)
+    return { success: false, error: 'INTERNAL_ERROR' }
+  }
+}
+
+/**
+ * Generates a one-time setup link for a pre-created user (password_hash = INVITE_PENDING).
+ * The link lets them set their password without going through the invite code flow.
+ * Expires in 7 days.
+ */
+export async function generateSetupLink(
+  userId: string,
+): Promise<{ success: boolean; setupUrl?: string; error?: string }> {
+  try {
+    const token     = randomUUID()
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+
+    await sp_CreateInviteToken({ userId, tokenHash: token, expiresAt })
+
+    const baseUrl  = process.env.NEXT_PUBLIC_APP_URL ?? ''
+    const setupUrl = `${baseUrl}/setup?token=${token}`
+
+    return { success: true, setupUrl }
+  } catch (err) {
+    console.error('[generateSetupLink]', err)
     return { success: false, error: 'INTERNAL_ERROR' }
   }
 }

@@ -783,6 +783,54 @@ export async function sp_DeactivateInviteCode(params: {
   return { errorCode: (output.ErrorCode as string | null) ?? null }
 }
 
+/** Creates a time-limited setup token for a pre-created user (INVITE_PENDING). */
+export async function sp_CreateInviteToken(params: {
+  userId:    string
+  tokenHash: string
+  expiresAt: Date
+}): Promise<void> {
+  await exec('global', 'sp_CreateInviteToken', (r) => {
+    r.input('UserId',    sql.UniqueIdentifier, params.userId)
+    r.input('TokenHash', sql.VarChar(128),     params.tokenHash)
+    r.input('ExpiresAt', sql.DateTime2,        params.expiresAt)
+  })
+}
+
+/** Validates a setup token. Returns user info or null if invalid/expired. */
+export async function sp_ValidateInviteToken(params: {
+  tokenHash: string
+}): Promise<{ firstName: string; lastName: string; email: string } | null> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_ValidateInviteToken', (r) => {
+    r.input('TokenHash', sql.VarChar(128), params.tokenHash)
+  })
+  if (!rows || rows.length === 0) return null
+  const row = rows[0]
+  return {
+    firstName: row.firstName as string,
+    lastName:  row.lastName  as string,
+    email:     row.email     as string,
+  }
+}
+
+/** Redeems a setup token, sets the user's password, activates the account. */
+export async function sp_RedeemInviteToken(params: {
+  tokenHash:    string
+  passwordHash: string
+}): Promise<{ userId: string | null; email: string | null; errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_RedeemInviteToken', (r) => {
+    r.input ('TokenHash',    sql.VarChar(128),     params.tokenHash)
+    r.input ('PasswordHash', sql.VarChar(255),     params.passwordHash)
+    r.output('ErrorCode',    sql.NVarChar(50))
+    r.output('UserId',       sql.UniqueIdentifier)
+    r.output('Email',        sql.NVarChar(255))
+  })
+  return {
+    userId:    (output.UserId    as string | null) ?? null,
+    email:     (output.Email     as string | null) ?? null,
+    errorCode: (output.ErrorCode as string | null) ?? null,
+  }
+}
+
 /** Submits an access request. Increments invite code use_count. */
 export async function sp_SubmitAccessRequest(params: {
   userId: string
