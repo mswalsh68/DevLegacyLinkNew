@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
 
     if (errorCode === 'EMAIL_ALREADY_EXISTS') {
       const { users } = await sp_GetUsers({ search: email, page: 1, pageSize: 1 })
-      const existingId = users?.[0]?.id ?? users?.[0]?.userId
+      const existingId = users?.[0]?.id
       await sp_CreateInviteToken({ userId: existingId, tokenHash, expiresAt })
       return NextResponse.json(
         { success: true, data: { id: existingId, inviteToken: rawToken }, alreadyExisted: true },
