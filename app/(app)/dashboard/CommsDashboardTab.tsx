@@ -34,6 +34,7 @@ export interface CommsDashboardTabProps {
   campaignAudiences:  readonly string[]
   postAudiences:      readonly string[]
   metricsEndpoint:    string
+  sportId?:           string | null
   title:              string
   subtitle:           string
   emailAudience:      string
@@ -162,6 +163,7 @@ export default function CommsDashboardTab({
   campaignAudiences,
   postAudiences,
   metricsEndpoint,
+  sportId,
   title,
   subtitle,
   emailAudience,
@@ -189,9 +191,12 @@ export default function CommsDashboardTab({
     setLoading(true)
     setError(null)
     try {
+      const metricsUrl = sportId
+        ? `/api${metricsEndpoint}?sportId=${encodeURIComponent(sportId)}`
+        : `/api${metricsEndpoint}`
       const [metricsRes, campRes, feedRes] = await Promise.all([
-        fetch(`/api${metricsEndpoint}`, { credentials: 'include' }).then(r => r.json()),
-        fetch('/api/campaigns',          { credentials: 'include' }).then(r => r.json()),
+        fetch(metricsUrl,                    { credentials: 'include' }).then(r => r.json()),
+        fetch('/api/campaigns',              { credentials: 'include' }).then(r => r.json()),
         fetch('/api/feed?page=1&pageSize=50', { credentials: 'include' }).then(r => r.json()),
       ])
 
@@ -213,7 +218,7 @@ export default function CommsDashboardTab({
     } finally {
       setLoading(false)
     }
-  }, [config, metricsEndpoint, campaignAudiences, postAudiences, errorMessage])
+  }, [config, metricsEndpoint, sportId, campaignAudiences, postAudiences, errorMessage])
 
   useEffect(() => { load() }, [load])
 
