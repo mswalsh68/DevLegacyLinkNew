@@ -229,6 +229,26 @@ body {
 }
 
 /* ============================================================
+   FEED BODY — typography for rendered post HTML
+   ============================================================ */
+.feed-body p             { margin: 0 0 10px; }
+.feed-body p:last-child  { margin-bottom: 0; }
+.feed-body ul, .feed-body ol { margin: 0 0 10px; padding-left: 20px; }
+.feed-body li            { margin-bottom: 4px; }
+.feed-body h1, .feed-body h2, .feed-body h3 {
+  margin: 12px 0 6px;
+  font-weight: 700;
+  color: var(--color-gray-900);
+}
+.feed-body a {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+.feed-body a:hover { color: var(--color-primary-dark); }
+.feed-body strong, .feed-body b { font-weight: 700; }
+.feed-body em, .feed-body i     { font-style: italic; }
+
+/* ============================================================
    MARKETING COMPONENT CLASSES
    ============================================================ */
 

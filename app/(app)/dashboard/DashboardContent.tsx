@@ -159,6 +159,12 @@ const QUICK_LINKS = [
     title:       'Alumni',
     description: 'Track graduates and run outreach',
   },
+  {
+    href:        '/feed',
+    icon:        '📢',
+    title:       'Team Feed',
+    description: 'Post announcements to players and alumni',
+  },
 ] as const
 
 const ADMIN_LINKS = [
