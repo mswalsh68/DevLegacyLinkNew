@@ -26,22 +26,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem('cfb_user')
-      if (raw) {
-        const parsed = JSON.parse(raw) as UserSession & { globalRole?: string }
-        // Backward-compat: JWTs issued before migration 018 used globalRole instead of role.
-        // Safe to remove once all active sessions have been refreshed post-deployment.
-        if (parsed.globalRole && !parsed.role) {
-          parsed.role = parsed.globalRole as UserSession['role']
+    async function loadSession() {
+      // Try localStorage first (fast path)
+      try {
+        const raw = localStorage.getItem('cfb_user')
+        if (raw) {
+          const parsed = JSON.parse(raw) as UserSession & { globalRole?: string }
+          if (parsed.globalRole && !parsed.role) {
+            parsed.role = parsed.globalRole as UserSession['role']
+          }
+          setUser(parsed)
+          setIsLoading(false)
+          return
         }
-        setUser(parsed)
+      } catch {
+        // Corrupt — fall through to server fetch
       }
-    } catch {
-      // Corrupt storage — ignore and treat as logged out
-    } finally {
-      setIsLoading(false)
+
+      // Fallback: localStorage empty but cookie may still be valid
+      // (e.g., storage was cleared, new tab, stale session)
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include' })
+        if (res.ok) {
+          const body = await res.json() as { success: boolean; data?: { user: UserSession } }
+          if (body.success && body.data?.user) {
+            localStorage.setItem('cfb_user', JSON.stringify(body.data.user))
+            setUser(body.data.user)
+          }
+        }
+      } catch {
+        // Network error — treat as logged out
+      } finally {
+        setIsLoading(false)
+      }
     }
+
+    loadSession()
   }, [])
 
   function clearSession() {
