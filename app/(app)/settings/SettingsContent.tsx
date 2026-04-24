@@ -130,7 +130,7 @@ function SelectInput({
           fontSize:     13,
           color:        theme.gray900,
           outline:      'none',
-          background:   '#fff',
+          background:   'var(--color-card-bg)',
           width:        '100%',
           boxSizing:    'border-box',
         }}

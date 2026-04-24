@@ -137,7 +137,7 @@ export function RequestsContent({
                   position:        'absolute',
                   top:             -6,
                   right:           -6,
-                  backgroundColor: '#ef4444',
+                  backgroundColor: 'var(--color-danger)',
                   color:           '#fff',
                   fontSize:        10,
                   fontWeight:      700,
@@ -205,7 +205,7 @@ export function RequestsContent({
         >
           <div
             style={{
-              background:   '#fff',
+              background:   'var(--color-card-bg)',
               borderRadius: 12,
               padding:      28,
               maxWidth:     440,
@@ -236,7 +236,7 @@ export function RequestsContent({
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button
                 onClick={() => setDenyingId(null)}
-                style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #d1d5db', background: '#fff', fontSize: 13, cursor: 'pointer' }}
+                style={{ padding: '8px 16px', borderRadius: 8, border: `1px solid var(--color-gray-300)`, background: 'var(--color-card-bg)', fontSize: 13, cursor: 'pointer' }}
               >
                 Cancel
               </button>
@@ -246,7 +246,7 @@ export function RequestsContent({
                   if (req) handleDenyConfirm(req)
                 }}
                 disabled={isPending}
-                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#ef4444', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--color-danger)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
               >
                 {isPending ? 'Denying…' : 'Confirm Denial'}
               </button>
@@ -287,8 +287,8 @@ function RequestRow({
   return (
     <div
       style={{
-        backgroundColor: '#fff',
-        border:          '1px solid #e5e7eb',
+        backgroundColor: 'var(--color-card-bg)',
+        border:          '1px solid var(--color-card-border)',
         borderRadius:    10,
         padding:         '16px 20px',
         boxShadow:       '0 1px 3px rgba(0,0,0,0.05)',
@@ -324,7 +324,7 @@ function RequestRow({
       </div>
 
       {error && (
-        <p style={{ fontSize: 12, color: '#dc2626', marginTop: 8 }}>{error}</p>
+        <p style={{ fontSize: 12, color: 'var(--color-danger)', marginTop: 8 }}>{error}</p>
       )}
 
       {/* Pending actions */}
@@ -338,9 +338,9 @@ function RequestRow({
               fontSize:    12,
               padding:     '5px 8px',
               borderRadius: 6,
-              border:      '1px solid #d1d5db',
-              color:       '#374151',
-              background:  '#fff',
+              border:      `1px solid var(--color-gray-300)`,
+              color:       'var(--color-gray-700)',
+              background:  'var(--color-card-bg)',
             }}
           >
             {['roster', 'alumni', 'coach_staff', 'readonly'].map(r => (
@@ -356,9 +356,9 @@ function RequestRow({
             style={{
               padding:      '7px 16px',
               borderRadius:  8,
-              border:       '1px solid #fca5a5',
-              background:   '#fff',
-              color:        '#dc2626',
+              border:       `1px solid var(--color-danger)`,
+              background:   'var(--color-card-bg)',
+              color:        'var(--color-danger)',
               fontSize:     13,
               fontWeight:   600,
               cursor:       'pointer',
