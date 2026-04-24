@@ -593,9 +593,6 @@ GO
 -- ============================================================
 -- sp_CreateUser
 -- Creates a user and optionally links them to a team.
--- Accepts @RoleId (INT FK → dbo.roles) instead of a role string.
--- DUAL-WRITE: also sets global_role string for migration 019
---   compatibility — dropped after 019 runs.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_CreateUser
   @Email         NVARCHAR(255),
@@ -643,15 +640,13 @@ BEGIN
 
     SET @NewUserId = NEWID();
 
-    -- DUAL-WRITE: set both role_id and global_role until migration 019 drops global_role
-    INSERT INTO dbo.users (id, email, password_hash, first_name, last_name, role_id, global_role)
-    VALUES (@NewUserId, @Email, @PasswordHash, @FirstName, @LastName, @RoleId, @RoleName);
+    INSERT INTO dbo.users (id, email, password_hash, first_name, last_name, role_id)
+    VALUES (@NewUserId, @Email, @PasswordHash, @FirstName, @LastName, @RoleId);
 
     IF @TeamId IS NOT NULL
     BEGIN
-      -- user_teams.role is a legacy column kept until migration 019
-      INSERT INTO dbo.user_teams (user_id, team_id, role)
-      VALUES (@NewUserId, @TeamId, @RoleName);
+      INSERT INTO dbo.user_teams (user_id, team_id)
+      VALUES (@NewUserId, @TeamId);
     END
 
     IF @GrantAppName IS NOT NULL AND @GrantAppRole IS NOT NULL
@@ -681,8 +676,6 @@ GO
 -- sp_UpdateUser
 -- Updates role and/or active status. App Admin or higher only
 -- (enforced in the API layer).
--- Accepts @RoleId INT instead of @GlobalRole NVARCHAR.
--- DUAL-WRITE: also updates global_role until migration 019.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_UpdateUser
   @TargetUserId  UNIQUEIDENTIFIER,
@@ -721,12 +714,10 @@ BEGIN
   )
   FROM dbo.users WHERE id = @TargetUserId;
 
-  -- DUAL-WRITE: update both role_id and global_role until migration 019
   UPDATE dbo.users SET
-    role_id     = COALESCE(@RoleId,    role_id),
-    global_role = COALESCE(@RoleName,  global_role),   -- kept in sync until 019
-    is_active   = COALESCE(@IsActive,  is_active),
-    updated_at  = SYSUTCDATETIME()
+    role_id    = COALESCE(@RoleId,   role_id),
+    is_active  = COALESCE(@IsActive, is_active),
+    updated_at = SYSUTCDATETIME()
   WHERE id = @TargetUserId;
 
   INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload)
@@ -1120,12 +1111,6 @@ GO
 -- If not: creates the account with role_id = 6 (player) and
 --   a placeholder password hash (account requires invite to
 --   set a real password before they can log in).
---
--- DUAL-WRITE: also sets global_role = 'player' until migration
---   019 drops the column.
---
--- Called from AppDB stored procedures via linked server:
---   EXEC [GLOBAL_DB].LegacyLinkGlobal.dbo.sp_GetOrCreateUser ...
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetOrCreateUser
   @Email     NVARCHAR(255),
@@ -1158,8 +1143,8 @@ BEGIN
     IF @TeamId IS NOT NULL
       AND NOT EXISTS (SELECT 1 FROM dbo.user_teams WHERE user_id = @UserId AND team_id = @TeamId)
     BEGIN
-      INSERT INTO dbo.user_teams (user_id, team_id, role)
-      VALUES (@UserId, @TeamId, 'player');   -- legacy role column; dropped in migration 019
+      INSERT INTO dbo.user_teams (user_id, team_id)
+      VALUES (@UserId, @TeamId);
     END
     RETURN;   -- @ErrorCode stays NULL — caller treats this as success
   END
@@ -1171,22 +1156,20 @@ BEGIN
 
     SET @UserId = NEWID();
 
-    -- DUAL-WRITE: set both role_id = 6 (player) and global_role until migration 019
-    INSERT INTO dbo.users (id, email, password_hash, first_name, last_name, role_id, global_role)
+    INSERT INTO dbo.users (id, email, password_hash, first_name, last_name, role_id)
     VALUES (
       @UserId,
       @Email,
       'INVITE_PENDING',   -- bcrypt never matches this; login blocked until invite redeemed
       @FirstName,
       @LastName,
-      6,          -- player (dbo.roles.id = 6)
-      'player'    -- legacy dual-write; dropped in migration 019
+      6          -- player (dbo.roles.id = 6)
     );
 
     IF @TeamId IS NOT NULL
     BEGIN
-      INSERT INTO dbo.user_teams (user_id, team_id, role)
-      VALUES (@UserId, @TeamId, 'player');   -- legacy role column; dropped in migration 019
+      INSERT INTO dbo.user_teams (user_id, team_id)
+      VALUES (@UserId, @TeamId);
     END
 
     INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload)
