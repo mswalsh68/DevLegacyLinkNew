@@ -53,12 +53,13 @@ export async function POST(req: Request) {
   }
 
   let body: {
-    bodyHtml:     string
-    audience:     string
-    title?:       string | null
+    bodyHtml:      string
+    audience:      string
+    title?:        string | null
     audienceJson?: string | null
-    isPinned?:    boolean
-    alsoEmail?:   boolean
+    sportId?:      string | null
+    isPinned?:     boolean
+    alsoEmail?:    boolean
     emailSubject?: string | null
   }
 
@@ -68,7 +69,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { bodyHtml, audience, title, audienceJson, isPinned, alsoEmail, emailSubject } = body
+  const { bodyHtml, audience, title, audienceJson, sportId, isPinned, alsoEmail, emailSubject } = body
 
   if (!bodyHtml || !audience) {
     return NextResponse.json({ success: false, error: 'bodyHtml and audience are required' }, { status: 400 })
@@ -82,6 +83,7 @@ export async function POST(req: Request) {
         audience,
         title:              title ?? null,
         audienceJson:       audienceJson ?? null,
+        sportId:            sportId ?? null,
         isPinned:           isPinned ?? false,
         alsoEmail:          alsoEmail ?? false,
         emailSubject:       emailSubject ?? null,

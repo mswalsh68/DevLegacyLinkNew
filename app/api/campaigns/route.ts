@@ -56,6 +56,7 @@ export async function POST(req: Request) {
     description?:   string | null
     fromName?:      string | null
     replyToEmail?:  string | null
+    sportId?:       string | null
   }
 
   try {
@@ -79,6 +80,7 @@ export async function POST(req: Request) {
         description:    body.description  ?? undefined,
         fromName:       body.fromName     ?? undefined,
         replyToEmail:   body.replyToEmail ?? undefined,
+        sportId:        body.sportId      ?? undefined,
       })
 
       if (errorCode && errorCode !== 'OK') {
