@@ -21,11 +21,13 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const page     = parseInt(searchParams.get('page')     ?? '1')
   const pageSize = parseInt(searchParams.get('pageSize') ?? '20')
+  const sportId  = searchParams.get('sportId') || undefined
 
   return appDbContext.run(session.appDb, async () => {
     try {
       const { posts, totalCount } = await sp_GetFeed({
         viewerUserId:       session.userId,
+        sportId,
         page,
         pageSize,
         requestingUserId:   session.userId,

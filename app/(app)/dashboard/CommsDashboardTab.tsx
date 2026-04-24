@@ -200,7 +200,7 @@ export default function CommsDashboardTab({
       const [metricsRes, campRes, feedRes] = await Promise.all([
         fetch(metricsUrl,                    { credentials: 'include' }).then(r => r.json()),
         fetch('/api/campaigns',              { credentials: 'include' }).then(r => r.json()),
-        fetch('/api/feed?page=1&pageSize=50', { credentials: 'include' }).then(r => r.json()),
+        fetch(`/api/feed?page=1&pageSize=50${sportId ? `&sportId=${encodeURIComponent(sportId)}` : ''}`, { credentials: 'include' }).then(r => r.json()),
       ])
 
       setMetrics(metricsRes.data)
