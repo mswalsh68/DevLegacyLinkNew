@@ -8,6 +8,7 @@
 //   no appPermissions              → check for pending access_requests
 //                                    pending  → /pending
 //                                    denied / none → /join
+import { Suspense } from 'react'
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { getServerSession, isGlobalAdmin } from '@/lib/auth'
@@ -40,6 +41,8 @@ export default async function DashboardPage() {
   }
 
   return (
-    <DashboardContent />
+    <Suspense fallback={null}>
+      <DashboardContent />
+    </Suspense>
   )
 }
