@@ -2478,3 +2478,95 @@ BEGIN
     END AS readThroughRatePct;
 END;
 GO
+
+-- ============================================================
+-- sp_GetDashboardMetrics_Alumni
+-- Returns headline metrics for the Alumni Engagement tab.
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_GetDashboardMetrics_Alumni
+  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserRole NVARCHAR(50)     = NULL
+AS
+BEGIN
+  SET NOCOUNT ON;
+  IF @RequestingUserId IS NOT NULL
+  BEGIN
+    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
+    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
+    EXEC sp_set_session_context N'user_id',   @_uid;
+    EXEC sp_set_session_context N'user_role', @_role;
+  END
+
+  DECLARE @MonthAgo DATETIME2 = DATEADD(MONTH, -1, SYSUTCDATETIME());
+
+  DECLARE @TotalInteractions INT, @MonthInteractions INT;
+  SELECT
+    @TotalInteractions = COUNT(*),
+    @MonthInteractions = SUM(CASE WHEN logged_at >= @MonthAgo THEN 1 ELSE 0 END)
+  FROM dbo.interaction_log;
+
+  DECLARE @TotalEmailsSent INT, @MonthEmailsSent INT, @TotalOpened INT;
+  SELECT
+    @TotalEmailsSent = ISNULL(COUNT(*), 0),
+    @MonthEmailsSent = ISNULL(SUM(CASE WHEN om.sent_at >= @MonthAgo THEN 1 ELSE 0 END), 0),
+    @TotalOpened     = ISNULL(SUM(CASE WHEN om.opened_at IS NOT NULL THEN 1 ELSE 0 END), 0)
+  FROM dbo.outreach_messages om
+  JOIN dbo.outreach_campaigns oc ON oc.id = om.campaign_id
+  WHERE oc.target_audience IN ('all', 'alumni_only')
+    AND om.status IN ('sent', 'responded');
+
+  SELECT
+    ISNULL(@TotalInteractions, 0) AS totalInteractions,
+    ISNULL(@MonthInteractions,  0) AS monthInteractions,
+    ISNULL(@TotalEmailsSent,   0) AS totalEmailsSent,
+    ISNULL(@MonthEmailsSent,   0) AS monthEmailsSent,
+    0                              AS alumniLoginsLast30Days,
+    CASE WHEN ISNULL(@TotalEmailsSent, 0) = 0 THEN 0
+         ELSE CAST(100.0 * @TotalOpened / @TotalEmailsSent AS DECIMAL(5,1))
+    END                            AS emailOpenRatePct;
+END;
+GO
+
+-- ============================================================
+-- sp_GetDashboardMetrics_Players
+-- Returns headline metrics for the Player Communications tab.
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_GetDashboardMetrics_Players
+  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserRole NVARCHAR(50)     = NULL
+AS
+BEGIN
+  SET NOCOUNT ON;
+  IF @RequestingUserId IS NOT NULL
+  BEGIN
+    DECLARE @_uid2  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
+    DECLARE @_role2 NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
+    EXEC sp_set_session_context N'user_id',   @_uid2;
+    EXEC sp_set_session_context N'user_role', @_role2;
+  END
+
+  DECLARE @MonthAgo2 DATETIME2 = DATEADD(MONTH, -1, SYSUTCDATETIME());
+
+  DECLARE @TotalEmailsSent2 INT, @MonthEmailsSent2 INT;
+  SELECT
+    @TotalEmailsSent2 = ISNULL(COUNT(*), 0),
+    @MonthEmailsSent2 = ISNULL(SUM(CASE WHEN om.sent_at >= @MonthAgo2 THEN 1 ELSE 0 END), 0)
+  FROM dbo.outreach_messages om
+  JOIN dbo.outreach_campaigns oc ON oc.id = om.campaign_id
+  WHERE oc.target_audience IN ('all', 'players_only')
+    AND om.status IN ('sent', 'responded');
+
+  DECLARE @TotalFeedPosts INT, @MonthFeedPosts INT;
+  SELECT
+    @TotalFeedPosts = ISNULL(COUNT(*), 0),
+    @MonthFeedPosts = ISNULL(SUM(CASE WHEN fp.published_at >= @MonthAgo2 THEN 1 ELSE 0 END), 0)
+  FROM dbo.feed_posts fp
+  WHERE fp.audience IN ('all', 'players_only');
+
+  SELECT
+    ISNULL(@TotalEmailsSent2, 0) AS totalEmailsSent,
+    ISNULL(@MonthEmailsSent2, 0) AS monthEmailsSent,
+    ISNULL(@TotalFeedPosts,   0) AS totalFeedPosts,
+    ISNULL(@MonthFeedPosts,   0) AS monthFeedPosts;
+END;
+GO

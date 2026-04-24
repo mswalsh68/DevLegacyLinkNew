@@ -1022,3 +1022,57 @@ export async function sp_DispatchCampaign(params: {
     errorCode:   (output.ErrorCode   as string | null) ?? null,
   }
 }
+
+// ─── Dashboard Metrics ────────────────────────────────────────────────────────
+
+export interface AlumniDashboardMetrics {
+  totalInteractions:      number
+  monthInteractions:      number
+  totalEmailsSent:        number
+  monthEmailsSent:        number
+  alumniLoginsLast30Days: number
+  emailOpenRatePct:       number
+}
+
+export async function sp_GetDashboardMetrics_Alumni(params: {
+  requestingUserId:   string
+  requestingUserRole: string
+}): Promise<AlumniDashboardMetrics> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetDashboardMetrics_Alumni', (r) => {
+    r.input('RequestingUserId',   sql.UniqueIdentifier, params.requestingUserId)
+    r.input('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole)
+  })
+  const row = rows[0] ?? {}
+  return {
+    totalInteractions:      (row.totalInteractions      as number) ?? 0,
+    monthInteractions:      (row.monthInteractions       as number) ?? 0,
+    totalEmailsSent:        (row.totalEmailsSent         as number) ?? 0,
+    monthEmailsSent:        (row.monthEmailsSent         as number) ?? 0,
+    alumniLoginsLast30Days: (row.alumniLoginsLast30Days  as number) ?? 0,
+    emailOpenRatePct:       (row.emailOpenRatePct        as number) ?? 0,
+  }
+}
+
+export interface PlayerDashboardMetrics {
+  totalEmailsSent: number
+  monthEmailsSent: number
+  totalFeedPosts:  number
+  monthFeedPosts:  number
+}
+
+export async function sp_GetDashboardMetrics_Players(params: {
+  requestingUserId:   string
+  requestingUserRole: string
+}): Promise<PlayerDashboardMetrics> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetDashboardMetrics_Players', (r) => {
+    r.input('RequestingUserId',   sql.UniqueIdentifier, params.requestingUserId)
+    r.input('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole)
+  })
+  const row = rows[0] ?? {}
+  return {
+    totalEmailsSent: (row.totalEmailsSent as number) ?? 0,
+    monthEmailsSent: (row.monthEmailsSent as number) ?? 0,
+    totalFeedPosts:  (row.totalFeedPosts  as number) ?? 0,
+    monthFeedPosts:  (row.monthFeedPosts  as number) ?? 0,
+  }
+}

@@ -40,6 +40,6 @@ export default async function DashboardPage() {
   }
 
   return (
-    <DashboardContent role={session?.role ?? 'user'} />
+    <DashboardContent />
   )
 }
