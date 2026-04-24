@@ -25,12 +25,12 @@ export interface CreateCoachStaffInput {
   firstName: string
   lastName:  string
   teamId:    string
-  role:      'coach_staff' | 'readonly' | 'global_admin'
+  role:      'app_admin' | 'head_coach' | 'position_coach' | 'alumni_director'
 }
 
 export interface GenerateInviteCodeInput {
   teamId:    string
-  role:      string          // 'roster' | 'alumni' | 'coach_staff'
+  role:      string          // 'player' | 'alumni' | 'head_coach' | 'position_coach' | 'alumni_director'
   expiresAt?: Date | null
   maxUses?:   number | null
 }
