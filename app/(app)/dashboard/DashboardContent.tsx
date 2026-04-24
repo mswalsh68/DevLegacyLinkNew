@@ -351,6 +351,7 @@ export default function DashboardContent() {
           userId={user.userId}
           appDb={user.appDb}
           userRoleId={user.roleId}
+          sports={sports}
         />
       )}
     </>
