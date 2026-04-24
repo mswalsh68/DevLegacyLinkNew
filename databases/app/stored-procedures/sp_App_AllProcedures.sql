@@ -2484,6 +2484,7 @@ GO
 -- Returns headline metrics for the Alumni Engagement tab.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetDashboardMetrics_Alumni
+  @TenantId           UNIQUEIDENTIFIER = NULL,
   @RequestingUserId   UNIQUEIDENTIFIER = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
@@ -2532,6 +2533,7 @@ GO
 -- Returns headline metrics for the Player Communications tab.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetDashboardMetrics_Players
+  @TenantId           UNIQUEIDENTIFIER = NULL,
   @RequestingUserId   UNIQUEIDENTIFIER = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS

@@ -22,6 +22,7 @@ export async function GET() {
   return appDbContext.run(session.appDb, async () => {
     try {
       const metrics = await sp_GetDashboardMetrics_Players({
+        tenantId:           session.currentTeamId,
         requestingUserId:   session.userId,
         requestingUserRole: session.role,
       })
