@@ -1,7 +1,7 @@
 -- ============================================================
 -- 000_wipe_test_data.sql  (App DB)
 -- ONE-TIME wipe of all test players, alumni, and related data.
--- Run on EACH tenant AppDB: USFBullsApp, PHSPanthersApp, etc.
+-- Run on the tenant AppDB: LegacyLinkApp
 --
 -- Keeps configuration tables: sports, player_status_types.
 -- Wipes all user-generated / seeded rows so new users created
@@ -10,10 +10,7 @@
 -- Run AFTER databases/global/000_wipe_test_data.sql.
 -- ============================================================
 
--- Change this to the target tenant DB before running:
---   USE USFBullsApp
---   USE PHSPanthersApp
-USE USFBullsApp
+USE LegacyLinkApp
 GO
 
 -- ─── 1. Outreach messages ────────────────────────────────────
@@ -98,5 +95,5 @@ SELECT
   (SELECT COUNT(*) FROM dbo.feed_posts WHERE ISNULL(is_welcome_post,0) = 1) AS welcome_posts;
 
 PRINT '=== App DB wipe complete ===';
-PRINT 'Repeat with USE PHSPanthersApp for each additional tenant.';
+PRINT 'Update the USE statement at the top for each additional tenant when added.';
 GO
