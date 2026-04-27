@@ -13,7 +13,7 @@ interface AccessRequest {
   email:             string
   firstName:         string
   lastName:          string
-  teamId:            string
+  teamId:            number
   teamName:          string
   role:              string
   status:            string

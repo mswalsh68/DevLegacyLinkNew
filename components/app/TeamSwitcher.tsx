@@ -15,7 +15,7 @@ import type { TeamConfig } from '@/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type TeamItem = TeamConfig & { teamId: string }
+type TeamItem = TeamConfig & { teamId: number }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -44,7 +44,7 @@ export function TeamSwitcher() {
           try {
             const lastId = localStorage.getItem('dll_selected_team_id')
             if (lastId) {
-              const saved = res.data.find((t) => t.teamId === lastId)
+              const saved = res.data.find((t) => t.teamId === Number(lastId))
               if (saved) {
                 const { teamId: _id, ...configData } = saved
                 applyTheme(configData)
@@ -82,7 +82,7 @@ export function TeamSwitcher() {
     applyTheme(configData)
     triggerThemeRefresh(configData)
     try {
-      localStorage.setItem('dll_selected_team_id', teamId)
+      localStorage.setItem('dll_selected_team_id', String(teamId))
     } catch {
       // Private browsing / quota — ignore
     }

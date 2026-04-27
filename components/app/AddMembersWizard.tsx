@@ -39,7 +39,7 @@ interface SportOption {
 export interface AddMembersWizardProps {
   isOpen:        boolean
   onClose:       () => void
-  teamId:        string
+  teamId:        number
   teamName:      string
   sport:         string
   positions:     string[]

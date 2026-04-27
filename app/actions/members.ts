@@ -24,12 +24,12 @@ export interface CreateCoachStaffInput {
   email:     string
   firstName: string
   lastName:  string
-  teamId:    string
+  teamId:    number
   role:      'app_admin' | 'head_coach' | 'position_coach' | 'alumni_director'
 }
 
 export interface GenerateInviteCodeInput {
-  teamId:    string
+  teamId:    number
   role:      string          // 'player' | 'alumni' | 'head_coach' | 'position_coach' | 'alumni_director'
   expiresAt?: Date | null
   maxUses?:   number | null
