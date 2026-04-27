@@ -134,9 +134,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // This prevents a slow initial fetch from stomping over a team switch.
   const fetchGen = useRef(0)
 
-  const fetchAndApply = (teamId?: string) => {
+  const fetchAndApply = (teamId?: number | null) => {
     const gen = ++fetchGen.current
-    const url = teamId ? `/api/config?teamId=${encodeURIComponent(teamId)}` : '/api/config'
+    const url = teamId ? `/api/config?teamId=${teamId}` : '/api/config'
 
     fetch(url, { credentials: 'include' })
       .then((r) => r.json())
@@ -165,7 +165,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         const { data: cached, ts } = JSON.parse(raw) as {
           data: Partial<TeamConfig>
           ts: number
-          teamId?: string | null
+          teamId?: number | null
         }
         if (Date.now() - ts < CACHE_TTL) {
           const merged: TeamConfig = { ...DEFAULT_CONFIG, ...cached }
@@ -176,11 +176,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     } catch { /* Corrupt / unavailable storage — ignore */ }
 
     // 2. Fetch authoritative config from server (respects the stored teamId if any)
-    let initialTeamId: string | undefined
+    let initialTeamId: number | null | undefined
     try {
       const raw = sessionStorage.getItem(CACHE_KEY)
       if (raw) {
-        const { teamId } = JSON.parse(raw) as { teamId?: string | null }
+        const { teamId } = JSON.parse(raw) as { teamId?: number | null }
         if (teamId) initialTeamId = teamId
       }
     } catch { /* ignore */ }
@@ -189,7 +189,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     // 3. Listen for team switches pushed by AppNav's TeamSwitcher
     const handleTeamChange = (e: Event) => {
       const { config: newConfig, teamId } = (
-        e as CustomEvent<{ config: Partial<TeamConfig>; teamId?: string }>
+        e as CustomEvent<{ config: Partial<TeamConfig>; teamId?: number }>
       ).detail
 
       // Apply immediately from local data for instant visual feedback

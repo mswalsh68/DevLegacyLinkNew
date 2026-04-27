@@ -12,7 +12,7 @@ import { useAuth } from '@/providers/AuthProvider'
 import { useTeamConfig } from '@/providers/ThemeProvider'
 import type { TeamConfig } from '@/types'
 
-type TeamItem = TeamConfig & { teamId: string }
+type TeamItem = TeamConfig & { teamId: number }
 
 export function AppNav() {
   const router              = useRouter()
@@ -89,7 +89,7 @@ export function AppNav() {
       return
     }
 
-    try { localStorage.setItem('dll_selected_team_id', team.teamId) } catch { /* ignore */ }
+    try { localStorage.setItem('dll_selected_team_id', String(team.teamId)) } catch { /* ignore */ }
 
     // Clear sessionStorage so ThemeProvider doesn't paint stale old-team colors
     // on the new page load before the /api/config fetch completes.

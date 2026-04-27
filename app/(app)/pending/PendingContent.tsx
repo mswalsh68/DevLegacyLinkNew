@@ -10,7 +10,7 @@ import { sendRequestReminder } from '@/app/actions/invite'
 
 interface AccessRequest {
   requestId:       string
-  teamId:          string
+  teamId:          number
   teamName:        string
   sport:           string
   role:            string
