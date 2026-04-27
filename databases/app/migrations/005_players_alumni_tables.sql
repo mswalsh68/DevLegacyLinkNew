@@ -257,10 +257,11 @@ CREATE TABLE dbo.email_unsubscribes (
   CONSTRAINT CHK_unsub_recipient CHECK (
     (player_id IS NOT NULL AND alumni_id IS NULL) OR
     (player_id IS NULL AND alumni_id IS NOT NULL)
-  ),
-  CONSTRAINT UQ_unsub_player_channel ON dbo.email_unsubscribes (player_id, channel) WHERE player_id IS NOT NULL,
-  CONSTRAINT UQ_unsub_alumni_channel  ON dbo.email_unsubscribes (alumni_id, channel) WHERE alumni_id IS NOT NULL
+  )
 );
+-- Filtered unique indexes must be created outside CREATE TABLE in SQL Server
+CREATE UNIQUE INDEX UQ_unsub_player_channel    ON dbo.email_unsubscribes(player_id, channel) WHERE player_id IS NOT NULL;
+CREATE UNIQUE INDEX UQ_unsub_alumni_channel     ON dbo.email_unsubscribes(alumni_id,  channel) WHERE alumni_id  IS NOT NULL;
 CREATE UNIQUE INDEX UQ_email_unsubscribes_token ON dbo.email_unsubscribes(token);
 PRINT 'Created new dbo.email_unsubscribes';
 GO
@@ -269,6 +270,16 @@ GO
 -- Old: user_id UNIQUEIDENTIFIER FK → dbo.users(id)  [broken]
 -- New: player_id INT NULL FK → dbo.players, alumni_id INT NULL FK → dbo.alumni
 --      Exactly one non-NULL.
+
+-- Drop any FKs from other tables that reference dbo.outreach_messages before dropping
+DECLARE @DropOMFKs NVARCHAR(MAX) = N'';
+SELECT @DropOMFKs += N'ALTER TABLE ' + QUOTENAME(OBJECT_SCHEMA_NAME(fk.parent_object_id))
+                   + N'.' + QUOTENAME(OBJECT_NAME(fk.parent_object_id))
+                   + N' DROP CONSTRAINT ' + QUOTENAME(fk.name) + N'; '
+FROM sys.foreign_keys fk
+WHERE fk.referenced_object_id = OBJECT_ID(N'dbo.outreach_messages');
+IF LEN(@DropOMFKs) > 0 EXEC sp_executesql @DropOMFKs;
+
 IF OBJECT_ID('dbo.outreach_messages', 'U') IS NOT NULL
 BEGIN
   DROP TABLE dbo.outreach_messages;
