@@ -2496,7 +2496,7 @@ GO
 --   email_open_rate  — 0 placeholder (Phase 2: pixel pipeline)
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetDashboardMetrics_Alumni
-  @TenantId           UNIQUEIDENTIFIER,
+  @TenantId           INT,
   @SportId            UNIQUEIDENTIFIER = NULL,
   @RequestingUserId   UNIQUEIDENTIFIER = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
@@ -2593,7 +2593,7 @@ GO
 -- Returns headline metrics for the Player Communications tab.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetDashboardMetrics_Players
-  @TenantId           UNIQUEIDENTIFIER,
+  @TenantId           INT,
   @SportId            UNIQUEIDENTIFIER = NULL,
   @RequestingUserId   UNIQUEIDENTIFIER = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
@@ -2651,7 +2651,7 @@ GO
 -- @RequestingUserId = NULL → return all active sports (admin).
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetUserSports
-  @TenantId         UNIQUEIDENTIFIER,
+  @TenantId         INT,
   @RequestingUserId UNIQUEIDENTIFIER = NULL
 AS
 BEGIN
@@ -2687,7 +2687,7 @@ GO
 -- @SportId = <id> → filter to that sport only.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetDashboardMetrics_All
-  @TenantId           UNIQUEIDENTIFIER,
+  @TenantId           INT,
   @SportId            UNIQUEIDENTIFIER = NULL,
   @RequestingUserId   UNIQUEIDENTIFIER = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
