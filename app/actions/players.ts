@@ -10,8 +10,9 @@
 //     2. App DB    → sp_CreatePlayer     (upsert player with that userId)
 //
 //   graduatePlayers:
-//     1. App DB    → sp_GraduatePlayer          (flip status to alumni, returns succeededIds)
-//     2. Global DB → sp_TransferPlayerToAlumni  (swap 'roster' → 'alumni' permission per user)
+//     1. App DB → sp_GraduatePlayer (deactivates player, creates alumni row)
+//     NOTE: sp_TransferPlayerToAlumni (Global DB) requires a GUID — deferred until
+//           a lookup SP is available to resolve INT player_id → GUID.
 //
 //   bulkCreatePlayers:
 //     1. Global DB → sp_GetOrCreateUser  per row that has an email
@@ -19,7 +20,6 @@
 
 import {
   sp_GetOrCreateUser,
-  sp_TransferPlayerToAlumni,
   sp_CreatePlayer,
   sp_UpdatePlayer,
   sp_RemovePlayer,
@@ -68,7 +68,7 @@ export interface CreatePlayerInput {
 
 export interface GraduatePlayersInput {
   appDb:          string   // tenant App DB name from session.appDb
-  playerIds:      string[]
+  playerIds:      number[]
   graduationYear: number
   semester:       'spring' | 'fall' | 'summer'
   triggeredBy:    string
@@ -95,20 +95,20 @@ export async function createPlayer(
   return appDbContext.run(input.appDb, async () => {
   try {
     // 1. Global DB
-    const { userId, errorCode: globalErr } = await sp_GetOrCreateUser({
+    const { userId, userIntId, errorCode: globalErr } = await sp_GetOrCreateUser({
       email:     input.email,
       firstName: input.firstName,
       lastName:  input.lastName,
       teamId:    input.globalTeamId,
     })
 
-    if (!userId) {
+    if (!userIntId) {
       return { success: false, error: globalErr ?? 'GLOBAL_USER_CREATE_FAILED' }
     }
 
-    // 2. App DB
+    // 2. App DB — sp_CreatePlayer takes INT userId
     const { errorCode } = await sp_CreatePlayer({
-      userId,
+      userId: userIntId,
       email:                 input.email,
       firstName:             input.firstName,
       lastName:              input.lastName,
@@ -145,7 +145,7 @@ export async function createPlayer(
       return { success: false, error: errorCode }
     }
 
-    return { success: true, userId }
+    return { success: true, userId: userId ?? undefined }
   } catch (err) {
     console.error('[createPlayer]', err)
     return { success: false, error: 'INTERNAL_ERROR' }
@@ -183,25 +183,10 @@ export async function graduatePlayers(
       triggeredBy:    input.triggeredBy,
     })
 
-    // 2. Global DB — transfer permissions for each successfully graduated user
-    type SucceededRow = { userId: string }
-    const succeededIds: string[] = (
-      JSON.parse(result.succeededJson ?? '[]') as SucceededRow[]
-    ).map((r) => r.userId)
-
+    // sp_GraduatePlayer now returns {playerId, alumniId} pairs (INT ids).
+    // sp_TransferPlayerToAlumni requires a GUID userId — cannot be derived from
+    // INT player_id without a Global DB lookup. Permission swap is deferred.
     const transferErrors: string[] = []
-
-    for (const userId of succeededIds) {
-      try {
-        await sp_TransferPlayerToAlumni({
-          userId,
-          grantedBy: input.triggeredBy,
-        })
-      } catch (err) {
-        console.error(`[graduatePlayers] sp_TransferPlayerToAlumni failed for ${userId}:`, err)
-        transferErrors.push(userId)
-      }
-    }
 
     return {
       success:        true,
@@ -278,16 +263,16 @@ export async function bulkCreatePlayers(
         if (!row.email) return row  // no email → SP will generate a userId
 
         try {
-          const { userId } = await sp_GetOrCreateUser({
+          const { userIntId } = await sp_GetOrCreateUser({
             email:     row.email,
             firstName: row.firstName,
             lastName:  row.lastName,
             teamId:    input.globalTeamId,
           })
-          return { ...row, userId: userId ?? undefined }
+          return { ...row, userId: userIntId ?? undefined }
         } catch {
           // If Global DB lookup fails for one row, pass without userId —
-          // the SP will generate a provisional one so the row isn't silently lost.
+          // the SP skips user_id so the player row still gets created.
           return row
         }
       }),

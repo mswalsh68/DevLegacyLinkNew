@@ -10,7 +10,7 @@ export async function POST(req: Request) {
   if (!session.appDb)          return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
 
   const { playerIds, transferYear, transferSemester } = await req.json() as {
-    playerIds:        string[]
+    playerIds:        number[]
     transferYear:     number
     transferSemester: string
   }

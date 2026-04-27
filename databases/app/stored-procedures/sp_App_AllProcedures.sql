@@ -3,148 +3,143 @@ SET ANSI_NULLS ON;
 GO
 -- ============================================================
 -- APP DB — ALL STORED PROCEDURES
--- Run on: each tenant AppDB after 009_users_status_consolidation.sql
+-- Run on: each tenant AppDB after 005_players_alumni_tables.sql
 --
--- All players and alumni are rows in dbo.users, differentiated
--- by status_id (FK → dbo.player_status_types):
---   1 = current_player
---   2 = alumni
---   3 = removed
+-- Schema (migration 004_repair2 + 005):
+--   dbo.users   — thin sync: user_id INT PK (mirrors Global)
+--   dbo.players — active roster: player_id INT PK = user_id
+--   dbo.alumni  — graduates/imports: alumni_id INT IDENTITY PK
 --
--- Cross-database calls (Global DB):
---   This file uses SYNONYMS instead of 4-part linked server names.
---   Before running this file, run:
---     databases/app/stored-procedures/00_create_synonyms.sql
---   That script creates:
---     dbo.syn_GetOrCreateUser       → [LegacyLinkGlobal].[dbo].[sp_GetOrCreateUser]
---     dbo.syn_TransferPlayerToAlumni→ [LegacyLinkGlobal].[dbo].[sp_TransferPlayerToAlumni]
---   Synonyms work on both local SQL Express and Azure SQL
---   (both DBs must be on the same logical server / instance).
---
--- Create player flow:
---   1. Call dbo.syn_GetOrCreateUser to get/create the canonical
---      global user ID (idempotent on email).
---   2. Upsert the returned user ID into AppDB dbo.users.
---
--- Graduate = UPDATE dbo.users SET status_id = 2
--- Remove   = UPDATE dbo.users SET status_id = 3
+-- ID conventions:
+--   @PlayerId INT   = dbo.players.player_id
+--   @AlumniId INT   = dbo.alumni.alumni_id
+--   @UserId   INT   = dbo.users.user_id  (logged-in staff/viewer)
+--   @RequestingUserId UNIQUEIDENTIFIER = JWT sub (session GUID, kept for compatibility)
+--   @CreatedBy / @UpdatedBy UNIQUEIDENTIFIER = staff JWT sub (stored in campaign tables)
 -- ============================================================
 
 -- ============================================================
 -- sp_UpsertUser
 -- Syncs a LegacyLinkGlobal user into local dbo.users.
--- Called after login / by create player flow.
+-- Called at login and before create-player flow.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_UpsertUser
-  @UserId    UNIQUEIDENTIFIER,
-  @Email     NVARCHAR(255),
-  @FirstName NVARCHAR(100),
-  @LastName  NVARCHAR(100)
+  @UserId       INT,
+  @Email        NVARCHAR(255),
+  @FirstName    NVARCHAR(100),
+  @LastName     NVARCHAR(100),
+  @PlatformRole NVARCHAR(50)  = 'player',
+  @ProgramRoleId INT          = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
 
-  IF EXISTS (SELECT 1 FROM dbo.users WHERE id = @UserId)
+  IF EXISTS (SELECT 1 FROM dbo.users WHERE user_id = @UserId)
   BEGIN
     UPDATE dbo.users SET
-      email      = @Email,
-      first_name = @FirstName,
-      last_name  = @LastName,
-      updated_at = SYSUTCDATETIME()
-    WHERE id = @UserId;
+      email           = @Email,
+      first_name      = @FirstName,
+      last_name       = @LastName,
+      platform_role   = ISNULL(@PlatformRole,  platform_role),
+      program_role_id = COALESCE(@ProgramRoleId, program_role_id),
+      synced_at       = SYSUTCDATETIME()
+    WHERE user_id = @UserId;
   END
   ELSE
   BEGIN
-    INSERT INTO dbo.users (id, email, first_name, last_name)
-    VALUES (@UserId, @Email, @FirstName, @LastName);
+    INSERT INTO dbo.users (user_id, email, first_name, last_name, platform_role, program_role_id)
+    VALUES (@UserId, @Email, @FirstName, @LastName, ISNULL(@PlatformRole, 'player'), @ProgramRoleId);
   END
 END;
 GO
 
 -- ============================================================
 -- vwPlayers
--- All current players (status_id = 1).
--- Used by sp_GetPlayers and future communication procs.
--- RLS on dbo.users applies transparently when queried.
+-- All active players. Joins dbo.players + dbo.users for name/email.
+-- Returns player_id AS id for callers that use the generic 'id' alias.
 -- ============================================================
 CREATE OR ALTER VIEW dbo.vwPlayers AS
 SELECT
-  u.id,
-  u.sport_id,
-  u.jersey_number,
+  p.player_id,
+  p.player_id                    AS id,
+  u.user_id,
+  p.sport_id,
+  p.jersey_number,
   u.first_name,
   u.last_name,
-  u.position,
-  u.academic_year,
-  u.recruiting_class,
-  u.height_inches,
-  u.weight_lbs,
-  u.home_town,
-  u.home_state,
-  u.high_school,
-  u.major,
-  u.phone,
-  u.personal_email,
-  u.instagram,
-  u.twitter,
-  u.snapchat,
-  u.emergency_contact_name,
-  u.emergency_contact_phone,
-  u.parent1_name,
-  u.parent1_phone,
-  u.parent1_email,
-  u.parent2_name,
-  u.parent2_phone,
-  u.parent2_email,
-  u.notes,
-  u.created_at,
-  u.updated_at
-FROM dbo.users u
-WHERE u.status_id = 1;
+  p.position,
+  p.academic_year,
+  p.recruiting_class,
+  p.height_inches,
+  p.weight_lbs,
+  p.home_town,
+  p.home_state,
+  p.high_school,
+  p.major,
+  p.phone,
+  p.personal_email,
+  p.instagram,
+  p.twitter,
+  p.snapchat,
+  p.emergency_contact_name,
+  p.emergency_contact_phone,
+  p.parent1_name,
+  p.parent1_phone,
+  p.parent1_email,
+  p.parent2_name,
+  p.parent2_phone,
+  p.parent2_email,
+  p.notes,
+  p.is_active,
+  p.created_at,
+  p.updated_at
+FROM dbo.players p
+JOIN dbo.users   u ON u.user_id = p.player_id
+WHERE p.is_active = 1;
 GO
 
 -- ============================================================
 -- vwAlumni
--- All alumni (status_id = 2).
--- Used by sp_GetAlumni and future communication procs.
--- RLS on dbo.users applies transparently when queried.
+-- All alumni. Returns alumni_id AS id.
 -- ============================================================
 CREATE OR ALTER VIEW dbo.vwAlumni AS
 SELECT
-  u.id,
-  u.sport_id,
-  u.first_name,
-  u.last_name,
-  u.position,
-  u.recruiting_class,
-  u.graduation_year,
-  u.graduation_semester,
-  u.graduated_at,
-  u.phone,
-  u.personal_email,
-  u.linkedin_url,
-  u.twitter_url,
-  u.current_employer,
-  u.current_job_title,
-  u.current_city,
-  u.current_state,
-  u.is_donor,
-  u.last_donation_date,
-  u.total_donations,
-  u.engagement_score,
-  u.communication_consent,
-  u.years_on_roster,
-  u.notes,
-  u.created_at,
-  u.updated_at
-FROM dbo.users u
-WHERE u.status_id = 2;
+  a.alumni_id,
+  a.alumni_id            AS id,
+  a.user_id,
+  a.source_player_id,
+  a.sport_id,
+  a.first_name,
+  a.last_name,
+  a.email,
+  a.position,
+  a.recruiting_class,
+  a.graduation_year,
+  a.graduation_semester,
+  a.graduated_at,
+  a.phone,
+  a.personal_email,
+  a.linkedin_url,
+  a.twitter_url,
+  a.current_employer,
+  a.current_job_title,
+  a.current_city,
+  a.current_state,
+  a.is_donor,
+  a.last_donation_date,
+  a.total_donations,
+  a.engagement_score,
+  a.communication_consent,
+  a.years_on_roster,
+  a.notes,
+  a.created_at,
+  a.updated_at
+FROM dbo.alumni a;
 GO
 
 -- ============================================================
 -- sp_GetPlayers
--- Returns current players from dbo.vwPlayers.
--- Status filtering is handled by the view (status_id = 1).
+-- Returns active players with pagination and filtering.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetPlayers
   @Search          NVARCHAR(255)    = NULL,
@@ -160,13 +155,6 @@ CREATE OR ALTER PROCEDURE dbo.sp_GetPlayers
 AS
 BEGIN
   SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
-  END
 
   DECLARE @Offset     INT           = (@Page - 1) * @PageSize;
   DECLARE @SearchWild NVARCHAR(257) = '%' + ISNULL(@Search, '') + '%';
@@ -184,6 +172,7 @@ BEGIN
          OR CAST(p.jersey_number AS NVARCHAR) = @ExactNum);
 
   SELECT
+    p.player_id             AS playerId,
     p.id,
     p.sport_id              AS sportId,
     p.jersey_number         AS jerseyNumber,
@@ -224,32 +213,25 @@ GO
 
 -- ============================================================
 -- sp_GetPlayerById
--- Returns a single current or historical player with stats.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetPlayerById
-  @UserId    UNIQUEIDENTIFIER,
+  @PlayerId  INT,
   @ErrorCode NVARCHAR(50) OUTPUT,
   @RequestingUserId   UNIQUEIDENTIFIER = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
-  END
   SET @ErrorCode = NULL;
 
-  IF NOT EXISTS (SELECT 1 FROM dbo.vwPlayers WHERE id = @UserId)
+  IF NOT EXISTS (SELECT 1 FROM dbo.vwPlayers WHERE player_id = @PlayerId)
   BEGIN
     SET @ErrorCode = 'PLAYER_NOT_FOUND';
     RETURN;
   END
 
   SELECT
+    p.player_id             AS playerId,
     p.id,
     p.sport_id              AS sportId,
     p.jersey_number         AS jerseyNumber,
@@ -281,7 +263,7 @@ BEGIN
     p.created_at            AS createdAt,
     p.updated_at            AS updatedAt
   FROM dbo.vwPlayers p
-  WHERE p.id = @UserId;
+  WHERE p.player_id = @PlayerId;
 
   SELECT
     ps.season_year  AS seasonYear,
@@ -289,29 +271,24 @@ BEGIN
     ps.stats_json   AS statsJson,
     ps.updated_at   AS updatedAt
   FROM dbo.player_stats ps
-  WHERE ps.user_id = @UserId
+  WHERE ps.player_id = @PlayerId
   ORDER BY ps.season_year DESC;
 END;
 GO
 
 -- ============================================================
 -- sp_CreatePlayer
--- Creates a player account. Flow:
---   1. Call dbo.syn_GetOrCreateUser to get the canonical global
---      user ID (creates account in LegacyLinkGlobal if needed,
---      returns existing ID if email already registered).
---   2. Upsert into AppDB dbo.users with that ID (status_id = 1).
---
--- Prerequisite: run 00_create_synonyms.sql before this file.
+-- Upserts a player into dbo.users + dbo.players.
+-- @UserId = the INT user_id resolved by the caller via sp_GetOrCreateUser on Global DB.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_CreatePlayer
+  @UserId                INT,
   @Email                 NVARCHAR(255),
   @FirstName             NVARCHAR(100),
   @LastName              NVARCHAR(100),
   @Position              NVARCHAR(10),
   @AcademicYear          NVARCHAR(20),
   @RecruitingClass       SMALLINT,
-  @UserId                UNIQUEIDENTIFIER,   -- resolved by caller via sp_GetOrCreateUser on Global DB
   @SportId               UNIQUEIDENTIFIER = NULL,
   @JerseyNumber          TINYINT          = NULL,
   @HeightInches          TINYINT          = NULL,
@@ -340,13 +317,6 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreatePlayer
 AS
 BEGIN
   SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
-  END
   SET @ErrorCode = NULL;
 
   IF @RecruitingClass < 2000 OR @RecruitingClass > 2100
@@ -356,8 +326,8 @@ BEGIN
   END
 
   IF @JerseyNumber IS NOT NULL AND EXISTS (
-    SELECT 1 FROM dbo.users
-    WHERE jersey_number = @JerseyNumber AND status_id = 1
+    SELECT 1 FROM dbo.players
+    WHERE jersey_number = @JerseyNumber AND is_active = 1 AND player_id <> @UserId
       AND (@SportId IS NULL OR sport_id = @SportId)
   )
   BEGIN
@@ -365,68 +335,67 @@ BEGIN
     RETURN;
   END
 
-  -- Upsert into AppDB dbo.users
-  -- @UserId was resolved by the caller via sp_GetOrCreateUser on Global DB
-  IF EXISTS (SELECT 1 FROM dbo.users WHERE id = @UserId)
+  -- Sync into thin dbo.users
+  EXEC dbo.sp_UpsertUser
+    @UserId       = @UserId,
+    @Email        = @Email,
+    @FirstName    = @FirstName,
+    @LastName     = @LastName,
+    @PlatformRole = 'player';
+
+  -- Upsert into dbo.players
+  IF EXISTS (SELECT 1 FROM dbo.players WHERE player_id = @UserId)
   BEGIN
-    UPDATE dbo.users SET
-      email                   = @Email,
-      first_name              = @FirstName,
-      last_name               = @LastName,
-      status_id               = 1,
-      sport_id                = COALESCE(@SportId,                sport_id),
-      jersey_number           = COALESCE(@JerseyNumber,           jersey_number),
+    UPDATE dbo.players SET
+      sport_id                = COALESCE(@SportId,               sport_id),
+      jersey_number           = COALESCE(@JerseyNumber,          jersey_number),
       position                = @Position,
       academic_year           = @AcademicYear,
       recruiting_class        = @RecruitingClass,
-      height_inches           = COALESCE(@HeightInches,           height_inches),
-      weight_lbs              = COALESCE(@WeightLbs,              weight_lbs),
-      home_town               = COALESCE(@HomeTown,               home_town),
-      home_state              = COALESCE(@HomeState,              home_state),
-      high_school             = COALESCE(@HighSchool,             high_school),
-      major                   = COALESCE(@Major,                  major),
-      phone                   = COALESCE(@Phone,                  phone),
-      personal_email          = COALESCE(@Email,                  personal_email),
-      instagram               = COALESCE(@Instagram,              instagram),
-      twitter                 = COALESCE(@Twitter,                twitter),
-      snapchat                = COALESCE(@Snapchat,               snapchat),
+      height_inches           = COALESCE(@HeightInches,          height_inches),
+      weight_lbs              = COALESCE(@WeightLbs,             weight_lbs),
+      home_town               = COALESCE(@HomeTown,              home_town),
+      home_state              = COALESCE(@HomeState,             home_state),
+      high_school             = COALESCE(@HighSchool,            high_school),
+      major                   = COALESCE(@Major,                 major),
+      phone                   = COALESCE(@Phone,                 phone),
+      personal_email          = COALESCE(@Email,                 personal_email),
+      instagram               = COALESCE(@Instagram,             instagram),
+      twitter                 = COALESCE(@Twitter,               twitter),
+      snapchat                = COALESCE(@Snapchat,              snapchat),
       emergency_contact_name  = COALESCE(@EmergencyContactName,  emergency_contact_name),
       emergency_contact_phone = COALESCE(@EmergencyContactPhone, emergency_contact_phone),
-      parent1_name            = COALESCE(@Parent1Name,            parent1_name),
-      parent1_phone           = COALESCE(@Parent1Phone,           parent1_phone),
-      parent1_email           = COALESCE(@Parent1Email,           parent1_email),
-      parent2_name            = COALESCE(@Parent2Name,            parent2_name),
-      parent2_phone           = COALESCE(@Parent2Phone,           parent2_phone),
-      parent2_email           = COALESCE(@Parent2Email,           parent2_email),
-      notes                   = COALESCE(@Notes,                  notes),
+      parent1_name            = COALESCE(@Parent1Name,           parent1_name),
+      parent1_phone           = COALESCE(@Parent1Phone,          parent1_phone),
+      parent1_email           = COALESCE(@Parent1Email,          parent1_email),
+      parent2_name            = COALESCE(@Parent2Name,           parent2_name),
+      parent2_phone           = COALESCE(@Parent2Phone,          parent2_phone),
+      parent2_email           = COALESCE(@Parent2Email,          parent2_email),
+      notes                   = COALESCE(@Notes,                 notes),
+      is_active               = 1,
       updated_at              = SYSUTCDATETIME()
-    WHERE id = @UserId;
+    WHERE player_id = @UserId;
   END
   ELSE
   BEGIN
-    INSERT INTO dbo.users (
-      id, email, first_name, last_name, status_id, sport_id,
-      jersey_number, position, academic_year, recruiting_class,
+    INSERT INTO dbo.players (
+      player_id, sport_id, jersey_number, position, academic_year, recruiting_class,
       height_inches, weight_lbs, home_town, home_state, high_school,
       major, phone, personal_email, instagram, twitter, snapchat,
       emergency_contact_name, emergency_contact_phone,
       parent1_name, parent1_phone, parent1_email,
-      parent2_name, parent2_phone, parent2_email,
-      notes
+      parent2_name, parent2_phone, parent2_email, notes
     )
     VALUES (
-      @UserId, @Email, @FirstName, @LastName, 1, @SportId,
-      @JerseyNumber, @Position, @AcademicYear, @RecruitingClass,
+      @UserId, @SportId, @JerseyNumber, @Position, @AcademicYear, @RecruitingClass,
       @HeightInches, @WeightLbs, @HomeTown, @HomeState, @HighSchool,
       @Major, @Phone, @Email, @Instagram, @Twitter, @Snapchat,
       @EmergencyContactName, @EmergencyContactPhone,
       @Parent1Name, @Parent1Phone, @Parent1Email,
-      @Parent2Name, @Parent2Phone, @Parent2Email,
-      @Notes
+      @Parent2Name, @Parent2Phone, @Parent2Email, @Notes
     );
   END
 
-  -- Register in users_sports if we have a sport
   IF @SportId IS NOT NULL
     AND NOT EXISTS (SELECT 1 FROM dbo.users_sports WHERE user_id = @UserId AND sport_id = @SportId)
   BEGIN
@@ -441,7 +410,7 @@ GO
 -- Updates player profile. NULL = no change.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_UpdatePlayer
-  @UserId                UNIQUEIDENTIFIER,
+  @PlayerId              INT,
   @JerseyNumber          TINYINT          = NULL,
   @Position              NVARCHAR(10)     = NULL,
   @AcademicYear          NVARCHAR(20)     = NULL,
@@ -469,31 +438,24 @@ CREATE OR ALTER PROCEDURE dbo.sp_UpdatePlayer
 AS
 BEGIN
   SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
-  END
   SET @ErrorCode = NULL;
 
-  IF NOT EXISTS (SELECT 1 FROM dbo.users WHERE id = @UserId AND status_id = 1)
+  IF NOT EXISTS (SELECT 1 FROM dbo.players WHERE player_id = @PlayerId AND is_active = 1)
   BEGIN
     SET @ErrorCode = 'PLAYER_NOT_FOUND';
     RETURN;
   END
 
   IF @JerseyNumber IS NOT NULL AND EXISTS (
-    SELECT 1 FROM dbo.users
-    WHERE jersey_number = @JerseyNumber AND status_id = 1 AND id <> @UserId
+    SELECT 1 FROM dbo.players
+    WHERE jersey_number = @JerseyNumber AND is_active = 1 AND player_id <> @PlayerId
   )
   BEGIN
     SET @ErrorCode = 'JERSEY_NUMBER_IN_USE';
     RETURN;
   END
 
-  UPDATE dbo.users SET
+  UPDATE dbo.players SET
     jersey_number           = COALESCE(@JerseyNumber,          jersey_number),
     position                = COALESCE(@Position,              position),
     academic_year           = COALESCE(@AcademicYear,          academic_year),
@@ -515,26 +477,26 @@ BEGIN
     parent2_email           = COALESCE(@Parent2Email,          parent2_email),
     notes                   = COALESCE(@Notes,                 notes),
     updated_at              = SYSUTCDATETIME()
-  WHERE id = @UserId;
+  WHERE player_id = @PlayerId;
 END;
 GO
 
 -- ============================================================
 -- sp_GraduatePlayer
--- Flips status_id to 2 (alumni) for one or more players.
--- Also swaps permissions in LegacyLinkGlobal via synonym.
--- Each player is wrapped in its own transaction so one failure
--- does not roll back the entire batch.
+-- Deactivates players and creates alumni rows.
+-- @PlayerIds = JSON array of INT player_ids.
+-- Returns @SucceededJson with {playerId, alumniId} pairs so the
+-- caller can invoke sp_TransferPlayerToAlumni on Global DB.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GraduatePlayer
-  @PlayerIds      NVARCHAR(MAX),   -- JSON array of user GUIDs
+  @PlayerIds      NVARCHAR(MAX),   -- JSON array of INT player_ids
   @GraduationYear SMALLINT,
   @Semester       NVARCHAR(10),    -- 'spring' | 'fall' | 'summer'
   @TriggeredBy    NVARCHAR(100),
   @TransactionId  UNIQUEIDENTIFIER OUTPUT,
   @SuccessCount   INT              OUTPUT,
   @FailureJson    NVARCHAR(MAX)    OUTPUT,
-  @SucceededJson  NVARCHAR(MAX)    OUTPUT  -- array of userIds that flipped to alumni; caller uses this to call sp_TransferPlayerToAlumni on Global DB
+  @SucceededJson  NVARCHAR(MAX)    OUTPUT
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -545,10 +507,10 @@ BEGIN
   SET @FailureJson   = '[]';
   SET @SucceededJson = '[]';
 
-  DECLARE @failures  TABLE (user_id NVARCHAR(100), reason NVARCHAR(500));
-  DECLARE @succeeded TABLE (user_id NVARCHAR(100));
-  DECLARE @userIds    TABLE (user_id UNIQUEIDENTIFIER);
-  DECLARE @currentId  UNIQUEIDENTIFIER;
+  DECLARE @failures  TABLE (player_id INT, reason NVARCHAR(500));
+  DECLARE @succeeded TABLE (player_id INT, alumni_id INT);
+  DECLARE @playerIds TABLE (player_id INT);
+  DECLARE @currentId INT;
 
   IF @GraduationYear < 2000 OR @GraduationYear > 2100
   BEGIN
@@ -562,12 +524,12 @@ BEGIN
     RETURN;
   END
 
-  INSERT INTO @userIds
-  SELECT TRY_CAST([value] AS UNIQUEIDENTIFIER)
+  INSERT INTO @playerIds
+  SELECT TRY_CAST([value] AS INT)
   FROM OPENJSON(@PlayerIds)
-  WHERE TRY_CAST([value] AS UNIQUEIDENTIFIER) IS NOT NULL;
+  WHERE TRY_CAST([value] AS INT) IS NOT NULL;
 
-  DECLARE cur CURSOR FOR SELECT user_id FROM @userIds;
+  DECLARE cur CURSOR FOR SELECT player_id FROM @playerIds;
   OPEN cur;
   FETCH NEXT FROM cur INTO @currentId;
 
@@ -576,51 +538,77 @@ BEGIN
     BEGIN TRY
       BEGIN TRANSACTION;
 
-        IF NOT EXISTS (SELECT 1 FROM dbo.users WHERE id = @currentId AND status_id = 1)
+        IF NOT EXISTS (SELECT 1 FROM dbo.players WHERE player_id = @currentId AND is_active = 1)
         BEGIN
           ROLLBACK TRANSACTION;
-          INSERT INTO @failures VALUES (CAST(@currentId AS NVARCHAR(100)),
-            CASE WHEN EXISTS (SELECT 1 FROM dbo.users WHERE id = @currentId AND status_id = 2)
-                 THEN 'Already an alumni'
+          INSERT INTO @failures VALUES (@currentId,
+            CASE WHEN EXISTS (SELECT 1 FROM dbo.alumni WHERE source_player_id = @currentId)
+                 THEN 'Already graduated'
                  ELSE 'Player not found' END);
           FETCH NEXT FROM cur INTO @currentId;
           CONTINUE;
         END
 
-        -- Flip status to alumni
-        UPDATE dbo.users SET
-          status_id           = 2,
-          graduation_year     = @GraduationYear,
-          graduation_semester = @Semester,
-          graduated_at        = SYSUTCDATETIME(),
-          updated_at          = SYSUTCDATETIME()
-        WHERE id = @currentId;
+        -- Deactivate player
+        UPDATE dbo.players SET
+          is_active  = 0,
+          updated_at = SYSUTCDATETIME()
+        WHERE player_id = @currentId;
+
+        -- Create alumni row, copying identity from dbo.players + dbo.users
+        DECLARE @newAlumniId INT;
+        DECLARE @fn NVARCHAR(100), @ln NVARCHAR(100), @em NVARCHAR(255);
+        DECLARE @sId UNIQUEIDENTIFIER, @pos NVARCHAR(10), @rc SMALLINT;
+
+        SELECT
+          @fn  = u.first_name,
+          @ln  = u.last_name,
+          @em  = u.email,
+          @sId = p.sport_id,
+          @pos = p.position,
+          @rc  = p.recruiting_class
+        FROM dbo.players p
+        JOIN dbo.users   u ON u.user_id = p.player_id
+        WHERE p.player_id = @currentId;
+
+        INSERT INTO dbo.alumni (
+          user_id, source_player_id, first_name, last_name, email,
+          sport_id, position, recruiting_class,
+          graduation_year, graduation_semester, graduated_at
+        )
+        VALUES (
+          @currentId, @currentId, @fn, @ln, @em,
+          @sId, @pos, @rc,
+          @GraduationYear, @Semester, SYSUTCDATETIME()
+        );
+
+        SET @newAlumniId = SCOPE_IDENTITY();
 
         -- Audit log
         INSERT INTO dbo.graduation_log
-          (transaction_id, user_id, graduation_year, graduation_semester, triggered_by, status)
+          (transaction_id, player_id, alumni_id, graduation_year, graduation_semester,
+           triggered_by_user_id, status)
         VALUES
-          (@TransactionId, @currentId, @GraduationYear, @Semester,
-           TRY_CAST(@TriggeredBy AS UNIQUEIDENTIFIER), 'success');
+          (@TransactionId, @currentId, @newAlumniId, @GraduationYear, @Semester,
+           TRY_CAST(@TriggeredBy AS INT), 'success');
 
       COMMIT TRANSACTION;
-      SET @SuccessCount = @SuccessCount + 1;
-      INSERT INTO @succeeded VALUES (CAST(@currentId AS NVARCHAR(100)));
-      -- Caller (Next.js server action) will call sp_TransferPlayerToAlumni on Global DB
-      -- for each userId returned in @SucceededJson.
+      SET @SuccessCount += 1;
+      INSERT INTO @succeeded VALUES (@currentId, @newAlumniId);
 
     END TRY
     BEGIN CATCH
       IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
 
       DECLARE @errMsg NVARCHAR(500) = ERROR_MESSAGE();
-      INSERT INTO @failures VALUES (CAST(@currentId AS NVARCHAR(100)), @errMsg);
+      INSERT INTO @failures VALUES (@currentId, @errMsg);
 
       INSERT INTO dbo.graduation_log
-        (transaction_id, user_id, graduation_year, graduation_semester, triggered_by, status, notes)
+        (transaction_id, player_id, alumni_id, graduation_year, graduation_semester,
+         triggered_by_user_id, status, notes)
       VALUES
-        (@TransactionId, @currentId, @GraduationYear, @Semester,
-         TRY_CAST(@TriggeredBy AS UNIQUEIDENTIFIER), 'failed', @errMsg);
+        (@TransactionId, @currentId, NULL, @GraduationYear, @Semester,
+         TRY_CAST(@TriggeredBy AS INT), 'failed', @errMsg);
     END CATCH;
 
     FETCH NEXT FROM cur INTO @currentId;
@@ -630,18 +618,18 @@ BEGIN
   DEALLOCATE cur;
 
   SELECT @FailureJson = ISNULL(
-    (SELECT user_id AS userId, reason FROM @failures FOR JSON PATH), '[]');
+    (SELECT player_id AS playerId, reason FROM @failures FOR JSON PATH), '[]');
   SELECT @SucceededJson = ISNULL(
-    (SELECT user_id AS userId FROM @succeeded FOR JSON PATH), '[]');
+    (SELECT player_id AS playerId, alumni_id AS alumniId FROM @succeeded FOR JSON PATH), '[]');
 END;
 GO
 
 -- ============================================================
 -- sp_RemovePlayer
--- Sets status_id = 3 (removed). No reason required.
+-- Deactivates a player (is_active = 0).
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_RemovePlayer
-  @UserId    UNIQUEIDENTIFIER,
+  @PlayerId  INT,
   @RemovedBy UNIQUEIDENTIFIER,
   @ErrorCode NVARCHAR(50) OUTPUT,
   @RequestingUserId   UNIQUEIDENTIFIER = NULL,
@@ -649,25 +637,18 @@ CREATE OR ALTER PROCEDURE dbo.sp_RemovePlayer
 AS
 BEGIN
   SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
-  END
   SET @ErrorCode = NULL;
 
-  IF NOT EXISTS (SELECT 1 FROM dbo.users WHERE id = @UserId AND status_id IN (1, 2))
+  IF NOT EXISTS (SELECT 1 FROM dbo.players WHERE player_id = @PlayerId AND is_active = 1)
   BEGIN
-    SET @ErrorCode = 'USER_NOT_FOUND';
+    SET @ErrorCode = 'PLAYER_NOT_FOUND';
     RETURN;
   END
 
-  UPDATE dbo.users SET
-    status_id  = 3,
+  UPDATE dbo.players SET
+    is_active  = 0,
     updated_at = SYSUTCDATETIME()
-  WHERE id = @UserId;
+  WHERE player_id = @PlayerId;
 END;
 GO
 
@@ -675,7 +656,7 @@ GO
 -- sp_UpsertPlayerStats
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_UpsertPlayerStats
-  @UserId      UNIQUEIDENTIFIER,
+  @PlayerId    INT,
   @SeasonYear  SMALLINT,
   @GamesPlayed TINYINT       = NULL,
   @StatsJson   NVARCHAR(MAX) = NULL,
@@ -685,41 +666,32 @@ CREATE OR ALTER PROCEDURE dbo.sp_UpsertPlayerStats
 AS
 BEGIN
   SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
-  END
   SET @ErrorCode = NULL;
 
-  IF NOT EXISTS (SELECT 1 FROM dbo.users WHERE id = @UserId AND status_id = 1)
+  IF NOT EXISTS (SELECT 1 FROM dbo.players WHERE player_id = @PlayerId AND is_active = 1)
   BEGIN
     SET @ErrorCode = 'PLAYER_NOT_FOUND';
     RETURN;
   END
 
-  IF EXISTS (SELECT 1 FROM dbo.player_stats WHERE user_id = @UserId AND season_year = @SeasonYear)
+  IF EXISTS (SELECT 1 FROM dbo.player_stats WHERE player_id = @PlayerId AND season_year = @SeasonYear)
   BEGIN
     UPDATE dbo.player_stats SET
       games_played = COALESCE(@GamesPlayed, games_played),
       stats_json   = COALESCE(@StatsJson,   stats_json),
       updated_at   = SYSUTCDATETIME()
-    WHERE user_id = @UserId AND season_year = @SeasonYear;
+    WHERE player_id = @PlayerId AND season_year = @SeasonYear;
   END
   ELSE
   BEGIN
-    INSERT INTO dbo.player_stats (user_id, season_year, games_played, stats_json)
-    VALUES (@UserId, @SeasonYear, @GamesPlayed, @StatsJson);
+    INSERT INTO dbo.player_stats (player_id, season_year, games_played, stats_json)
+    VALUES (@PlayerId, @SeasonYear, @GamesPlayed, @StatsJson);
   END
 END;
 GO
 
 -- ============================================================
 -- sp_GetAlumni
--- Returns alumni from dbo.vwAlumni.
--- Status filtering is handled by the view (status_id = 2).
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetAlumni
   @Search    NVARCHAR(255)    = NULL,
@@ -735,13 +707,6 @@ CREATE OR ALTER PROCEDURE dbo.sp_GetAlumni
 AS
 BEGIN
   SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
-  END
 
   DECLARE @Offset     INT           = (@Page - 1) * @PageSize;
   DECLARE @SearchWild NVARCHAR(257) = '%' + ISNULL(@Search, '') + '%';
@@ -760,6 +725,7 @@ BEGIN
          OR a.personal_email   LIKE @SearchWild);
 
   SELECT
+    a.alumni_id             AS alumniId,
     a.id,
     a.sport_id              AS sportId,
     a.first_name            AS firstName,
@@ -803,29 +769,23 @@ GO
 -- sp_GetAlumniById
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetAlumniById
-  @UserId    UNIQUEIDENTIFIER,
+  @AlumniId  INT,
   @ErrorCode NVARCHAR(50) OUTPUT,
   @RequestingUserId   UNIQUEIDENTIFIER = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
-  END
   SET @ErrorCode = NULL;
 
-  IF NOT EXISTS (SELECT 1 FROM dbo.vwAlumni WHERE id = @UserId)
+  IF NOT EXISTS (SELECT 1 FROM dbo.alumni WHERE alumni_id = @AlumniId)
   BEGIN
     SET @ErrorCode = 'ALUMNI_NOT_FOUND';
     RETURN;
   END
 
   SELECT
+    a.alumni_id             AS alumniId,
     a.id,
     a.sport_id              AS sportId,
     a.first_name            AS firstName,
@@ -852,7 +812,7 @@ BEGIN
     a.created_at            AS createdAt,
     a.updated_at            AS updatedAt
   FROM dbo.vwAlumni a
-  WHERE a.id = @UserId;
+  WHERE a.alumni_id = @AlumniId;
 
   SELECT
     il.id,
@@ -861,19 +821,18 @@ BEGIN
     il.outcome,
     il.follow_up_at AS followUpAt,
     il.logged_at    AS loggedAt,
-    il.logged_by    AS loggedBy
+    il.logged_by_user_id AS loggedBy
   FROM dbo.interaction_log il
-  WHERE il.user_id = @UserId
+  WHERE il.alumni_id = @AlumniId
   ORDER BY il.logged_at DESC;
 END;
 GO
 
 -- ============================================================
 -- sp_UpdateAlumni
--- Updates alumni contact/career info. NULL = no change.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_UpdateAlumni
-  @UserId          UNIQUEIDENTIFIER,
+  @AlumniId        INT,
   @PersonalEmail   NVARCHAR(255)  = NULL,
   @Phone           NVARCHAR(20)   = NULL,
   @LinkedInUrl     NVARCHAR(500)  = NULL,
@@ -893,39 +852,32 @@ CREATE OR ALTER PROCEDURE dbo.sp_UpdateAlumni
 AS
 BEGIN
   SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
-  END
   SET @ErrorCode = NULL;
 
-  IF NOT EXISTS (SELECT 1 FROM dbo.users WHERE id = @UserId AND status_id = 2)
+  IF NOT EXISTS (SELECT 1 FROM dbo.alumni WHERE alumni_id = @AlumniId)
   BEGIN
     SET @ErrorCode = 'ALUMNI_NOT_FOUND';
     RETURN;
   END
 
-  UPDATE dbo.users SET
-    personal_email    = COALESCE(@PersonalEmail,    personal_email),
-    phone             = COALESCE(@Phone,             phone),
-    linkedin_url      = COALESCE(@LinkedInUrl,       linkedin_url),
-    twitter_url       = COALESCE(@TwitterUrl,        twitter_url),
-    current_employer  = COALESCE(@CurrentEmployer,  current_employer),
-    current_job_title = COALESCE(@CurrentJobTitle,  current_job_title),
-    current_city      = COALESCE(@CurrentCity,      current_city),
-    current_state     = COALESCE(@CurrentState,     current_state),
-    is_donor          = COALESCE(@IsDonor,          is_donor),
-    last_donation_date= COALESCE(@LastDonationDate, last_donation_date),
-    total_donations   = COALESCE(@TotalDonations,   total_donations),
-    notes             = COALESCE(@Notes,            notes),
+  UPDATE dbo.alumni SET
+    personal_email    = COALESCE(@PersonalEmail,   personal_email),
+    phone             = COALESCE(@Phone,            phone),
+    linkedin_url      = COALESCE(@LinkedInUrl,      linkedin_url),
+    twitter_url       = COALESCE(@TwitterUrl,       twitter_url),
+    current_employer  = COALESCE(@CurrentEmployer, current_employer),
+    current_job_title = COALESCE(@CurrentJobTitle, current_job_title),
+    current_city      = COALESCE(@CurrentCity,     current_city),
+    current_state     = COALESCE(@CurrentState,    current_state),
+    is_donor          = COALESCE(@IsDonor,         is_donor),
+    last_donation_date= COALESCE(@LastDonationDate,last_donation_date),
+    total_donations   = COALESCE(@TotalDonations,  total_donations),
+    notes             = COALESCE(@Notes,           notes),
     updated_at        = SYSUTCDATETIME()
-  WHERE id = @UserId;
+  WHERE alumni_id = @AlumniId;
 
   -- Recalculate engagement score
-  UPDATE dbo.users SET
+  UPDATE dbo.alumni SET
     engagement_score = CAST(
       30
       + CASE WHEN personal_email   IS NOT NULL THEN 10 ELSE 0 END
@@ -935,7 +887,7 @@ BEGIN
       + CASE WHEN current_job_title IS NOT NULL THEN 10 ELSE 0 END
       + CASE WHEN is_donor = 1 THEN 25 ELSE 0 END
     AS TINYINT)
-  WHERE id = @UserId;
+  WHERE alumni_id = @AlumniId;
 END;
 GO
 
@@ -943,8 +895,8 @@ GO
 -- sp_LogInteraction
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_LogInteraction
-  @UserId     UNIQUEIDENTIFIER,
-  @LoggedBy   UNIQUEIDENTIFIER,
+  @AlumniId   INT,
+  @LoggedBy   INT,            -- dbo.users.user_id of the staff member
   @Channel    NVARCHAR(30),
   @Summary    NVARCHAR(MAX),
   @Outcome    NVARCHAR(50)  = NULL,
@@ -955,16 +907,9 @@ CREATE OR ALTER PROCEDURE dbo.sp_LogInteraction
 AS
 BEGIN
   SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
-  END
   SET @ErrorCode = NULL;
 
-  IF NOT EXISTS (SELECT 1 FROM dbo.users WHERE id = @UserId AND status_id = 2)
+  IF NOT EXISTS (SELECT 1 FROM dbo.alumni WHERE alumni_id = @AlumniId)
   BEGIN
     SET @ErrorCode = 'ALUMNI_NOT_FOUND';
     RETURN;
@@ -976,16 +921,515 @@ BEGIN
     RETURN;
   END
 
-  INSERT INTO dbo.interaction_log (user_id, logged_by, channel, summary, outcome, follow_up_at)
-  VALUES (@UserId, @LoggedBy, @Channel, @Summary, @Outcome, @FollowUpAt);
+  INSERT INTO dbo.interaction_log (alumni_id, logged_by_user_id, channel, summary, outcome, follow_up_at)
+  VALUES (@AlumniId, @LoggedBy, @Channel, @Summary, @Outcome, @FollowUpAt);
 
-  UPDATE dbo.users SET
+  UPDATE dbo.alumni SET
     engagement_score = CAST(CASE
         WHEN engagement_score + 2 > 100 THEN 100
         ELSE engagement_score + 2
       END AS TINYINT),
     updated_at = SYSUTCDATETIME()
-  WHERE id = @UserId;
+  WHERE alumni_id = @AlumniId;
+END;
+GO
+
+-- ============================================================
+-- sp_GetAlumniStats
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_GetAlumniStats
+  @SportId            UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserRole NVARCHAR(50)     = NULL
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  SELECT
+    COUNT(*)                                                      AS totalAlumni,
+    SUM(CASE WHEN is_donor = 1 THEN 1 ELSE 0 END)                AS donors,
+    ISNULL(SUM(total_donations), 0)                              AS totalDonations,
+    ISNULL(CAST(AVG(CAST(engagement_score AS FLOAT)) AS DECIMAL(5,1)), 0) AS avgEngagement,
+    MIN(graduation_year)                                          AS earliestClass,
+    MAX(graduation_year)                                          AS latestClass,
+    (
+      SELECT graduation_year AS gradYear, COUNT(*) AS cnt
+      FROM dbo.vwAlumni
+      WHERE (@SportId IS NULL OR sport_id = @SportId)
+      GROUP BY graduation_year
+      ORDER BY graduation_year DESC
+      FOR JSON PATH
+    ) AS classCounts
+  FROM dbo.vwAlumni
+  WHERE (@SportId IS NULL OR sport_id = @SportId);
+END;
+GO
+
+-- ============================================================
+-- sp_CreateAlumni
+-- Direct alumni creation (no player history).
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_CreateAlumni
+  @UserId             INT              = NULL,  -- global INT user_id (NULL for historical imports)
+  @FirstName          NVARCHAR(100),
+  @LastName           NVARCHAR(100),
+  @GraduationYear     SMALLINT,
+  @GraduationSemester NVARCHAR(10)     = 'spring',
+  @Position           NVARCHAR(10)     = NULL,
+  @RecruitingClass    SMALLINT         = NULL,
+  @SportId            UNIQUEIDENTIFIER = NULL,
+  @Phone              NVARCHAR(20)     = NULL,
+  @PersonalEmail      NVARCHAR(255)    = NULL,
+  @CurrentEmployer    NVARCHAR(200)    = NULL,
+  @CurrentJobTitle    NVARCHAR(150)    = NULL,
+  @CurrentCity        NVARCHAR(100)    = NULL,
+  @CurrentState       NVARCHAR(50)     = NULL,
+  @Notes              NVARCHAR(MAX)    = NULL,
+  @NewAlumniId        INT              OUTPUT,
+  @ErrorCode          NVARCHAR(50)     OUTPUT,
+  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserRole NVARCHAR(50)     = NULL
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SET @ErrorCode   = NULL;
+  SET @NewAlumniId = NULL;
+
+  IF @GraduationYear < 1950 OR @GraduationYear > 2100
+  BEGIN
+    SET @ErrorCode = 'INVALID_GRADUATION_YEAR';
+    RETURN;
+  END
+
+  IF @GraduationSemester NOT IN ('spring','fall','summer')
+  BEGIN
+    SET @ErrorCode = 'INVALID_SEMESTER';
+    RETURN;
+  END
+
+  -- Idempotent: already an alumni with this user_id
+  IF @UserId IS NOT NULL AND EXISTS (SELECT 1 FROM dbo.alumni WHERE user_id = @UserId)
+  BEGIN
+    SELECT @NewAlumniId = alumni_id FROM dbo.alumni WHERE user_id = @UserId;
+    SET @ErrorCode = 'ALUMNI_ALREADY_EXISTS';
+    RETURN;
+  END
+
+  INSERT INTO dbo.alumni (
+    user_id, first_name, last_name,
+    graduation_year, graduation_semester,
+    position, recruiting_class, sport_id,
+    phone, personal_email,
+    current_employer, current_job_title, current_city, current_state,
+    notes, graduated_at
+  )
+  VALUES (
+    @UserId, @FirstName, @LastName,
+    @GraduationYear, @GraduationSemester,
+    @Position, @RecruitingClass, @SportId,
+    @Phone, @PersonalEmail,
+    @CurrentEmployer, @CurrentJobTitle, @CurrentCity, @CurrentState,
+    @Notes, SYSUTCDATETIME()
+  );
+
+  SET @NewAlumniId = SCOPE_IDENTITY();
+
+  IF @UserId IS NOT NULL AND @SportId IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM dbo.users_sports WHERE user_id = @UserId AND sport_id = @SportId)
+  BEGIN
+    INSERT INTO dbo.users_sports (user_id, sport_id, username)
+    VALUES (@UserId, @SportId, @FirstName + ' ' + @LastName);
+  END
+END;
+GO
+
+-- ============================================================
+-- sp_BulkCreatePlayers
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_BulkCreatePlayers
+  @PlayersJson  NVARCHAR(MAX),  -- each row: userId INT, email, firstName, lastName, ...
+  @CreatedBy    UNIQUEIDENTIFIER,
+  @SportId      UNIQUEIDENTIFIER = NULL,
+  @SuccessCount INT OUTPUT,
+  @SkippedCount INT OUTPUT,
+  @ErrorJson    NVARCHAR(MAX) OUTPUT,
+  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserRole NVARCHAR(50)     = NULL
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SET @SuccessCount = 0;
+  SET @SkippedCount = 0;
+  SET @ErrorJson    = '[]';
+
+  DECLARE @errors TABLE (row_num INT, reason NVARCHAR(500));
+  DECLARE @rows TABLE (
+    row_num          INT,
+    user_id          INT,
+    email            NVARCHAR(255),
+    first_name       NVARCHAR(100),
+    last_name        NVARCHAR(100),
+    jersey_number    TINYINT,
+    position         NVARCHAR(10),
+    academic_year    NVARCHAR(20),
+    recruiting_class SMALLINT,
+    height_inches    TINYINT,
+    weight_lbs       SMALLINT,
+    home_town        NVARCHAR(100),
+    home_state       NVARCHAR(50),
+    high_school      NVARCHAR(150),
+    major            NVARCHAR(100),
+    phone            NVARCHAR(20),
+    emergency_contact_name  NVARCHAR(150),
+    emergency_contact_phone NVARCHAR(20),
+    parent1_name     NVARCHAR(150),
+    parent1_phone    NVARCHAR(20),
+    parent1_email    NVARCHAR(255),
+    parent2_name     NVARCHAR(150),
+    parent2_phone    NVARCHAR(20),
+    parent2_email    NVARCHAR(255),
+    notes            NVARCHAR(MAX)
+  );
+
+  INSERT INTO @rows (
+    row_num, user_id, email, first_name, last_name,
+    jersey_number, position, academic_year, recruiting_class,
+    height_inches, weight_lbs, home_town, home_state, high_school,
+    major, phone, emergency_contact_name, emergency_contact_phone,
+    parent1_name, parent1_phone, parent1_email,
+    parent2_name, parent2_phone, parent2_email, notes
+  )
+  SELECT
+    ROW_NUMBER() OVER (ORDER BY (SELECT NULL)),
+    TRY_CAST(JSON_VALUE(value, '$.userId')         AS INT),
+    JSON_VALUE(value, '$.email'),
+    JSON_VALUE(value, '$.firstName'),
+    JSON_VALUE(value, '$.lastName'),
+    TRY_CAST(JSON_VALUE(value, '$.jerseyNumber')    AS TINYINT),
+    JSON_VALUE(value, '$.position'),
+    JSON_VALUE(value, '$.academicYear'),
+    TRY_CAST(JSON_VALUE(value, '$.recruitingClass') AS SMALLINT),
+    TRY_CAST(JSON_VALUE(value, '$.heightInches')    AS TINYINT),
+    TRY_CAST(JSON_VALUE(value, '$.weightLbs')       AS SMALLINT),
+    JSON_VALUE(value, '$.homeTown'),
+    JSON_VALUE(value, '$.homeState'),
+    JSON_VALUE(value, '$.highSchool'),
+    JSON_VALUE(value, '$.major'),
+    JSON_VALUE(value, '$.phone'),
+    JSON_VALUE(value, '$.emergencyContactName'),
+    JSON_VALUE(value, '$.emergencyContactPhone'),
+    JSON_VALUE(value, '$.parent1Name'),
+    JSON_VALUE(value, '$.parent1Phone'),
+    JSON_VALUE(value, '$.parent1Email'),
+    JSON_VALUE(value, '$.parent2Name'),
+    JSON_VALUE(value, '$.parent2Phone'),
+    JSON_VALUE(value, '$.parent2Email'),
+    JSON_VALUE(value, '$.notes')
+  FROM OPENJSON(@PlayersJson);
+
+  DECLARE @rowNum  INT, @uid INT, @email NVARCHAR(255), @fn NVARCHAR(100), @ln NVARCHAR(100);
+  DECLARE @jersey TINYINT, @pos NVARCHAR(10), @acYear NVARCHAR(20), @recClass SMALLINT;
+  DECLARE @heightIn TINYINT, @wt SMALLINT, @town NVARCHAR(100), @state NVARCHAR(50);
+  DECLARE @hs NVARCHAR(150), @major NVARCHAR(100), @phone NVARCHAR(20);
+  DECLARE @ecName NVARCHAR(150), @ecPhone NVARCHAR(20);
+  DECLARE @p1n NVARCHAR(150), @p1ph NVARCHAR(20), @p1em NVARCHAR(255);
+  DECLARE @p2n NVARCHAR(150), @p2ph NVARCHAR(20), @p2em NVARCHAR(255);
+  DECLARE @notes NVARCHAR(MAX);
+
+  DECLARE cur CURSOR FOR
+    SELECT row_num, user_id, email, first_name, last_name,
+           jersey_number, position, academic_year, recruiting_class,
+           height_inches, weight_lbs, home_town, home_state, high_school,
+           major, phone, emergency_contact_name, emergency_contact_phone,
+           parent1_name, parent1_phone, parent1_email,
+           parent2_name, parent2_phone, parent2_email, notes
+    FROM @rows;
+
+  OPEN cur;
+  FETCH NEXT FROM cur INTO
+    @rowNum, @uid, @email, @fn, @ln, @jersey, @pos, @acYear, @recClass,
+    @heightIn, @wt, @town, @state, @hs, @major, @phone, @ecName, @ecPhone,
+    @p1n, @p1ph, @p1em, @p2n, @p2ph, @p2em, @notes;
+
+  WHILE @@FETCH_STATUS = 0
+  BEGIN
+    BEGIN TRY
+      IF @fn IS NULL OR LEN(LTRIM(RTRIM(@fn))) = 0
+        BEGIN INSERT INTO @errors VALUES (@rowNum,'First name is required'); SET @SkippedCount += 1; GOTO NextRow; END
+      IF @ln IS NULL OR LEN(LTRIM(RTRIM(@ln))) = 0
+        BEGIN INSERT INTO @errors VALUES (@rowNum,'Last name is required');  SET @SkippedCount += 1; GOTO NextRow; END
+      IF @recClass IS NULL OR @recClass < 2000 OR @recClass > 2100
+        BEGIN INSERT INTO @errors VALUES (@rowNum,'Invalid recruiting class year'); SET @SkippedCount += 1; GOTO NextRow; END
+      IF @uid IS NULL
+        BEGIN INSERT INTO @errors VALUES (@rowNum,'userId (INT) is required'); SET @SkippedCount += 1; GOTO NextRow; END
+
+      IF @jersey IS NOT NULL AND EXISTS (
+        SELECT 1 FROM dbo.players
+        WHERE jersey_number = @jersey AND is_active = 1 AND player_id <> @uid
+          AND (@SportId IS NULL OR sport_id = @SportId)
+      )
+        BEGIN INSERT INTO @errors VALUES (@rowNum,'Jersey #' + CAST(@jersey AS NVARCHAR) + ' already in use'); SET @SkippedCount += 1; GOTO NextRow; END
+
+      EXEC dbo.sp_UpsertUser @UserId = @uid, @Email = @email, @FirstName = @fn, @LastName = @ln;
+
+      IF EXISTS (SELECT 1 FROM dbo.players WHERE player_id = @uid)
+      BEGIN
+        UPDATE dbo.players SET
+          sport_id                = COALESCE(@SportId, sport_id),
+          jersey_number           = COALESCE(@jersey,   jersey_number),
+          position                = ISNULL(@pos,        position),
+          academic_year           = ISNULL(@acYear,     academic_year),
+          recruiting_class        = ISNULL(@recClass,   recruiting_class),
+          height_inches           = COALESCE(@heightIn, height_inches),
+          weight_lbs              = COALESCE(@wt,       weight_lbs),
+          home_town               = COALESCE(@town,     home_town),
+          home_state              = COALESCE(@state,    home_state),
+          high_school             = COALESCE(@hs,       high_school),
+          major                   = COALESCE(@major,    major),
+          phone                   = COALESCE(@phone,    phone),
+          emergency_contact_name  = COALESCE(@ecName,   emergency_contact_name),
+          emergency_contact_phone = COALESCE(@ecPhone,  emergency_contact_phone),
+          parent1_name            = COALESCE(@p1n,      parent1_name),
+          parent1_phone           = COALESCE(@p1ph,     parent1_phone),
+          parent1_email           = COALESCE(@p1em,     parent1_email),
+          parent2_name            = COALESCE(@p2n,      parent2_name),
+          parent2_phone           = COALESCE(@p2ph,     parent2_phone),
+          parent2_email           = COALESCE(@p2em,     parent2_email),
+          notes                   = COALESCE(@notes,    notes),
+          is_active               = 1,
+          updated_at              = SYSUTCDATETIME()
+        WHERE player_id = @uid;
+      END
+      ELSE
+      BEGIN
+        INSERT INTO dbo.players (
+          player_id, sport_id, jersey_number, position, academic_year, recruiting_class,
+          height_inches, weight_lbs, home_town, home_state, high_school, major, phone,
+          emergency_contact_name, emergency_contact_phone,
+          parent1_name, parent1_phone, parent1_email,
+          parent2_name, parent2_phone, parent2_email, notes
+        )
+        VALUES (
+          @uid, @SportId, @jersey, @pos, @acYear, @recClass,
+          @heightIn, @wt, @town, @state, @hs, @major, @phone,
+          @ecName, @ecPhone, @p1n, @p1ph, @p1em, @p2n, @p2ph, @p2em, @notes
+        );
+      END
+
+      IF @SportId IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM dbo.users_sports WHERE user_id = @uid AND sport_id = @SportId)
+        INSERT INTO dbo.users_sports (user_id, sport_id, username) VALUES (@uid, @SportId, @fn + ' ' + @ln);
+
+      SET @SuccessCount += 1;
+
+    END TRY
+    BEGIN CATCH
+      INSERT INTO @errors VALUES (@rowNum, ERROR_MESSAGE());
+      SET @SkippedCount += 1;
+    END CATCH;
+
+    NextRow:
+    FETCH NEXT FROM cur INTO
+      @rowNum, @uid, @email, @fn, @ln, @jersey, @pos, @acYear, @recClass,
+      @heightIn, @wt, @town, @state, @hs, @major, @phone, @ecName, @ecPhone,
+      @p1n, @p1ph, @p1em, @p2n, @p2ph, @p2em, @notes;
+  END
+
+  CLOSE cur;
+  DEALLOCATE cur;
+
+  SELECT @ErrorJson = ISNULL(
+    (SELECT row_num AS rowNum, reason FROM @errors FOR JSON PATH), '[]');
+END;
+GO
+
+-- ============================================================
+-- sp_BulkCreateAlumni
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_BulkCreateAlumni
+  @AlumniJson   NVARCHAR(MAX),
+  @CreatedBy    UNIQUEIDENTIFIER,
+  @SportId      UNIQUEIDENTIFIER = NULL,
+  @SuccessCount INT OUTPUT,
+  @SkippedCount INT OUTPUT,
+  @ErrorJson    NVARCHAR(MAX) OUTPUT,
+  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserRole NVARCHAR(50)     = NULL
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SET @SuccessCount = 0;
+  SET @SkippedCount = 0;
+  SET @ErrorJson    = '[]';
+
+  DECLARE @errors TABLE (row_num INT, reason NVARCHAR(500));
+  DECLARE @rows TABLE (
+    row_num             INT,
+    user_id             INT,
+    first_name          NVARCHAR(100),
+    last_name           NVARCHAR(100),
+    graduation_year     SMALLINT,
+    graduation_semester NVARCHAR(10),
+    phone               NVARCHAR(20),
+    linkedin_url        NVARCHAR(500),
+    current_employer    NVARCHAR(200),
+    current_job_title   NVARCHAR(150),
+    current_city        NVARCHAR(100),
+    current_state       NVARCHAR(50),
+    is_donor            BIT,
+    notes               NVARCHAR(MAX)
+  );
+
+  INSERT INTO @rows (
+    row_num, user_id, first_name, last_name,
+    graduation_year, graduation_semester,
+    phone, linkedin_url,
+    current_employer, current_job_title, current_city, current_state,
+    is_donor, notes
+  )
+  SELECT
+    ROW_NUMBER() OVER (ORDER BY (SELECT NULL)),
+    TRY_CAST(JSON_VALUE(value, '$.userId')           AS INT),
+    JSON_VALUE(value, '$.firstName'),
+    JSON_VALUE(value, '$.lastName'),
+    TRY_CAST(JSON_VALUE(value, '$.graduationYear')   AS SMALLINT),
+    ISNULL(JSON_VALUE(value, '$.graduationSemester'), 'spring'),
+    JSON_VALUE(value, '$.phone'),
+    JSON_VALUE(value, '$.linkedInUrl'),
+    JSON_VALUE(value, '$.currentEmployer'),
+    JSON_VALUE(value, '$.currentJobTitle'),
+    JSON_VALUE(value, '$.currentCity'),
+    JSON_VALUE(value, '$.currentState'),
+    CASE WHEN LOWER(JSON_VALUE(value, '$.isDonor')) IN ('yes','true','1') THEN 1 ELSE 0 END,
+    JSON_VALUE(value, '$.notes')
+  FROM OPENJSON(@AlumniJson);
+
+  DECLARE @rowNum   INT, @uid INT, @fn NVARCHAR(100), @ln NVARCHAR(100);
+  DECLARE @gradYear SMALLINT, @semester NVARCHAR(10), @phone NVARCHAR(20);
+  DECLARE @linkedin NVARCHAR(500), @employer NVARCHAR(200), @jobTitle NVARCHAR(150);
+  DECLARE @city NVARCHAR(100), @state NVARCHAR(50), @isDonor BIT, @notes NVARCHAR(MAX);
+
+  DECLARE cur CURSOR FOR
+    SELECT row_num, user_id, first_name, last_name,
+           graduation_year, graduation_semester, phone, linkedin_url,
+           current_employer, current_job_title, current_city, current_state,
+           is_donor, notes
+    FROM @rows;
+
+  OPEN cur;
+  FETCH NEXT FROM cur INTO
+    @rowNum, @uid, @fn, @ln, @gradYear, @semester, @phone, @linkedin,
+    @employer, @jobTitle, @city, @state, @isDonor, @notes;
+
+  WHILE @@FETCH_STATUS = 0
+  BEGIN
+    BEGIN TRY
+      IF @fn IS NULL OR LEN(LTRIM(RTRIM(@fn))) = 0 BEGIN INSERT INTO @errors VALUES (@rowNum,'First name required'); SET @SkippedCount += 1; GOTO NextAlumRow; END
+      IF @ln IS NULL OR LEN(LTRIM(RTRIM(@ln))) = 0 BEGIN INSERT INTO @errors VALUES (@rowNum,'Last name required');  SET @SkippedCount += 1; GOTO NextAlumRow; END
+      IF @gradYear IS NULL OR @gradYear < 1950 OR @gradYear > 2100 BEGIN INSERT INTO @errors VALUES (@rowNum,'Invalid graduation year'); SET @SkippedCount += 1; GOTO NextAlumRow; END
+
+      IF @uid IS NOT NULL AND EXISTS (SELECT 1 FROM dbo.alumni WHERE user_id = @uid)
+      BEGIN
+        UPDATE dbo.alumni SET
+          sport_id            = COALESCE(@SportId,   sport_id),
+          graduation_year     = @gradYear,
+          graduation_semester = @semester,
+          phone               = COALESCE(@phone,     phone),
+          linkedin_url        = COALESCE(@linkedin,  linkedin_url),
+          current_employer    = COALESCE(@employer,  current_employer),
+          current_job_title   = COALESCE(@jobTitle,  current_job_title),
+          current_city        = COALESCE(@city,      current_city),
+          current_state       = COALESCE(@state,     current_state),
+          is_donor            = COALESCE(@isDonor,   is_donor),
+          notes               = COALESCE(@notes,     notes),
+          updated_at          = SYSUTCDATETIME()
+        WHERE user_id = @uid;
+      END
+      ELSE
+      BEGIN
+        INSERT INTO dbo.alumni (
+          user_id, first_name, last_name, sport_id,
+          graduation_year, graduation_semester,
+          phone, linkedin_url,
+          current_employer, current_job_title, current_city, current_state,
+          is_donor, notes
+        )
+        VALUES (
+          @uid, @fn, @ln, @SportId,
+          @gradYear, @semester,
+          @phone, @linkedin,
+          @employer, @jobTitle, @city, @state,
+          ISNULL(@isDonor, 0), @notes
+        );
+      END
+
+      IF @uid IS NOT NULL AND @SportId IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM dbo.users_sports WHERE user_id = @uid AND sport_id = @SportId)
+        INSERT INTO dbo.users_sports (user_id, sport_id, username) VALUES (@uid, @SportId, @fn + ' ' + @ln);
+
+      SET @SuccessCount += 1;
+
+    END TRY
+    BEGIN CATCH
+      INSERT INTO @errors VALUES (@rowNum, ERROR_MESSAGE());
+      SET @SkippedCount += 1;
+    END CATCH;
+
+    NextAlumRow:
+    FETCH NEXT FROM cur INTO
+      @rowNum, @uid, @fn, @ln, @gradYear, @semester, @phone, @linkedin,
+      @employer, @jobTitle, @city, @state, @isDonor, @notes;
+  END
+
+  CLOSE cur;
+  DEALLOCATE cur;
+
+  SELECT @ErrorJson = ISNULL(
+    (SELECT row_num AS rowNum, reason FROM @errors FOR JSON PATH), '[]');
+END;
+GO
+
+-- ============================================================
+-- sp_GetSports
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_GetSports
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SELECT id, name, abbr, is_active AS isActive
+  FROM   dbo.sports
+  WHERE  is_active = 1
+  ORDER  BY name;
+END;
+GO
+
+-- ============================================================
+-- sp_GetUserSports
+-- @UserId INT NULL = staff user_id. NULL = admin (all sports).
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_GetUserSports
+  @TenantId INT,
+  @UserId   INT = NULL
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  IF @UserId IS NULL
+  BEGIN
+    SELECT s.id, s.name, s.abbr
+    FROM   dbo.sports s
+    WHERE  s.is_active = 1
+    ORDER  BY s.name;
+  END
+  ELSE
+  BEGIN
+    SELECT s.id, s.name, s.abbr
+    FROM   dbo.sports       s
+    JOIN   dbo.users_sports us ON us.sport_id = s.id
+    WHERE  us.user_id  = @UserId
+      AND  s.is_active = 1
+    ORDER  BY s.name;
+  END
 END;
 GO
 
@@ -1012,13 +1456,6 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreateCampaign
 AS
 BEGIN
   SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
-  END
   SET @ErrorCode = NULL;
 
   IF LEN(LTRIM(RTRIM(@Name))) = 0 BEGIN SET @ErrorCode = 'NAME_REQUIRED'; RETURN; END
@@ -1054,13 +1491,6 @@ CREATE OR ALTER PROCEDURE dbo.sp_GetCampaigns
 AS
 BEGIN
   SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
-  END
 
   SELECT
     c.id, c.sport_id AS sportId, c.name, c.description,
@@ -1087,47 +1517,89 @@ END;
 GO
 
 -- ============================================================
--- sp_GetAlumniStats
+-- sp_GetCampaignDetail
 -- ============================================================
-CREATE OR ALTER PROCEDURE dbo.sp_GetAlumniStats
-  @SportId            UNIQUEIDENTIFIER = NULL,
+CREATE OR ALTER PROCEDURE dbo.sp_GetCampaignDetail
+  @CampaignId UNIQUEIDENTIFIER,
+  @ErrorCode  NVARCHAR(50) OUTPUT,
   @RequestingUserId   UNIQUEIDENTIFIER = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
+  SET @ErrorCode = NULL;
+
+  IF NOT EXISTS (SELECT 1 FROM dbo.outreach_campaigns WHERE id = @CampaignId)
   BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
+    SET @ErrorCode = 'CAMPAIGN_NOT_FOUND';
+    RETURN;
   END
 
   SELECT
-    COUNT(*)                                                      AS totalAlumni,
-    SUM(CASE WHEN is_donor = 1 THEN 1 ELSE 0 END)                AS donors,
-    ISNULL(SUM(total_donations), 0)                              AS totalDonations,
-    ISNULL(CAST(AVG(CAST(engagement_score AS FLOAT)) AS DECIMAL(5,1)), 0) AS avgEngagement,
-    MIN(graduation_year)                                          AS earliestClass,
-    MAX(graduation_year)                                          AS latestClass,
+    oc.id, oc.name, oc.description,
+    oc.target_audience  AS targetAudience,
+    oc.audience_filters AS audienceFilters,
+    oc.status, oc.campaign_type AS campaignType,
+    oc.subject_line     AS subjectLine,
+    oc.scheduled_at     AS scheduledAt,
+    oc.started_at       AS startedAt,
+    oc.completed_at     AS completedAt,
+    oc.created_at       AS createdAt,
+    SUM(CASE WHEN om.status IN ('queued','sent','responded') THEN 1 ELSE 0 END) AS totalQueued,
+    SUM(CASE WHEN om.status IN ('sent','responded')          THEN 1 ELSE 0 END) AS totalSent,
+    SUM(CASE WHEN om.opened_at IS NOT NULL                   THEN 1 ELSE 0 END) AS totalOpened,
     (
-      SELECT graduation_year AS gradYear, COUNT(*) AS cnt
-      FROM dbo.vwAlumni
-      WHERE (@SportId IS NULL OR sport_id = @SportId)
-      GROUP BY graduation_year
-      ORDER BY graduation_year DESC
-      FOR JSON PATH
-    ) AS classCounts
-  FROM dbo.vwAlumni
-  WHERE (@SportId IS NULL OR sport_id = @SportId);
+      SELECT COUNT(*) FROM dbo.email_unsubscribes eu2
+      JOIN dbo.outreach_messages om2 ON
+        (eu2.player_id IS NOT NULL AND eu2.player_id = om2.player_id) OR
+        (eu2.alumni_id IS NOT NULL AND eu2.alumni_id = om2.alumni_id)
+      WHERE om2.campaign_id = oc.id
+    ) AS unsubscribeCount,
+    CASE
+      WHEN SUM(CASE WHEN om.status IN ('sent','responded') THEN 1 ELSE 0 END) = 0 THEN 0
+      ELSE CAST(
+        100.0 * SUM(CASE WHEN om.opened_at IS NOT NULL THEN 1 ELSE 0 END)
+        / NULLIF(SUM(CASE WHEN om.status IN ('sent','responded') THEN 1 ELSE 0 END), 0)
+      AS DECIMAL(5,1))
+    END AS openRatePct
+  FROM dbo.outreach_campaigns oc
+  LEFT JOIN dbo.outreach_messages om ON om.campaign_id = oc.id
+  WHERE oc.id = @CampaignId
+  GROUP BY
+    oc.id, oc.name, oc.description, oc.target_audience, oc.audience_filters,
+    oc.status, oc.campaign_type, oc.subject_line, oc.scheduled_at,
+    oc.started_at, oc.completed_at, oc.created_at;
+END;
+GO
+
+-- ============================================================
+-- sp_CancelCampaign
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_CancelCampaign
+  @CampaignId UNIQUEIDENTIFIER,
+  @ErrorCode  NVARCHAR(50) OUTPUT,
+  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserRole NVARCHAR(50)     = NULL
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SET @ErrorCode = NULL;
+
+  DECLARE @CurStatus NVARCHAR(20);
+  SELECT @CurStatus = status FROM dbo.outreach_campaigns WHERE id = @CampaignId;
+
+  IF @CurStatus IS NULL BEGIN SET @ErrorCode = 'CAMPAIGN_NOT_FOUND'; RETURN; END
+  IF @CurStatus NOT IN ('draft','scheduled') BEGIN SET @ErrorCode = 'CANNOT_CANCEL'; RETURN; END
+
+  UPDATE dbo.outreach_campaigns
+  SET status = 'cancelled', updated_at = SYSUTCDATETIME()
+  WHERE id = @CampaignId;
 END;
 GO
 
 -- ============================================================
 -- sp_ResolveAudienceForCampaign
--- Resolves recipients for a campaign, using vwPlayers and
--- vwAlumni views as the authoritative audience source.
+-- Returns eligible recipients as a result set.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_ResolveAudienceForCampaign
   @CampaignId UNIQUEIDENTIFIER,
@@ -1137,13 +1609,6 @@ CREATE OR ALTER PROCEDURE dbo.sp_ResolveAudienceForCampaign
 AS
 BEGIN
   SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
-  END
   SET @ErrorCode = NULL;
 
   DECLARE @Audience    NVARCHAR(30);
@@ -1157,625 +1622,80 @@ BEGIN
 
   DECLARE @FilterGradYear  SMALLINT     = TRY_CAST(JSON_VALUE(@FiltersJson, '$.gradYear')  AS SMALLINT);
   DECLARE @FilterPosition  NVARCHAR(10) = JSON_VALUE(@FiltersJson, '$.position');
-  DECLARE @FilterGradYears NVARCHAR(MAX)= JSON_QUERY(@FiltersJson,  '$.gradYears');
-  DECLARE @FilterPositions NVARCHAR(MAX)= JSON_QUERY(@FiltersJson,  '$.positions');
+  DECLARE @FilterGradYears NVARCHAR(MAX)= JSON_QUERY(@FiltersJson, '$.gradYears');
+  DECLARE @FilterPositions NVARCHAR(MAX)= JSON_QUERY(@FiltersJson, '$.positions');
 
+  -- Players
   SELECT
-    u.id              AS userId,
-    u.first_name      AS firstName,
-    u.last_name       AS lastName,
-    u.personal_email  AS personalEmail,
-    u.phone,
-    u.status_id       AS statusId,
+    p.player_id     AS recipientId,
+    'player'        AS recipientType,
+    u.first_name    AS firstName,
+    u.last_name     AS lastName,
+    p.personal_email AS personalEmail,
+    p.phone,
+    p.position,
+    NULL            AS graduationYear,
     CASE WHEN eu.id IS NOT NULL THEN 1 ELSE 0 END AS isUnsubscribed
-  FROM dbo.users u
-  LEFT JOIN dbo.email_unsubscribes eu ON eu.user_id = u.id AND eu.channel = 'email'
-  WHERE u.status_id IN (1, 2)
-    AND u.personal_email IS NOT NULL
+  FROM dbo.players p
+  JOIN dbo.users   u  ON u.user_id = p.player_id
+  LEFT JOIN dbo.email_unsubscribes eu ON eu.player_id = p.player_id AND eu.channel = 'email'
+  WHERE p.is_active = 1
+    AND p.personal_email IS NOT NULL
+    AND @Audience IN ('all','players_only','byClass','byPosition','custom')
     AND (
-      @Audience = 'all'
-      OR (@Audience = 'players_only' AND u.status_id = 1)
-      OR (@Audience = 'alumni_only'  AND u.status_id = 2)
-      OR (@Audience = 'byGradYear'
-          AND u.status_id = 2
-          AND (
-            @FilterGradYear IS NOT NULL AND u.graduation_year = @FilterGradYear
-            OR @FilterGradYears IS NOT NULL AND EXISTS (
-              SELECT 1 FROM OPENJSON(@FilterGradYears)
-              WHERE CAST([value] AS SMALLINT) = u.graduation_year
-            )
-          ))
-      OR (@Audience = 'byClass' AND u.status_id = 1 AND u.recruiting_class = @FilterGradYear)
-      OR (@Audience = 'byPosition'
-          AND (
-            @FilterPosition IS NOT NULL AND u.position = @FilterPosition
-            OR @FilterPositions IS NOT NULL AND EXISTS (
-              SELECT 1 FROM OPENJSON(@FilterPositions)
-              WHERE CAST([value] AS NVARCHAR(10)) = u.position
-            )
+      @Audience IN ('all','players_only')
+      OR (@Audience = 'byClass'    AND p.recruiting_class = @FilterGradYear)
+      OR (@Audience = 'byPosition' AND (
+            (@FilterPosition IS NOT NULL AND p.position = @FilterPosition)
+            OR (@FilterPositions IS NOT NULL AND EXISTS (
+              SELECT 1 FROM OPENJSON(@FilterPositions) WHERE CAST([value] AS NVARCHAR(10)) = p.position
+            ))
           ))
       OR (@Audience = 'custom'
-          AND (@FilterGradYear  IS NULL OR u.graduation_year = @FilterGradYear)
-          AND (@FilterPosition  IS NULL OR u.position        = @FilterPosition))
-    );
-END;
-GO
-
--- ============================================================
--- BULK OPERATIONS
--- ============================================================
-
--- ============================================================
--- sp_BulkCreatePlayers
--- For each row: calls syn_GetOrCreateUser (→ LegacyLinkGlobal),
--- then upserts into AppDB dbo.users. Joins on existing global ID
--- if the person is already registered.
--- ============================================================
-CREATE OR ALTER PROCEDURE dbo.sp_BulkCreatePlayers
-  @PlayersJson  NVARCHAR(MAX),  -- each row must include "userId" (resolved by caller via GlobalDB)
-  @CreatedBy    UNIQUEIDENTIFIER,
-  @SportId      UNIQUEIDENTIFIER = NULL,
-  @SuccessCount INT OUTPUT,
-  @SkippedCount INT OUTPUT,
-  @ErrorJson    NVARCHAR(MAX) OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
-  @RequestingUserRole NVARCHAR(50)     = NULL
-AS
-BEGIN
-  SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
-  END
-  SET @SuccessCount = 0;
-  SET @SkippedCount = 0;
-  SET @ErrorJson    = '[]';
-
-  DECLARE @errors TABLE (row_num INT, reason NVARCHAR(500));
-  DECLARE @rows TABLE (
-    row_num                  INT,
-    provided_user_id         UNIQUEIDENTIFIER,
-    email                    NVARCHAR(255),
-    first_name               NVARCHAR(100),
-    last_name                NVARCHAR(100),
-    jersey_number            TINYINT,
-    position                 NVARCHAR(10),
-    academic_year            NVARCHAR(20),
-    recruiting_class         SMALLINT,
-    height_inches            TINYINT,
-    weight_lbs               SMALLINT,
-    home_town                NVARCHAR(100),
-    home_state               NVARCHAR(50),
-    high_school              NVARCHAR(150),
-    major                    NVARCHAR(100),
-    phone                    NVARCHAR(20),
-    emergency_contact_name   NVARCHAR(150),
-    emergency_contact_phone  NVARCHAR(20),
-    parent1_name             NVARCHAR(150),
-    parent1_phone            NVARCHAR(20),
-    parent1_email            NVARCHAR(255),
-    parent2_name             NVARCHAR(150),
-    parent2_phone            NVARCHAR(20),
-    parent2_email            NVARCHAR(255),
-    notes                    NVARCHAR(MAX)
-  );
-
-  INSERT INTO @rows (
-    row_num, provided_user_id, email, first_name, last_name,
-    jersey_number, position, academic_year, recruiting_class,
-    height_inches, weight_lbs, home_town, home_state, high_school,
-    major, phone, emergency_contact_name, emergency_contact_phone,
-    parent1_name, parent1_phone, parent1_email,
-    parent2_name, parent2_phone, parent2_email,
-    notes
-  )
-  SELECT
-    ROW_NUMBER() OVER (ORDER BY (SELECT NULL)),
-    TRY_CAST(JSON_VALUE(value, '$.userId')         AS UNIQUEIDENTIFIER),
-    JSON_VALUE(value, '$.email'),
-    JSON_VALUE(value, '$.firstName'),
-    JSON_VALUE(value, '$.lastName'),
-    TRY_CAST(JSON_VALUE(value, '$.jerseyNumber')    AS TINYINT),
-    JSON_VALUE(value, '$.position'),
-    JSON_VALUE(value, '$.academicYear'),
-    TRY_CAST(JSON_VALUE(value, '$.recruitingClass') AS SMALLINT),
-    TRY_CAST(JSON_VALUE(value, '$.heightInches')    AS TINYINT),
-    TRY_CAST(JSON_VALUE(value, '$.weightLbs')       AS SMALLINT),
-    JSON_VALUE(value, '$.homeTown'),
-    JSON_VALUE(value, '$.homeState'),
-    JSON_VALUE(value, '$.highSchool'),
-    JSON_VALUE(value, '$.major'),
-    JSON_VALUE(value, '$.phone'),
-    JSON_VALUE(value, '$.emergencyContactName'),
-    JSON_VALUE(value, '$.emergencyContactPhone'),
-    JSON_VALUE(value, '$.parent1Name'),
-    JSON_VALUE(value, '$.parent1Phone'),
-    JSON_VALUE(value, '$.parent1Email'),
-    JSON_VALUE(value, '$.parent2Name'),
-    JSON_VALUE(value, '$.parent2Phone'),
-    JSON_VALUE(value, '$.parent2Email'),
-    JSON_VALUE(value, '$.notes')
-  FROM OPENJSON(@PlayersJson);
-
-  DECLARE @rowNum          INT;
-  DECLARE @providedUserId  UNIQUEIDENTIFIER;
-  DECLARE @email           NVARCHAR(255);
-  DECLARE @fn              NVARCHAR(100);
-  DECLARE @ln              NVARCHAR(100);
-  DECLARE @jersey          TINYINT;
-  DECLARE @pos             NVARCHAR(10);
-  DECLARE @acYear          NVARCHAR(20);
-  DECLARE @recClass        SMALLINT;
-  DECLARE @heightIn        TINYINT;
-  DECLARE @wt              SMALLINT;
-  DECLARE @town            NVARCHAR(100);
-  DECLARE @state           NVARCHAR(50);
-  DECLARE @hs              NVARCHAR(150);
-  DECLARE @major           NVARCHAR(100);
-  DECLARE @phone           NVARCHAR(20);
-  DECLARE @ecName          NVARCHAR(150);
-  DECLARE @ecPhone         NVARCHAR(20);
-  DECLARE @parent1Name     NVARCHAR(150);
-  DECLARE @parent1Phone    NVARCHAR(20);
-  DECLARE @parent1Email    NVARCHAR(255);
-  DECLARE @parent2Name     NVARCHAR(150);
-  DECLARE @parent2Phone    NVARCHAR(20);
-  DECLARE @parent2Email    NVARCHAR(255);
-  DECLARE @notes           NVARCHAR(MAX);
-
-  DECLARE cur CURSOR FOR
-    SELECT row_num, provided_user_id, email, first_name, last_name,
-           jersey_number, position, academic_year, recruiting_class,
-           height_inches, weight_lbs, home_town, home_state, high_school,
-           major, phone, emergency_contact_name, emergency_contact_phone,
-           parent1_name, parent1_phone, parent1_email,
-           parent2_name, parent2_phone, parent2_email,
-           notes
-    FROM @rows;
-
-  OPEN cur;
-  FETCH NEXT FROM cur INTO
-    @rowNum, @providedUserId, @email, @fn, @ln, @jersey, @pos, @acYear, @recClass,
-    @heightIn, @wt, @town, @state, @hs,
-    @major, @phone, @ecName, @ecPhone,
-    @parent1Name, @parent1Phone, @parent1Email,
-    @parent2Name, @parent2Phone, @parent2Email,
-    @notes;
-
-  WHILE @@FETCH_STATUS = 0
-  BEGIN
-    BEGIN TRY
-      IF @fn IS NULL OR LEN(LTRIM(RTRIM(@fn))) = 0
-      BEGIN
-        INSERT INTO @errors VALUES (@rowNum, 'First name is required');
-        SET @SkippedCount += 1; GOTO NextRow;
-      END
-
-      IF @ln IS NULL OR LEN(LTRIM(RTRIM(@ln))) = 0
-      BEGIN
-        INSERT INTO @errors VALUES (@rowNum, 'Last name is required');
-        SET @SkippedCount += 1; GOTO NextRow;
-      END
-
-      IF @recClass IS NULL OR @recClass < 2000 OR @recClass > 2100
-      BEGIN
-        INSERT INTO @errors VALUES (@rowNum, 'Invalid recruiting class year');
-        SET @SkippedCount += 1; GOTO NextRow;
-      END
-
-      IF @jersey IS NOT NULL AND EXISTS (
-        SELECT 1 FROM dbo.users
-        WHERE jersey_number = @jersey AND status_id = 1
-          AND (@SportId IS NULL OR sport_id = @SportId)
-      )
-      BEGIN
-        INSERT INTO @errors VALUES (@rowNum, 'Jersey #' + CAST(@jersey AS NVARCHAR) + ' already in use');
-        SET @SkippedCount += 1; GOTO NextRow;
-      END
-
-      -- UserId is resolved by the caller (Next.js server action calls GlobalDB first,
-      -- then passes the userId back in each JSON row as "userId").
-      -- If no userId was provided, generate one (email-less / historical import).
-      DECLARE @newUserId UNIQUEIDENTIFIER = ISNULL(@providedUserId, NEWID());
-
-      -- Upsert into AppDB
-      IF EXISTS (SELECT 1 FROM dbo.users WHERE id = @newUserId)
-      BEGIN
-        UPDATE dbo.users SET
-          status_id               = 1,
-          sport_id                = COALESCE(@SportId,  sport_id),
-          jersey_number           = COALESCE(@jersey,   jersey_number),
-          position                = ISNULL(@pos,        position),
-          academic_year           = ISNULL(@acYear,     academic_year),
-          recruiting_class        = ISNULL(@recClass,   recruiting_class),
-          height_inches           = COALESCE(@heightIn, height_inches),
-          weight_lbs              = COALESCE(@wt,       weight_lbs),
-          home_town               = COALESCE(@town,     home_town),
-          home_state              = COALESCE(@state,    home_state),
-          high_school             = COALESCE(@hs,            high_school),
-          major                   = COALESCE(@major,         major),
-          phone                   = COALESCE(@phone,         phone),
-          emergency_contact_name  = COALESCE(@ecName,        emergency_contact_name),
-          emergency_contact_phone = COALESCE(@ecPhone,       emergency_contact_phone),
-          parent1_name            = COALESCE(@parent1Name,   parent1_name),
-          parent1_phone           = COALESCE(@parent1Phone,  parent1_phone),
-          parent1_email           = COALESCE(@parent1Email,  parent1_email),
-          parent2_name            = COALESCE(@parent2Name,   parent2_name),
-          parent2_phone           = COALESCE(@parent2Phone,  parent2_phone),
-          parent2_email           = COALESCE(@parent2Email,  parent2_email),
-          notes                   = COALESCE(@notes,         notes),
-          updated_at              = SYSUTCDATETIME()
-        WHERE id = @newUserId;
-      END
-      ELSE
-      BEGIN
-        INSERT INTO dbo.users (
-          id, email, first_name, last_name, status_id, sport_id,
-          jersey_number, position, academic_year, recruiting_class,
-          height_inches, weight_lbs, home_town, home_state, high_school,
-          major, phone, emergency_contact_name, emergency_contact_phone,
-          parent1_name, parent1_phone, parent1_email,
-          parent2_name, parent2_phone, parent2_email,
-          notes
-        )
-        VALUES (
-          @newUserId,
-          ISNULL(@email, 'provisional-' + LOWER(CAST(@newUserId AS NVARCHAR(36))) + '@import.local'),
-          @fn, @ln, 1, @SportId,
-          @jersey, @pos, @acYear, @recClass,
-          @heightIn, @wt, @town, @state, @hs,
-          @major, @phone, @ecName, @ecPhone,
-          @parent1Name, @parent1Phone, @parent1Email,
-          @parent2Name, @parent2Phone, @parent2Email,
-          @notes
-        );
-      END
-
-      IF @SportId IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM dbo.users_sports WHERE user_id = @newUserId AND sport_id = @SportId)
-      BEGIN
-        INSERT INTO dbo.users_sports (user_id, sport_id, username) VALUES (@newUserId, @SportId, @fn + ' ' + @ln);
-      END
-
-      SET @SuccessCount += 1;
-
-    END TRY
-    BEGIN CATCH
-      INSERT INTO @errors VALUES (@rowNum, ERROR_MESSAGE());
-      SET @SkippedCount += 1;
-    END CATCH;
-
-    NextRow:
-    FETCH NEXT FROM cur INTO
-      @rowNum, @providedUserId, @email, @fn, @ln, @jersey, @pos, @acYear, @recClass,
-      @heightIn, @wt, @town, @state, @hs,
-      @major, @phone, @ecName, @ecPhone,
-      @parent1Name, @parent1Phone, @parent1Email,
-      @parent2Name, @parent2Phone, @parent2Email,
-      @notes;
-  END
-
-  CLOSE cur;
-  DEALLOCATE cur;
-
-  SELECT @ErrorJson = ISNULL(
-    (SELECT row_num AS rowNum, reason FROM @errors FOR JSON PATH), '[]');
-END;
-GO
-
--- ============================================================
--- sp_BulkCreateAlumni
--- Same global-first pattern as sp_BulkCreatePlayers.
--- Inserts directly as status_id = 2 (alumni).
--- ============================================================
-CREATE OR ALTER PROCEDURE dbo.sp_BulkCreateAlumni
-  @AlumniJson   NVARCHAR(MAX),  -- each row must include "userId" (resolved by caller via GlobalDB)
-  @CreatedBy    UNIQUEIDENTIFIER,
-  @SportId      UNIQUEIDENTIFIER = NULL,
-  @SuccessCount INT OUTPUT,
-  @SkippedCount INT OUTPUT,
-  @ErrorJson    NVARCHAR(MAX) OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
-  @RequestingUserRole NVARCHAR(50)     = NULL
-AS
-BEGIN
-  SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
-  END
-  SET @SuccessCount = 0;
-  SET @SkippedCount = 0;
-  SET @ErrorJson    = '[]';
-
-  DECLARE @errors TABLE (row_num INT, reason NVARCHAR(500));
-  DECLARE @rows TABLE (
-    row_num             INT,
-    provided_user_id    UNIQUEIDENTIFIER,
-    email               NVARCHAR(255),
-    first_name          NVARCHAR(100),
-    last_name           NVARCHAR(100),
-    graduation_year     SMALLINT,
-    graduation_semester NVARCHAR(10),
-    phone               NVARCHAR(20),
-    linkedin_url        NVARCHAR(500),
-    current_employer    NVARCHAR(200),
-    current_job_title   NVARCHAR(150),
-    current_city        NVARCHAR(100),
-    current_state       NVARCHAR(50),
-    is_donor            BIT,
-    notes               NVARCHAR(MAX)
-  );
-
-  INSERT INTO @rows (
-    row_num, provided_user_id, email, first_name, last_name,
-    graduation_year, graduation_semester,
-    phone, linkedin_url,
-    current_employer, current_job_title, current_city, current_state,
-    is_donor, notes
-  )
-  SELECT
-    ROW_NUMBER() OVER (ORDER BY (SELECT NULL)),
-    TRY_CAST(JSON_VALUE(value, '$.userId')           AS UNIQUEIDENTIFIER),
-    JSON_VALUE(value, '$.email'),
-    JSON_VALUE(value, '$.firstName'),
-    JSON_VALUE(value, '$.lastName'),
-    TRY_CAST(JSON_VALUE(value, '$.graduationYear')   AS SMALLINT),
-    ISNULL(JSON_VALUE(value, '$.graduationSemester'), 'spring'),
-    JSON_VALUE(value, '$.phone'),
-    JSON_VALUE(value, '$.linkedInUrl'),
-    JSON_VALUE(value, '$.currentEmployer'),
-    JSON_VALUE(value, '$.currentJobTitle'),
-    JSON_VALUE(value, '$.currentCity'),
-    JSON_VALUE(value, '$.currentState'),
-    CASE WHEN LOWER(JSON_VALUE(value, '$.isDonor')) IN ('yes','true','1') THEN 1 ELSE 0 END,
-    JSON_VALUE(value, '$.notes')
-  FROM OPENJSON(@AlumniJson);
-
-  DECLARE @rowNum          INT;
-  DECLARE @providedUserId  UNIQUEIDENTIFIER;
-  DECLARE @email           NVARCHAR(255);
-  DECLARE @fn              NVARCHAR(100);
-  DECLARE @ln              NVARCHAR(100);
-  DECLARE @gradYear        SMALLINT;
-  DECLARE @semester        NVARCHAR(10);
-  DECLARE @phone           NVARCHAR(20);
-  DECLARE @linkedin        NVARCHAR(500);
-  DECLARE @employer        NVARCHAR(200);
-  DECLARE @jobTitle        NVARCHAR(150);
-  DECLARE @city            NVARCHAR(100);
-  DECLARE @state           NVARCHAR(50);
-  DECLARE @isDonor         BIT;
-  DECLARE @notes           NVARCHAR(MAX);
-
-  DECLARE cur CURSOR FOR
-    SELECT row_num, provided_user_id, email, first_name, last_name,
-           graduation_year, graduation_semester,
-           phone, linkedin_url,
-           current_employer, current_job_title, current_city, current_state,
-           is_donor, notes
-    FROM @rows;
-
-  OPEN cur;
-  FETCH NEXT FROM cur INTO
-    @rowNum, @providedUserId, @email, @fn, @ln, @gradYear, @semester,
-    @phone, @linkedin, @employer, @jobTitle, @city, @state, @isDonor, @notes;
-
-  WHILE @@FETCH_STATUS = 0
-  BEGIN
-    BEGIN TRY
-      IF @fn IS NULL OR LEN(LTRIM(RTRIM(@fn))) = 0 BEGIN INSERT INTO @errors VALUES (@rowNum, 'First name required'); SET @SkippedCount += 1; GOTO NextAlumRow; END
-      IF @ln IS NULL OR LEN(LTRIM(RTRIM(@ln))) = 0 BEGIN INSERT INTO @errors VALUES (@rowNum, 'Last name required');  SET @SkippedCount += 1; GOTO NextAlumRow; END
-      IF @gradYear IS NULL OR @gradYear < 1950 OR @gradYear > 2100 BEGIN INSERT INTO @errors VALUES (@rowNum, 'Invalid graduation year'); SET @SkippedCount += 1; GOTO NextAlumRow; END
-
-      -- UserId is resolved by the caller (Next.js server action calls GlobalDB first,
-      -- then passes the userId back in each JSON row as "userId").
-      -- If no userId was provided, generate one (email-less / historical import).
-      DECLARE @newUserId UNIQUEIDENTIFIER = ISNULL(@providedUserId, NEWID());
-
-      IF EXISTS (SELECT 1 FROM dbo.users WHERE id = @newUserId)
-      BEGIN
-        UPDATE dbo.users SET
-          status_id           = 2,
-          sport_id            = COALESCE(@SportId, sport_id),
-          graduation_year     = @gradYear,
-          graduation_semester = @semester,
-          phone               = COALESCE(@phone,    phone),
-          personal_email      = COALESCE(@email,    personal_email),
-          linkedin_url        = COALESCE(@linkedin, linkedin_url),
-          current_employer    = COALESCE(@employer, current_employer),
-          current_job_title   = COALESCE(@jobTitle, current_job_title),
-          current_city        = COALESCE(@city,     current_city),
-          current_state       = COALESCE(@state,    current_state),
-          is_donor            = COALESCE(@isDonor,  is_donor),
-          notes               = COALESCE(@notes,    notes),
-          updated_at          = SYSUTCDATETIME()
-        WHERE id = @newUserId;
-      END
-      ELSE
-      BEGIN
-        INSERT INTO dbo.users (
-          id, email, first_name, last_name, status_id, sport_id,
-          graduation_year, graduation_semester,
-          phone, personal_email, linkedin_url,
-          current_employer, current_job_title, current_city, current_state,
-          is_donor, notes
-        )
-        VALUES (
-          @newUserId,
-          ISNULL(@email, 'provisional-' + LOWER(CAST(@newUserId AS NVARCHAR(36))) + '@import.local'),
-          @fn, @ln, 2, @SportId,
-          @gradYear, @semester,
-          @phone, @email, @linkedin,
-          @employer, @jobTitle, @city, @state,
-          ISNULL(@isDonor, 0), @notes
-        );
-      END
-
-      IF @SportId IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM dbo.users_sports WHERE user_id = @newUserId AND sport_id = @SportId)
-      BEGIN
-        INSERT INTO dbo.users_sports (user_id, sport_id, username) VALUES (@newUserId, @SportId, @fn + ' ' + @ln);
-      END
-
-      SET @SuccessCount += 1;
-
-    END TRY
-    BEGIN CATCH
-      INSERT INTO @errors VALUES (@rowNum, ERROR_MESSAGE());
-      SET @SkippedCount += 1;
-    END CATCH;
-
-    NextAlumRow:
-    FETCH NEXT FROM cur INTO
-      @rowNum, @providedUserId, @email, @fn, @ln, @gradYear, @semester,
-      @phone, @linkedin, @employer, @jobTitle, @city, @state, @isDonor, @notes;
-  END
-
-  CLOSE cur;
-  DEALLOCATE cur;
-
-  SELECT @ErrorJson = ISNULL(
-    (SELECT row_num AS rowNum, reason FROM @errors FOR JSON PATH), '[]');
-END;
-GO
-
--- ============================================================
--- sp_CreateAlumni
--- Creates a single alumni record for a user who already exists
--- in LegacyLinkGlobal (frontend pre-creates the account via
--- the global API). Upserts into dbo.users with status_id = 2.
--- If the user is already an alumni (ALUMNI_ALREADY_EXISTS),
--- the caller treats this as idempotent success.
--- ============================================================
-CREATE OR ALTER PROCEDURE dbo.sp_CreateAlumni
-  @UserId             UNIQUEIDENTIFIER,
-  @FirstName          NVARCHAR(100),
-  @LastName           NVARCHAR(100),
-  @GraduationYear     SMALLINT,
-  @GraduationSemester NVARCHAR(10)     = 'spring',
-  @Position           NVARCHAR(10)     = NULL,
-  @RecruitingClass    SMALLINT         = NULL,
-  @SportId            UNIQUEIDENTIFIER = NULL,
-  @Phone              NVARCHAR(20)     = NULL,
-  @PersonalEmail      NVARCHAR(255)    = NULL,
-  @CurrentEmployer    NVARCHAR(200)    = NULL,
-  @CurrentJobTitle    NVARCHAR(150)    = NULL,
-  @CurrentCity        NVARCHAR(100)    = NULL,
-  @CurrentState       NVARCHAR(50)     = NULL,
-  @Notes              NVARCHAR(MAX)    = NULL,
-  @ErrorCode          NVARCHAR(50)     OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
-  @RequestingUserRole NVARCHAR(50)     = NULL
-AS
-BEGIN
-  SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
-  END
-  SET @ErrorCode = NULL;
-
-  IF @GraduationYear < 2000 OR @GraduationYear > 2100
-  BEGIN
-    SET @ErrorCode = 'INVALID_GRADUATION_YEAR';
-    RETURN;
-  END
-
-  IF @GraduationSemester NOT IN ('spring','fall','summer')
-  BEGIN
-    SET @ErrorCode = 'INVALID_SEMESTER';
-    RETURN;
-  END
-
-  -- Already an alumni — idempotent
-  IF EXISTS (SELECT 1 FROM dbo.users WHERE id = @UserId AND status_id = 2)
-  BEGIN
-    SET @ErrorCode = 'ALUMNI_ALREADY_EXISTS';
-    RETURN;
-  END
-
-  -- User exists as player or removed — flip to alumni
-  IF EXISTS (SELECT 1 FROM dbo.users WHERE id = @UserId)
-  BEGIN
-    UPDATE dbo.users SET
-      status_id           = 2,
-      first_name          = @FirstName,
-      last_name           = @LastName,
-      graduation_year     = @GraduationYear,
-      graduation_semester = @GraduationSemester,
-      position            = COALESCE(@Position,         position),
-      recruiting_class    = COALESCE(@RecruitingClass,  recruiting_class),
-      sport_id            = COALESCE(@SportId,          sport_id),
-      phone               = COALESCE(@Phone,            phone),
-      personal_email      = COALESCE(@PersonalEmail,    personal_email),
-      current_employer    = COALESCE(@CurrentEmployer,  current_employer),
-      current_job_title   = COALESCE(@CurrentJobTitle,  current_job_title),
-      current_city        = COALESCE(@CurrentCity,      current_city),
-      current_state       = COALESCE(@CurrentState,     current_state),
-      notes               = COALESCE(@Notes,            notes),
-      graduated_at        = SYSUTCDATETIME(),
-      updated_at          = SYSUTCDATETIME()
-    WHERE id = @UserId;
-  END
-  ELSE
-  BEGIN
-    -- New user in AppDB — insert directly as alumni
-    INSERT INTO dbo.users (
-      id, first_name, last_name, status_id,
-      graduation_year, graduation_semester,
-      position, recruiting_class, sport_id,
-      phone, personal_email,
-      current_employer, current_job_title, current_city, current_state,
-      notes, graduated_at
+          AND (@FilterPosition IS NULL OR p.position = @FilterPosition))
     )
-    VALUES (
-      @UserId, @FirstName, @LastName, 2,
-      @GraduationYear, @GraduationSemester,
-      @Position, @RecruitingClass, @SportId,
-      @Phone, @PersonalEmail,
-      @CurrentEmployer, @CurrentJobTitle, @CurrentCity, @CurrentState,
-      @Notes, SYSUTCDATETIME()
+
+  UNION ALL
+
+  -- Alumni
+  SELECT
+    a.alumni_id     AS recipientId,
+    'alumni'        AS recipientType,
+    a.first_name,
+    a.last_name,
+    a.personal_email,
+    a.phone,
+    a.position,
+    a.graduation_year AS graduationYear,
+    CASE WHEN eu.id IS NOT NULL THEN 1 ELSE 0 END AS isUnsubscribed
+  FROM dbo.alumni a
+  LEFT JOIN dbo.email_unsubscribes eu ON eu.alumni_id = a.alumni_id AND eu.channel = 'email'
+  WHERE a.personal_email IS NOT NULL
+    AND @Audience IN ('all','alumni_only','byGradYear','byPosition','custom')
+    AND (
+      @Audience IN ('all','alumni_only')
+      OR (@Audience = 'byGradYear' AND (
+            (@FilterGradYear IS NOT NULL AND a.graduation_year = @FilterGradYear)
+            OR (@FilterGradYears IS NOT NULL AND EXISTS (
+              SELECT 1 FROM OPENJSON(@FilterGradYears) WHERE CAST([value] AS SMALLINT) = a.graduation_year
+            ))
+          ))
+      OR (@Audience = 'byPosition' AND (
+            (@FilterPosition IS NOT NULL AND a.position = @FilterPosition)
+            OR (@FilterPositions IS NOT NULL AND EXISTS (
+              SELECT 1 FROM OPENJSON(@FilterPositions) WHERE CAST([value] AS NVARCHAR(10)) = a.position
+            ))
+          ))
+      OR (@Audience = 'custom'
+          AND (@FilterGradYear IS NULL OR a.graduation_year = @FilterGradYear)
+          AND (@FilterPosition IS NULL OR a.position        = @FilterPosition))
     );
-  END
-
-  IF @SportId IS NOT NULL
-    AND NOT EXISTS (SELECT 1 FROM dbo.users_sports WHERE user_id = @UserId AND sport_id = @SportId)
-  BEGIN
-    INSERT INTO dbo.users_sports (user_id, sport_id, username)
-    VALUES (@UserId, @SportId, @FirstName + ' ' + @LastName);
-  END
-END;
-GO
-
--- ============================================================
--- sp_GetSports
--- Returns all active sports in this AppDB.
--- ============================================================
-CREATE OR ALTER PROCEDURE dbo.sp_GetSports
-AS
-BEGIN
-  SET NOCOUNT ON;
-  SELECT id, name, abbr, is_active AS isActive
-  FROM   dbo.sports
-  WHERE  is_active = 1
-  ORDER  BY name;
 END;
 GO
 
 -- ============================================================
 -- sp_DispatchEmailCampaign
--- Queues outreach_messages for all eligible recipients and
--- marks the campaign as active.
+-- Queues outreach_messages for all eligible recipients.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_DispatchEmailCampaign
   @CampaignId       UNIQUEIDENTIFIER,
@@ -1788,75 +1708,92 @@ CREATE OR ALTER PROCEDURE dbo.sp_DispatchEmailCampaign
 AS
 BEGIN
   SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
-  END
   SET @ErrorCode   = NULL;
   SET @QueuedCount = 0;
 
-  DECLARE @CampaignStatus NVARCHAR(20);
-  DECLARE @Audience       NVARCHAR(30);
-  DECLARE @FiltersJson    NVARCHAR(MAX);
-  DECLARE @BodyHtml       NVARCHAR(MAX);
-  DECLARE @SubjectLine    NVARCHAR(500);
+  DECLARE @CampaignStatus NVARCHAR(20), @Audience NVARCHAR(30), @FiltersJson NVARCHAR(MAX);
 
   SELECT
     @CampaignStatus = status,
     @Audience       = target_audience,
-    @FiltersJson    = audience_filters,
-    @BodyHtml       = body_html,
-    @SubjectLine    = subject_line
+    @FiltersJson    = audience_filters
   FROM dbo.outreach_campaigns
   WHERE id = @CampaignId;
 
   IF @CampaignStatus IS NULL BEGIN SET @ErrorCode = 'CAMPAIGN_NOT_FOUND'; RETURN; END
-  IF @CampaignStatus NOT IN ('draft', 'scheduled') BEGIN SET @ErrorCode = 'INVALID_CAMPAIGN_STATUS'; RETURN; END
+  IF @CampaignStatus NOT IN ('draft','scheduled') BEGIN SET @ErrorCode = 'INVALID_CAMPAIGN_STATUS'; RETURN; END
 
   DECLARE @FilterGradYear  SMALLINT     = TRY_CAST(JSON_VALUE(@FiltersJson, '$.gradYear')  AS SMALLINT);
   DECLARE @FilterPosition  NVARCHAR(10) = JSON_VALUE(@FiltersJson, '$.position');
   DECLARE @FilterGradYears NVARCHAR(MAX)= JSON_QUERY(@FiltersJson, '$.gradYears');
   DECLARE @FilterPositions NVARCHAR(MAX)= JSON_QUERY(@FiltersJson, '$.positions');
 
+  -- Build recipient temp table
   SELECT
-    u.id              AS userId,
-    u.personal_email  AS emailAddress,
-    u.first_name      AS firstName,
-    NEWID()           AS unsubToken
+    r.recipientId,
+    r.recipientType,
+    r.emailAddress,
+    r.firstName,
+    NEWID() AS unsubToken
   INTO #recipients
-  FROM dbo.users u
-  LEFT JOIN dbo.email_unsubscribes eu ON eu.user_id = u.id AND eu.channel = 'email'
-  WHERE u.status_id IN (1, 2)
-    AND u.personal_email IS NOT NULL
-    AND eu.id IS NULL
-    AND NOT EXISTS (
-      SELECT 1 FROM dbo.outreach_messages om
-      WHERE om.campaign_id = @CampaignId AND om.user_id = u.id
-    )
-    AND (
-      @Audience = 'all'
-      OR (@Audience = 'players_only' AND u.status_id = 1)
-      OR (@Audience = 'alumni_only'  AND u.status_id = 2)
-      OR (@Audience = 'byGradYear'   AND u.status_id = 2 AND (
-            (@FilterGradYear IS NOT NULL AND u.graduation_year = @FilterGradYear)
-            OR (@FilterGradYears IS NOT NULL AND EXISTS (
-              SELECT 1 FROM OPENJSON(@FilterGradYears) WHERE CAST([value] AS SMALLINT) = u.graduation_year
+  FROM (
+    -- Active players
+    SELECT
+      p.player_id    AS recipientId,
+      'player'       AS recipientType,
+      p.personal_email AS emailAddress,
+      u.first_name   AS firstName
+    FROM dbo.players p
+    JOIN dbo.users   u ON u.user_id = p.player_id
+    WHERE p.is_active = 1
+      AND p.personal_email IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM dbo.email_unsubscribes eu WHERE eu.player_id = p.player_id AND eu.channel = 'email')
+      AND NOT EXISTS (SELECT 1 FROM dbo.outreach_messages om WHERE om.campaign_id = @CampaignId AND om.player_id = p.player_id)
+      AND @Audience IN ('all','players_only','byClass','byPosition','custom')
+      AND (
+        @Audience IN ('all','players_only')
+        OR (@Audience = 'byClass'    AND p.recruiting_class = @FilterGradYear)
+        OR (@Audience = 'byPosition' AND (
+              (@FilterPosition IS NOT NULL AND p.position = @FilterPosition)
+              OR (@FilterPositions IS NOT NULL AND EXISTS (
+                SELECT 1 FROM OPENJSON(@FilterPositions) WHERE CAST([value] AS NVARCHAR(10)) = p.position
+              ))
             ))
-          ))
-      OR (@Audience = 'byClass'    AND u.status_id = 1 AND u.recruiting_class = @FilterGradYear)
-      OR (@Audience = 'byPosition' AND (
-            (@FilterPosition IS NOT NULL AND u.position = @FilterPosition)
-            OR (@FilterPositions IS NOT NULL AND EXISTS (
-              SELECT 1 FROM OPENJSON(@FilterPositions) WHERE CAST([value] AS NVARCHAR(10)) = u.position
+        OR (@Audience = 'custom' AND (@FilterPosition IS NULL OR p.position = @FilterPosition))
+      )
+
+    UNION ALL
+
+    -- Alumni
+    SELECT
+      a.alumni_id    AS recipientId,
+      'alumni'       AS recipientType,
+      a.personal_email AS emailAddress,
+      a.first_name
+    FROM dbo.alumni a
+    WHERE a.personal_email IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM dbo.email_unsubscribes eu WHERE eu.alumni_id = a.alumni_id AND eu.channel = 'email')
+      AND NOT EXISTS (SELECT 1 FROM dbo.outreach_messages om WHERE om.campaign_id = @CampaignId AND om.alumni_id = a.alumni_id)
+      AND @Audience IN ('all','alumni_only','byGradYear','byPosition','custom')
+      AND (
+        @Audience IN ('all','alumni_only')
+        OR (@Audience = 'byGradYear' AND (
+              (@FilterGradYear IS NOT NULL AND a.graduation_year = @FilterGradYear)
+              OR (@FilterGradYears IS NOT NULL AND EXISTS (
+                SELECT 1 FROM OPENJSON(@FilterGradYears) WHERE CAST([value] AS SMALLINT) = a.graduation_year
+              ))
             ))
-          ))
-      OR (@Audience = 'custom'
-          AND (@FilterGradYear IS NULL OR u.graduation_year = @FilterGradYear)
-          AND (@FilterPosition IS NULL OR u.position        = @FilterPosition))
-    );
+        OR (@Audience = 'byPosition' AND (
+              (@FilterPosition IS NOT NULL AND a.position = @FilterPosition)
+              OR (@FilterPositions IS NOT NULL AND EXISTS (
+                SELECT 1 FROM OPENJSON(@FilterPositions) WHERE CAST([value] AS NVARCHAR(10)) = a.position
+              ))
+            ))
+        OR (@Audience = 'custom'
+            AND (@FilterGradYear IS NULL OR a.graduation_year = @FilterGradYear)
+            AND (@FilterPosition IS NULL OR a.position        = @FilterPosition))
+      )
+  ) r;
 
   SET @QueuedCount = (SELECT COUNT(*) FROM #recipients);
 
@@ -1864,8 +1801,14 @@ BEGIN
   IF @QueuedCount > @DailyRemaining   BEGIN SET @ErrorCode = 'DAILY_LIMIT_EXCEEDED';   DROP TABLE #recipients; RETURN; END
   IF @QueuedCount > @MonthlyRemaining BEGIN SET @ErrorCode = 'MONTHLY_LIMIT_EXCEEDED'; DROP TABLE #recipients; RETURN; END
 
-  INSERT INTO dbo.outreach_messages (campaign_id, user_id, channel, status, email_address, unsubscribe_token)
-  SELECT @CampaignId, r.userId, 'email', 'queued', r.emailAddress, r.unsubToken
+  INSERT INTO dbo.outreach_messages (
+    campaign_id, player_id, alumni_id, channel, status, email_address, unsubscribe_token
+  )
+  SELECT
+    @CampaignId,
+    CASE WHEN r.recipientType = 'player' THEN r.recipientId ELSE NULL END,
+    CASE WHEN r.recipientType = 'alumni' THEN r.recipientId ELSE NULL END,
+    'email', 'queued', r.emailAddress, r.unsubToken
   FROM #recipients r;
 
   UPDATE dbo.outreach_campaigns
@@ -1874,12 +1817,15 @@ BEGIN
 
   SELECT
     om.id                AS messageId,
-    om.user_id           AS userId,
+    om.player_id         AS playerId,
+    om.alumni_id         AS alumniId,
     r.firstName,
     om.email_address     AS emailAddress,
     om.unsubscribe_token AS unsubscribeToken
   FROM dbo.outreach_messages om
-  JOIN #recipients r ON r.userId = om.user_id
+  JOIN #recipients r ON
+    (om.player_id IS NOT NULL AND om.player_id = r.recipientId AND r.recipientType = 'player') OR
+    (om.alumni_id IS NOT NULL AND om.alumni_id = r.recipientId AND r.recipientType = 'alumni')
   WHERE om.campaign_id = @CampaignId AND om.status = 'queued';
 
   DROP TABLE #recipients;
@@ -1952,132 +1898,37 @@ BEGIN
   SET NOCOUNT ON;
   SET @ErrorCode = NULL;
 
-  DECLARE @UserId UNIQUEIDENTIFIER;
-  SELECT @UserId = user_id
-  FROM   dbo.outreach_messages
-  WHERE  unsubscribe_token = @Token;
+  DECLARE @PlayerId INT, @AlumniId INT, @FirstName NVARCHAR(100);
 
-  IF @UserId IS NULL
+  SELECT @PlayerId = om.player_id, @AlumniId = om.alumni_id
+  FROM   dbo.outreach_messages om
+  WHERE  om.unsubscribe_token = @Token;
+
+  IF @PlayerId IS NULL AND @AlumniId IS NULL
   BEGIN
     SET @ErrorCode = 'INVALID_TOKEN';
     RETURN;
   END
 
-  IF NOT EXISTS (
-    SELECT 1 FROM dbo.email_unsubscribes
-    WHERE user_id = @UserId AND channel = 'email'
-  )
+  IF @PlayerId IS NOT NULL
   BEGIN
-    INSERT INTO dbo.email_unsubscribes (user_id, token, channel)
-    VALUES (@UserId, NEWID(), 'email');
+    IF NOT EXISTS (SELECT 1 FROM dbo.email_unsubscribes WHERE player_id = @PlayerId AND channel = 'email')
+      INSERT INTO dbo.email_unsubscribes (player_id, channel) VALUES (@PlayerId, 'email');
+    SELECT @FirstName = u.first_name FROM dbo.users u WHERE u.user_id = @PlayerId;
+  END
+  ELSE
+  BEGIN
+    IF NOT EXISTS (SELECT 1 FROM dbo.email_unsubscribes WHERE alumni_id = @AlumniId AND channel = 'email')
+      INSERT INTO dbo.email_unsubscribes (alumni_id, channel) VALUES (@AlumniId, 'email');
+    SELECT @FirstName = first_name FROM dbo.alumni WHERE alumni_id = @AlumniId;
   END
 
-  SELECT u.first_name AS firstName
-  FROM   dbo.users u
-  WHERE  u.id = @UserId;
-END;
-GO
-
--- ============================================================
--- sp_GetCampaignDetail
--- ============================================================
-CREATE OR ALTER PROCEDURE dbo.sp_GetCampaignDetail
-  @CampaignId UNIQUEIDENTIFIER,
-  @ErrorCode  NVARCHAR(50) OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
-  @RequestingUserRole NVARCHAR(50)     = NULL
-AS
-BEGIN
-  SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
-  END
-  SET @ErrorCode = NULL;
-
-  IF NOT EXISTS (SELECT 1 FROM dbo.outreach_campaigns WHERE id = @CampaignId)
-  BEGIN
-    SET @ErrorCode = 'CAMPAIGN_NOT_FOUND';
-    RETURN;
-  END
-
-  SELECT
-    oc.id,
-    oc.name,
-    oc.description,
-    oc.target_audience  AS targetAudience,
-    oc.audience_filters AS audienceFilters,
-    oc.status,
-    oc.campaign_type    AS campaignType,
-    oc.subject_line     AS subjectLine,
-    oc.scheduled_at     AS scheduledAt,
-    oc.started_at       AS startedAt,
-    oc.completed_at     AS completedAt,
-    oc.created_at       AS createdAt,
-    SUM(CASE WHEN om.status IN ('queued','sent','responded') THEN 1 ELSE 0 END) AS totalQueued,
-    SUM(CASE WHEN om.status IN ('sent','responded')          THEN 1 ELSE 0 END) AS totalSent,
-    SUM(CASE WHEN om.opened_at IS NOT NULL                   THEN 1 ELSE 0 END) AS totalOpened,
-    (
-      SELECT COUNT(*) FROM dbo.email_unsubscribes eu2
-      JOIN dbo.outreach_messages om2 ON om2.user_id = eu2.user_id
-      WHERE om2.campaign_id = oc.id
-    ) AS unsubscribeCount,
-    CASE
-      WHEN SUM(CASE WHEN om.status IN ('sent','responded') THEN 1 ELSE 0 END) = 0 THEN 0
-      ELSE CAST(
-        100.0 * SUM(CASE WHEN om.opened_at IS NOT NULL THEN 1 ELSE 0 END)
-        / NULLIF(SUM(CASE WHEN om.status IN ('sent','responded') THEN 1 ELSE 0 END), 0)
-      AS DECIMAL(5,1))
-    END AS openRatePct
-  FROM dbo.outreach_campaigns oc
-  LEFT JOIN dbo.outreach_messages om ON om.campaign_id = oc.id
-  WHERE oc.id = @CampaignId
-  GROUP BY
-    oc.id, oc.name, oc.description, oc.target_audience, oc.audience_filters,
-    oc.status, oc.campaign_type, oc.subject_line, oc.scheduled_at,
-    oc.started_at, oc.completed_at, oc.created_at;
-END;
-GO
-
--- ============================================================
--- sp_CancelCampaign
--- ============================================================
-CREATE OR ALTER PROCEDURE dbo.sp_CancelCampaign
-  @CampaignId UNIQUEIDENTIFIER,
-  @ErrorCode  NVARCHAR(50) OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
-  @RequestingUserRole NVARCHAR(50)     = NULL
-AS
-BEGIN
-  SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
-  END
-  SET @ErrorCode = NULL;
-
-  DECLARE @CurStatus NVARCHAR(20);
-  SELECT @CurStatus = status FROM dbo.outreach_campaigns WHERE id = @CampaignId;
-
-  IF @CurStatus IS NULL BEGIN SET @ErrorCode = 'CAMPAIGN_NOT_FOUND'; RETURN; END
-  IF @CurStatus NOT IN ('draft','scheduled') BEGIN SET @ErrorCode = 'CANNOT_CANCEL'; RETURN; END
-
-  UPDATE dbo.outreach_campaigns
-  SET status = 'cancelled', updated_at = SYSUTCDATETIME()
-  WHERE id = @CampaignId;
+  SELECT @FirstName AS firstName;
 END;
 GO
 
 -- ============================================================
 -- sp_CreatePost
--- Creates a feed post. If @AlsoEmail = 1, also creates a
--- draft outreach_campaign so the API can dispatch it.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_CreatePost
   @CreatedBy    UNIQUEIDENTIFIER,
@@ -2097,13 +1948,6 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreatePost
 AS
 BEGIN
   SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
-  END
   SET @ErrorCode  = NULL;
   SET @NewPostId  = NULL;
   SET @CampaignId = NULL;
@@ -2132,7 +1976,7 @@ BEGIN
   );
 
   DECLARE @CampaignAudience NVARCHAR(30) = CASE @Audience
-    WHEN 'by_position' THEN 'byPosition'
+    WHEN 'by_position'  THEN 'byPosition'
     WHEN 'by_grad_year' THEN 'byGradYear'
     ELSE @Audience
   END;
@@ -2148,16 +1992,10 @@ BEGIN
       @CampaignId,
       ISNULL(@Title, LEFT(@BodyHtml, 100)),
       N'Auto-created from feed post',
-      @CampaignAudience,
-      @AudienceJson,
-      'draft',
-      'post_notification',
-      @EmailSubject,
-      @BodyHtml,
-      @SportId,
-      @CreatedBy
+      @CampaignAudience, @AudienceJson,
+      'draft', 'post_notification',
+      @EmailSubject, @BodyHtml, @SportId, @CreatedBy
     );
-
     UPDATE dbo.feed_posts SET campaign_id = @CampaignId WHERE id = @NewPostId;
   END
 END;
@@ -2165,11 +2003,11 @@ GO
 
 -- ============================================================
 -- sp_GetFeed
--- Returns feed posts visible to the requesting user.
--- Audience wall is enforced at the DB layer.
+-- Viewer status determined by membership in dbo.players / dbo.alumni.
+-- @ViewerUserId INT = dbo.users.user_id (the logged-in user).
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetFeed
-  @ViewerUserId UNIQUEIDENTIFIER,
+  @ViewerUserId INT,
   @SportId      UNIQUEIDENTIFIER = NULL,
   @Page         INT              = 1,
   @PageSize     INT              = 20,
@@ -2179,17 +2017,24 @@ CREATE OR ALTER PROCEDURE dbo.sp_GetFeed
 AS
 BEGIN
   SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
-  END
   SET @TotalCount = 0;
 
-  DECLARE @ViewerStatusId INT;
-  SELECT @ViewerStatusId = status_id FROM dbo.users WHERE id = @ViewerUserId;
+  DECLARE @ViewerIsPlayer  BIT = 0;
+  DECLARE @ViewerIsAlumni  BIT = 0;
+  DECLARE @ViewerPosition  NVARCHAR(10) = NULL;
+  DECLARE @ViewerGradYear  SMALLINT     = NULL;
+
+  IF EXISTS (SELECT 1 FROM dbo.players WHERE player_id = @ViewerUserId AND is_active = 1)
+  BEGIN
+    SET @ViewerIsPlayer = 1;
+    SELECT @ViewerPosition = position FROM dbo.players WHERE player_id = @ViewerUserId;
+  END
+  ELSE IF EXISTS (SELECT 1 FROM dbo.alumni WHERE user_id = @ViewerUserId)
+  BEGIN
+    SET @ViewerIsAlumni = 1;
+    SELECT @ViewerGradYear = graduation_year, @ViewerPosition = position
+    FROM dbo.alumni WHERE user_id = @ViewerUserId;
+  END
 
   DECLARE @Offset INT = (@Page - 1) * @PageSize;
   IF @Offset < 0 SET @Offset = 0;
@@ -2197,40 +2042,32 @@ BEGIN
   ;WITH visible_posts AS (
     SELECT fp.*
     FROM dbo.feed_posts fp
-    WHERE
-      (fp.sport_id IS NULL OR fp.sport_id = @SportId OR @SportId IS NULL)
+    WHERE (fp.sport_id IS NULL OR fp.sport_id = @SportId OR @SportId IS NULL)
       AND (
-        @ViewerStatusId IS NULL
-        OR fp.audience = 'all'
-        OR (fp.audience = 'players_only' AND @ViewerStatusId = 1)
-        OR (fp.audience = 'alumni_only'  AND @ViewerStatusId = 2)
-        OR (fp.audience = 'by_position' AND EXISTS (
-              SELECT 1 FROM dbo.users u2
-              WHERE u2.id = @ViewerUserId
-                AND fp.audience_json IS NOT NULL
-                AND EXISTS (
-                  SELECT 1 FROM OPENJSON(fp.audience_json, '$.positions')
-                  WHERE CAST([value] AS NVARCHAR(10)) = u2.position
-                )
+        fp.audience = 'all'
+        OR (fp.audience = 'players_only'  AND @ViewerIsPlayer = 1)
+        OR (fp.audience = 'alumni_only'   AND @ViewerIsAlumni = 1)
+        OR (fp.audience = 'by_position'
+            AND @ViewerPosition IS NOT NULL
+            AND fp.audience_json IS NOT NULL
+            AND EXISTS (
+              SELECT 1 FROM OPENJSON(fp.audience_json, '$.positions')
+              WHERE CAST([value] AS NVARCHAR(10)) = @ViewerPosition
             ))
-        OR (fp.audience = 'by_grad_year' AND @ViewerStatusId = 2 AND EXISTS (
-              SELECT 1 FROM dbo.users u2
-              WHERE u2.id = @ViewerUserId
-                AND fp.audience_json IS NOT NULL
-                AND EXISTS (
-                  SELECT 1 FROM OPENJSON(fp.audience_json, '$.gradYears')
-                  WHERE CAST([value] AS SMALLINT) = u2.graduation_year
-                )
+        OR (fp.audience = 'by_grad_year'
+            AND @ViewerIsAlumni = 1
+            AND @ViewerGradYear IS NOT NULL
+            AND fp.audience_json IS NOT NULL
+            AND EXISTS (
+              SELECT 1 FROM OPENJSON(fp.audience_json, '$.gradYears')
+              WHERE CAST([value] AS SMALLINT) = @ViewerGradYear
             ))
-        OR (fp.audience = 'custom' AND fp.audience_json IS NOT NULL AND (
-              (JSON_VALUE(fp.audience_json, '$.position') IS NULL
-               OR JSON_VALUE(fp.audience_json, '$.position') = (
-                    SELECT u2.position FROM dbo.users u2 WHERE u2.id = @ViewerUserId))
-              AND
-              (JSON_VALUE(fp.audience_json, '$.gradYear') IS NULL
-               OR CAST(JSON_VALUE(fp.audience_json, '$.gradYear') AS SMALLINT) = (
-                    SELECT u2.graduation_year FROM dbo.users u2 WHERE u2.id = @ViewerUserId))
-           ))
+        OR (fp.audience = 'custom'
+            AND fp.audience_json IS NOT NULL
+            AND (JSON_VALUE(fp.audience_json, '$.position') IS NULL
+                 OR JSON_VALUE(fp.audience_json, '$.position') = @ViewerPosition)
+            AND (JSON_VALUE(fp.audience_json, '$.gradYear') IS NULL
+                 OR CAST(JSON_VALUE(fp.audience_json, '$.gradYear') AS SMALLINT) = @ViewerGradYear))
       )
   )
   SELECT @TotalCount = COUNT(*) FROM visible_posts;
@@ -2238,40 +2075,32 @@ BEGIN
   ;WITH visible_posts AS (
     SELECT fp.*
     FROM dbo.feed_posts fp
-    WHERE
-      (fp.sport_id IS NULL OR fp.sport_id = @SportId OR @SportId IS NULL)
+    WHERE (fp.sport_id IS NULL OR fp.sport_id = @SportId OR @SportId IS NULL)
       AND (
-        @ViewerStatusId IS NULL
-        OR fp.audience = 'all'
-        OR (fp.audience = 'players_only' AND @ViewerStatusId = 1)
-        OR (fp.audience = 'alumni_only'  AND @ViewerStatusId = 2)
-        OR (fp.audience = 'by_position' AND EXISTS (
-              SELECT 1 FROM dbo.users u2
-              WHERE u2.id = @ViewerUserId
-                AND fp.audience_json IS NOT NULL
-                AND EXISTS (
-                  SELECT 1 FROM OPENJSON(fp.audience_json, '$.positions')
-                  WHERE CAST([value] AS NVARCHAR(10)) = u2.position
-                )
+        fp.audience = 'all'
+        OR (fp.audience = 'players_only'  AND @ViewerIsPlayer = 1)
+        OR (fp.audience = 'alumni_only'   AND @ViewerIsAlumni = 1)
+        OR (fp.audience = 'by_position'
+            AND @ViewerPosition IS NOT NULL
+            AND fp.audience_json IS NOT NULL
+            AND EXISTS (
+              SELECT 1 FROM OPENJSON(fp.audience_json, '$.positions')
+              WHERE CAST([value] AS NVARCHAR(10)) = @ViewerPosition
             ))
-        OR (fp.audience = 'by_grad_year' AND @ViewerStatusId = 2 AND EXISTS (
-              SELECT 1 FROM dbo.users u2
-              WHERE u2.id = @ViewerUserId
-                AND fp.audience_json IS NOT NULL
-                AND EXISTS (
-                  SELECT 1 FROM OPENJSON(fp.audience_json, '$.gradYears')
-                  WHERE CAST([value] AS SMALLINT) = u2.graduation_year
-                )
+        OR (fp.audience = 'by_grad_year'
+            AND @ViewerIsAlumni = 1
+            AND @ViewerGradYear IS NOT NULL
+            AND fp.audience_json IS NOT NULL
+            AND EXISTS (
+              SELECT 1 FROM OPENJSON(fp.audience_json, '$.gradYears')
+              WHERE CAST([value] AS SMALLINT) = @ViewerGradYear
             ))
-        OR (fp.audience = 'custom' AND fp.audience_json IS NOT NULL AND (
-              (JSON_VALUE(fp.audience_json, '$.position') IS NULL
-               OR JSON_VALUE(fp.audience_json, '$.position') = (
-                    SELECT u2.position FROM dbo.users u2 WHERE u2.id = @ViewerUserId))
-              AND
-              (JSON_VALUE(fp.audience_json, '$.gradYear') IS NULL
-               OR CAST(JSON_VALUE(fp.audience_json, '$.gradYear') AS SMALLINT) = (
-                    SELECT u2.graduation_year FROM dbo.users u2 WHERE u2.id = @ViewerUserId))
-           ))
+        OR (fp.audience = 'custom'
+            AND fp.audience_json IS NOT NULL
+            AND (JSON_VALUE(fp.audience_json, '$.position') IS NULL
+                 OR JSON_VALUE(fp.audience_json, '$.position') = @ViewerPosition)
+            AND (JSON_VALUE(fp.audience_json, '$.gradYear') IS NULL
+                 OR CAST(JSON_VALUE(fp.audience_json, '$.gradYear') AS SMALLINT) = @ViewerGradYear))
       )
   )
   SELECT
@@ -2289,45 +2118,43 @@ BEGIN
     vp.created_at      AS createdAt,
     CASE WHEN fpr.id IS NOT NULL THEN 1 ELSE 0 END AS isRead
   FROM visible_posts vp
-  LEFT JOIN dbo.feed_post_reads fpr
-    ON fpr.post_id = vp.id AND fpr.user_id = @ViewerUserId
-  ORDER BY
-    vp.is_pinned DESC,
-    vp.published_at DESC
-  OFFSET @Offset ROWS
-  FETCH NEXT @PageSize ROWS ONLY;
+  LEFT JOIN dbo.feed_post_reads fpr ON fpr.post_id = vp.id AND fpr.user_id = @ViewerUserId
+  ORDER BY vp.is_pinned DESC, vp.published_at DESC
+  OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;
 END;
 GO
 
 -- ============================================================
 -- sp_GetFeedPost
--- Returns a single post if the viewer is authorized to see it.
--- Empty result = unauthorized (API maps to 404, no info leak).
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetFeedPost
   @PostId       UNIQUEIDENTIFIER,
-  @ViewerUserId UNIQUEIDENTIFIER,
+  @ViewerUserId INT,
   @ErrorCode    NVARCHAR(50) OUTPUT,
   @RequestingUserId   UNIQUEIDENTIFIER = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
-  END
   SET @ErrorCode = NULL;
 
-  DECLARE @ViewerStatusId INT;
-  SELECT @ViewerStatusId = status_id FROM dbo.users WHERE id = @ViewerUserId;
+  DECLARE @ViewerIsPlayer BIT = 0, @ViewerIsAlumni BIT = 0;
+  DECLARE @ViewerPosition NVARCHAR(10) = NULL, @ViewerGradYear SMALLINT = NULL;
+
+  IF EXISTS (SELECT 1 FROM dbo.players WHERE player_id = @ViewerUserId AND is_active = 1)
+  BEGIN
+    SET @ViewerIsPlayer = 1;
+    SELECT @ViewerPosition = position FROM dbo.players WHERE player_id = @ViewerUserId;
+  END
+  ELSE IF EXISTS (SELECT 1 FROM dbo.alumni WHERE user_id = @ViewerUserId)
+  BEGIN
+    SET @ViewerIsAlumni = 1;
+    SELECT @ViewerGradYear = graduation_year, @ViewerPosition = position
+    FROM dbo.alumni WHERE user_id = @ViewerUserId;
+  END
 
   SELECT
-    fp.id,
-    fp.title,
+    fp.id, fp.title,
     fp.body_html       AS bodyHtml,
     fp.audience,
     fp.audience_json   AS audienceJson,
@@ -2340,74 +2167,60 @@ BEGIN
     fp.created_at      AS createdAt,
     CASE WHEN fpr.id IS NOT NULL THEN 1 ELSE 0 END AS isRead
   FROM dbo.feed_posts fp
-  LEFT JOIN dbo.feed_post_reads fpr
-    ON fpr.post_id = fp.id AND fpr.user_id = @ViewerUserId
+  LEFT JOIN dbo.feed_post_reads fpr ON fpr.post_id = fp.id AND fpr.user_id = @ViewerUserId
   WHERE fp.id = @PostId
     AND (
-      @ViewerStatusId IS NULL
-      OR fp.audience = 'all'
-      OR (fp.audience = 'players_only' AND @ViewerStatusId = 1)
-      OR (fp.audience = 'alumni_only'  AND @ViewerStatusId = 2)
-      OR (fp.audience = 'by_position' AND EXISTS (
-            SELECT 1 FROM dbo.users u2
-            WHERE u2.id = @ViewerUserId
-              AND fp.audience_json IS NOT NULL
-              AND EXISTS (
-                SELECT 1 FROM OPENJSON(fp.audience_json, '$.positions')
-                WHERE CAST([value] AS NVARCHAR(10)) = u2.position
-              )
+      fp.audience = 'all'
+      OR (fp.audience = 'players_only' AND @ViewerIsPlayer = 1)
+      OR (fp.audience = 'alumni_only'  AND @ViewerIsAlumni = 1)
+      OR (fp.audience = 'by_position'
+          AND @ViewerPosition IS NOT NULL
+          AND fp.audience_json IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM OPENJSON(fp.audience_json, '$.positions')
+            WHERE CAST([value] AS NVARCHAR(10)) = @ViewerPosition
           ))
-      OR (fp.audience = 'by_grad_year' AND @ViewerStatusId = 2 AND EXISTS (
-            SELECT 1 FROM dbo.users u2
-            WHERE u2.id = @ViewerUserId
-              AND fp.audience_json IS NOT NULL
-              AND EXISTS (
-                SELECT 1 FROM OPENJSON(fp.audience_json, '$.gradYears')
-                WHERE CAST([value] AS SMALLINT) = u2.graduation_year
-              )
+      OR (fp.audience = 'by_grad_year'
+          AND @ViewerIsAlumni = 1
+          AND @ViewerGradYear IS NOT NULL
+          AND fp.audience_json IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM OPENJSON(fp.audience_json, '$.gradYears')
+            WHERE CAST([value] AS SMALLINT) = @ViewerGradYear
           ))
-      OR (fp.audience = 'custom' AND fp.audience_json IS NOT NULL AND (
-            (JSON_VALUE(fp.audience_json, '$.position') IS NULL
-             OR JSON_VALUE(fp.audience_json, '$.position') = (
-                  SELECT u2.position FROM dbo.users u2 WHERE u2.id = @ViewerUserId))
-            AND
-            (JSON_VALUE(fp.audience_json, '$.gradYear') IS NULL
-             OR CAST(JSON_VALUE(fp.audience_json, '$.gradYear') AS SMALLINT) = (
-                  SELECT u2.graduation_year FROM dbo.users u2 WHERE u2.id = @ViewerUserId))
-         ))
+      OR (fp.audience = 'custom'
+          AND fp.audience_json IS NOT NULL
+          AND (JSON_VALUE(fp.audience_json, '$.position') IS NULL
+               OR JSON_VALUE(fp.audience_json, '$.position') = @ViewerPosition)
+          AND (JSON_VALUE(fp.audience_json, '$.gradYear') IS NULL
+               OR CAST(JSON_VALUE(fp.audience_json, '$.gradYear') AS SMALLINT) = @ViewerGradYear))
     );
 END;
 GO
 
 -- ============================================================
 -- sp_MarkPostRead
--- Idempotent: UNIQUE constraint on (post_id, user_id) handles
--- concurrent calls. No error if already read.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_MarkPostRead
   @PostId UNIQUEIDENTIFIER,
-  @UserId UNIQUEIDENTIFIER
+  @UserId INT
 AS
 BEGIN
   SET NOCOUNT ON;
 
-  IF NOT EXISTS (SELECT 1 FROM dbo.feed_posts WHERE id = @PostId)
-    RETURN;
+  IF NOT EXISTS (SELECT 1 FROM dbo.feed_posts WHERE id = @PostId) RETURN;
 
   IF NOT EXISTS (
-    SELECT 1 FROM dbo.feed_post_reads
-    WHERE post_id = @PostId AND user_id = @UserId
+    SELECT 1 FROM dbo.feed_post_reads WHERE post_id = @PostId AND user_id = @UserId
   )
   BEGIN
-    INSERT INTO dbo.feed_post_reads (post_id, user_id)
-    VALUES (@PostId, @UserId);
+    INSERT INTO dbo.feed_post_reads (post_id, user_id) VALUES (@PostId, @UserId);
   END
 END;
 GO
 
 -- ============================================================
 -- sp_GetPostReadStats
--- Admin-only. Returns read-through rate for a post.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetPostReadStats
   @PostId    UNIQUEIDENTIFIER,
@@ -2417,22 +2230,12 @@ CREATE OR ALTER PROCEDURE dbo.sp_GetPostReadStats
 AS
 BEGIN
   SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid;
-    EXEC sp_set_session_context N'user_role', @_role;
-  END
   SET @ErrorCode = NULL;
 
-  DECLARE @Audience     NVARCHAR(30);
-  DECLARE @AudienceJson NVARCHAR(MAX);
-  DECLARE @SportId      UNIQUEIDENTIFIER;
+  DECLARE @Audience     NVARCHAR(30), @AudienceJson NVARCHAR(MAX), @SportId UNIQUEIDENTIFIER;
 
   SELECT @Audience = audience, @AudienceJson = audience_json, @SportId = sport_id
-  FROM   dbo.feed_posts
-  WHERE  id = @PostId;
+  FROM   dbo.feed_posts WHERE id = @PostId;
 
   IF @Audience IS NULL BEGIN SET @ErrorCode = 'POST_NOT_FOUND'; RETURN; END
 
@@ -2441,31 +2244,49 @@ BEGIN
   DECLARE @FilterGradYears NVARCHAR(MAX)= JSON_QUERY(@AudienceJson, '$.gradYears');
   DECLARE @FilterPositions NVARCHAR(MAX)= JSON_QUERY(@AudienceJson, '$.positions');
 
-  DECLARE @TotalEligible INT;
-  SELECT @TotalEligible = COUNT(*)
-  FROM dbo.users u
-  WHERE u.status_id IN (1, 2)
-    AND (@SportId IS NULL OR u.sport_id = @SportId)
-    AND (
-      @Audience = 'all'
-      OR (@Audience = 'players_only' AND u.status_id = 1)
-      OR (@Audience = 'alumni_only'  AND u.status_id = 2)
-      OR (@Audience = 'by_grad_year' AND u.status_id = 2 AND (
-            (@FilterGradYear IS NOT NULL AND u.graduation_year = @FilterGradYear)
-            OR (@FilterGradYears IS NOT NULL AND EXISTS (
-              SELECT 1 FROM OPENJSON(@FilterGradYears) WHERE CAST([value] AS SMALLINT) = u.graduation_year
+  DECLARE @TotalEligible INT = 0;
+  DECLARE @PlayerCount   INT = 0;
+  DECLARE @AlumniCount   INT = 0;
+
+  IF @Audience IN ('all','players_only','byClass','byPosition','custom')
+    SELECT @PlayerCount = COUNT(*) FROM dbo.players p
+    WHERE p.is_active = 1
+      AND (@SportId IS NULL OR p.sport_id = @SportId)
+      AND (
+        @Audience IN ('all','players_only')
+        OR (@Audience = 'byClass'    AND p.recruiting_class = @FilterGradYear)
+        OR (@Audience = 'byPosition' AND (
+              (@FilterPosition IS NOT NULL AND p.position = @FilterPosition)
+              OR (@FilterPositions IS NOT NULL AND EXISTS (
+                SELECT 1 FROM OPENJSON(@FilterPositions) WHERE CAST([value] AS NVARCHAR(10)) = p.position
+              ))
             ))
-          ))
-      OR (@Audience = 'by_position' AND (
-            (@FilterPosition IS NOT NULL AND u.position = @FilterPosition)
-            OR (@FilterPositions IS NOT NULL AND EXISTS (
-              SELECT 1 FROM OPENJSON(@FilterPositions) WHERE CAST([value] AS NVARCHAR(10)) = u.position
+        OR (@Audience = 'custom' AND (@FilterPosition IS NULL OR p.position = @FilterPosition))
+      );
+
+  IF @Audience IN ('all','alumni_only','byGradYear','byPosition','custom')
+    SELECT @AlumniCount = COUNT(*) FROM dbo.alumni a
+    WHERE (@SportId IS NULL OR a.sport_id = @SportId)
+      AND (
+        @Audience IN ('all','alumni_only')
+        OR (@Audience = 'byGradYear' AND (
+              (@FilterGradYear IS NOT NULL AND a.graduation_year = @FilterGradYear)
+              OR (@FilterGradYears IS NOT NULL AND EXISTS (
+                SELECT 1 FROM OPENJSON(@FilterGradYears) WHERE CAST([value] AS SMALLINT) = a.graduation_year
+              ))
             ))
-          ))
-      OR (@Audience = 'custom'
-          AND (@FilterGradYear IS NULL OR u.graduation_year = @FilterGradYear)
-          AND (@FilterPosition IS NULL OR u.position        = @FilterPosition))
-    );
+        OR (@Audience = 'byPosition' AND (
+              (@FilterPosition IS NOT NULL AND a.position = @FilterPosition)
+              OR (@FilterPositions IS NOT NULL AND EXISTS (
+                SELECT 1 FROM OPENJSON(@FilterPositions) WHERE CAST([value] AS NVARCHAR(10)) = a.position
+              ))
+            ))
+        OR (@Audience = 'custom'
+            AND (@FilterGradYear IS NULL OR a.graduation_year = @FilterGradYear)
+            AND (@FilterPosition IS NULL OR a.position        = @FilterPosition))
+      );
+
+  SET @TotalEligible = @PlayerCount + @AlumniCount;
 
   DECLARE @TotalRead INT;
   SELECT @TotalRead = COUNT(*) FROM dbo.feed_post_reads WHERE post_id = @PostId;
@@ -2481,19 +2302,6 @@ GO
 
 -- ============================================================
 -- sp_GetDashboardMetrics_Alumni
--- Returns Phase 1 alumni engagement metrics for the dashboard.
---
--- All alumni aggregations flow through dbo.vwAlumni to enforce
--- the data wall (RLS on dbo.users applies transparently).
--- @TenantId is passed explicitly for defense-in-depth even
--- though this SP runs inside the per-tenant AppDB.
--- @SportId = NULL → aggregate all sports the user can access.
---
--- Phase 1 metrics:
---   interactions     — logged outreach interactions
---   emails_sent      — alumni email messages sent/responded
---   login_frequency  — distinct alumni who logged in last 30 d
---   email_open_rate  — 0 placeholder (Phase 2: pixel pipeline)
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetDashboardMetrics_Alumni
   @TenantId           INT,
@@ -2504,93 +2312,64 @@ AS
 BEGIN
   SET NOCOUNT ON;
 
-  -- Time windows
   DECLARE @MonthStart    DATETIME2 =
     CAST(DATEADD(DAY, 1 - DAY(GETUTCDATE()), CAST(GETUTCDATE() AS DATE)) AS DATETIME2);
   DECLARE @ThirtyDaysAgo DATETIME2 = DATEADD(DAY, -30, SYSUTCDATETIME());
 
-  -- ── Interactions ──────────────────────────────────────────
-  -- Join through vwAlumni to enforce the wall.
-  -- @SportId = NULL → all sports; otherwise filter to that sport.
-  DECLARE @TotalInteractions INT;
-  DECLARE @MonthInteractions INT;
+  DECLARE @TotalInteractions INT, @MonthInteractions INT;
 
   SELECT @TotalInteractions = COUNT(*)
   FROM   dbo.interaction_log il
   WHERE  EXISTS (
-    SELECT 1 FROM dbo.vwAlumni va
-    WHERE  va.id = il.user_id
-      AND  (@SportId IS NULL OR va.sport_id = @SportId)
+    SELECT 1 FROM dbo.alumni a
+    WHERE  a.alumni_id = il.alumni_id
+      AND  (@SportId IS NULL OR a.sport_id = @SportId)
   );
 
   SELECT @MonthInteractions = COUNT(*)
   FROM   dbo.interaction_log il
   WHERE  il.logged_at >= @MonthStart
     AND  EXISTS (
-      SELECT 1 FROM dbo.vwAlumni va
-      WHERE  va.id = il.user_id
-        AND  (@SportId IS NULL OR va.sport_id = @SportId)
+      SELECT 1 FROM dbo.alumni a
+      WHERE  a.alumni_id = il.alumni_id
+        AND  (@SportId IS NULL OR a.sport_id = @SportId)
     );
 
-  -- ── Emails sent to alumni ─────────────────────────────────
-  -- outreach_messages.alumni_id references dbo.alumni (status_id=2),
-  -- which is the same population as vwAlumni.
-  DECLARE @TotalEmailsSent INT;
-  DECLARE @MonthEmailsSent INT;
+  DECLARE @TotalEmailsSent INT, @MonthEmailsSent INT;
 
   SELECT @TotalEmailsSent = COUNT(om.id)
   FROM   dbo.outreach_messages  om
   JOIN   dbo.outreach_campaigns oc ON oc.id = om.campaign_id
-  WHERE  om.status        IN ('sent', 'responded')
-    AND  oc.target_audience IN ('all', 'alumni_only')
-    AND  EXISTS (
-      SELECT 1 FROM dbo.vwAlumni va
-      WHERE  va.id = om.user_id
-        AND  (@SportId IS NULL OR va.sport_id = @SportId)
-    );
+  WHERE  om.status           IN ('sent','responded')
+    AND  oc.target_audience  IN ('all','alumni_only')
+    AND  om.alumni_id IS NOT NULL
+    AND  (@SportId IS NULL OR EXISTS (
+      SELECT 1 FROM dbo.alumni a WHERE a.alumni_id = om.alumni_id AND a.sport_id = @SportId
+    ));
 
   SELECT @MonthEmailsSent = COUNT(om.id)
   FROM   dbo.outreach_messages  om
   JOIN   dbo.outreach_campaigns oc ON oc.id = om.campaign_id
-  WHERE  om.status        IN ('sent', 'responded')
-    AND  om.sent_at       >= @MonthStart
-    AND  oc.target_audience IN ('all', 'alumni_only')
-    AND  EXISTS (
-      SELECT 1 FROM dbo.vwAlumni va
-      WHERE  va.id = om.user_id
-        AND  (@SportId IS NULL OR va.sport_id = @SportId)
-    );
+  WHERE  om.status           IN ('sent','responded')
+    AND  om.sent_at          >= @MonthStart
+    AND  oc.target_audience  IN ('all','alumni_only')
+    AND  om.alumni_id IS NOT NULL
+    AND  (@SportId IS NULL OR EXISTS (
+      SELECT 1 FROM dbo.alumni a WHERE a.alumni_id = om.alumni_id AND a.sport_id = @SportId
+    ));
 
-  -- ── Alumni login frequency (last 30 days) ─────────────────
-  -- Counts distinct alumni who logged in; auth_events.user_id
-  -- matches dbo.users.id for alumni (status_id = 2 / vwAlumni).
-  DECLARE @AlumniLoginsLast30 INT;
-
-  SELECT @AlumniLoginsLast30 = COUNT(DISTINCT ae.user_id)
-  FROM   dbo.auth_events ae
-  WHERE  ae.user_type   = 'alumni'
-    AND  ae.event_type  = 'login'
-    AND  ae.occurred_at >= @ThirtyDaysAgo
-    AND  EXISTS (
-      SELECT 1 FROM dbo.vwAlumni va
-      WHERE  va.id = ae.user_id
-        AND  (@SportId IS NULL OR va.sport_id = @SportId)
-    );
-
-  -- ── Result row ────────────────────────────────────────────
   SELECT
-    ISNULL(@TotalInteractions,   0) AS totalInteractions,
-    ISNULL(@MonthInteractions,   0) AS monthInteractions,
-    ISNULL(@TotalEmailsSent,     0) AS totalEmailsSent,
-    ISNULL(@MonthEmailsSent,     0) AS monthEmailsSent,
-    ISNULL(@AlumniLoginsLast30,  0) AS alumniLoginsLast30Days,
-    0                               AS emailOpenRatePct;   -- Phase 2 placeholder
+    ISNULL(@TotalInteractions,  0) AS totalInteractions,
+    ISNULL(@MonthInteractions,  0) AS monthInteractions,
+    ISNULL(@TotalEmailsSent,    0) AS totalEmailsSent,
+    ISNULL(@MonthEmailsSent,    0) AS monthEmailsSent,
+    0                              AS alumniLoginsLast30Days,
+    0                              AS emailOpenRatePct;
 END;
 GO
 
 -- ============================================================
 -- sp_GetDashboardMetrics_Players
--- Returns headline metrics for the Player Communications tab.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetDashboardMetrics_Players
   @TenantId           INT,
@@ -2600,91 +2379,40 @@ CREATE OR ALTER PROCEDURE dbo.sp_GetDashboardMetrics_Players
 AS
 BEGIN
   SET NOCOUNT ON;
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid2  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role2 NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid2;
-    EXEC sp_set_session_context N'user_role', @_role2;
-  END
 
-  DECLARE @MonthStart2 DATETIME2 =
+  DECLARE @MonthStart DATETIME2 =
     CAST(DATEADD(DAY, 1 - DAY(GETUTCDATE()), CAST(GETUTCDATE() AS DATE)) AS DATETIME2);
 
-  -- ── Emails sent to players ─────────────────────────────────
-  -- @SportId = NULL → all sports; otherwise filter via vwPlayers.sport_id.
-  DECLARE @TotalEmailsSent2 INT, @MonthEmailsSent2 INT;
+  DECLARE @TotalEmailsSent INT, @MonthEmailsSent INT;
   SELECT
-    @TotalEmailsSent2 = ISNULL(COUNT(*), 0),
-    @MonthEmailsSent2 = ISNULL(SUM(CASE WHEN om.sent_at >= @MonthStart2 THEN 1 ELSE 0 END), 0)
-  FROM dbo.outreach_messages om
+    @TotalEmailsSent = ISNULL(COUNT(*), 0),
+    @MonthEmailsSent = ISNULL(SUM(CASE WHEN om.sent_at >= @MonthStart THEN 1 ELSE 0 END), 0)
+  FROM dbo.outreach_messages  om
   JOIN dbo.outreach_campaigns oc ON oc.id = om.campaign_id
-  WHERE oc.target_audience IN ('all', 'players_only')
-    AND om.status IN ('sent', 'responded')
+  WHERE oc.target_audience IN ('all','players_only')
+    AND om.status IN ('sent','responded')
+    AND om.player_id IS NOT NULL
     AND (@SportId IS NULL OR EXISTS (
-      SELECT 1 FROM dbo.vwPlayers vp
-      WHERE  vp.id = om.user_id AND vp.sport_id = @SportId
+      SELECT 1 FROM dbo.players p WHERE p.player_id = om.player_id AND p.sport_id = @SportId
     ));
 
-  -- ── Feed posts for players ─────────────────────────────────
   DECLARE @TotalFeedPosts INT, @MonthFeedPosts INT;
   SELECT
     @TotalFeedPosts = ISNULL(COUNT(*), 0),
-    @MonthFeedPosts = ISNULL(SUM(CASE WHEN fp.published_at >= @MonthStart2 THEN 1 ELSE 0 END), 0)
+    @MonthFeedPosts = ISNULL(SUM(CASE WHEN fp.published_at >= @MonthStart THEN 1 ELSE 0 END), 0)
   FROM dbo.feed_posts fp
-  WHERE fp.audience IN ('all', 'players_only');
-  -- Note: feed_posts are not per-player-user rows, so sport filter
-  -- applies at the campaign level above; feed counts remain team-wide.
+  WHERE fp.audience IN ('all','players_only');
 
   SELECT
-    ISNULL(@TotalEmailsSent2, 0) AS totalEmailsSent,
-    ISNULL(@MonthEmailsSent2, 0) AS monthEmailsSent,
-    ISNULL(@TotalFeedPosts,   0) AS totalFeedPosts,
-    ISNULL(@MonthFeedPosts,   0) AS monthFeedPosts;
-END;
-GO
-
--- ============================================================
--- sp_GetUserSports
--- Returns the sports accessible to a staff user.
--- Staff users are linked to sports via dbo.users_sports.
--- @RequestingUserId = NULL → return all active sports (admin).
--- ============================================================
-CREATE OR ALTER PROCEDURE dbo.sp_GetUserSports
-  @TenantId         INT,
-  @RequestingUserId UNIQUEIDENTIFIER = NULL
-AS
-BEGIN
-  SET NOCOUNT ON;
-
-  IF @RequestingUserId IS NULL
-  BEGIN
-    -- Admins: return every active sport in this tenant DB
-    SELECT s.id, s.name, s.abbr
-    FROM   dbo.sports s
-    WHERE  s.is_active = 1
-    ORDER  BY s.name;
-  END
-  ELSE
-  BEGIN
-    -- Regular staff: only sports linked via users_sports
-    SELECT s.id, s.name, s.abbr
-    FROM   dbo.sports        s
-    JOIN   dbo.users_sports  us ON us.sport_id = s.id
-    WHERE  us.user_id  = @RequestingUserId
-      AND  s.is_active = 1
-    ORDER  BY s.name;
-  END
+    ISNULL(@TotalEmailsSent, 0) AS totalEmailsSent,
+    ISNULL(@MonthEmailsSent, 0) AS monthEmailsSent,
+    ISNULL(@TotalFeedPosts,  0) AS totalFeedPosts,
+    ISNULL(@MonthFeedPosts,  0) AS monthFeedPosts;
 END;
 GO
 
 -- ============================================================
 -- sp_GetDashboardMetrics_All
--- Aggregated alumni + player metrics across all sports (or one).
--- Used by the "All Engagement" dashboard tab.
---
--- @SportId = NULL → totals across every sport the user can see.
--- @SportId = <id> → filter to that sport only.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetDashboardMetrics_All
   @TenantId           INT,
@@ -2695,97 +2423,62 @@ AS
 BEGIN
   SET NOCOUNT ON;
 
-  IF @RequestingUserId IS NOT NULL
-  BEGIN
-    DECLARE @_uid3  NVARCHAR(100) = CAST(@RequestingUserId AS NVARCHAR(100));
-    DECLARE @_role3 NVARCHAR(50)  = ISNULL(@RequestingUserRole, N'');
-    EXEC sp_set_session_context N'user_id',   @_uid3;
-    EXEC sp_set_session_context N'user_role', @_role3;
-  END
-
-  DECLARE @MonthStart3 DATETIME2 =
+  DECLARE @MonthStart DATETIME2 =
     CAST(DATEADD(DAY, 1 - DAY(GETUTCDATE()), CAST(GETUTCDATE() AS DATE)) AS DATETIME2);
-  DECLARE @ThirtyDaysAgo3 DATETIME2 = DATEADD(DAY, -30, SYSUTCDATETIME());
 
-  -- ── Alumni interactions ────────────────────────────────────
   DECLARE @TotalInteractions INT, @MonthInteractions INT;
-
   SELECT @TotalInteractions = COUNT(*)
   FROM   dbo.interaction_log il
   WHERE  EXISTS (
-    SELECT 1 FROM dbo.vwAlumni va
-    WHERE  va.id = il.user_id
-      AND  (@SportId IS NULL OR va.sport_id = @SportId)
+    SELECT 1 FROM dbo.alumni a WHERE a.alumni_id = il.alumni_id
+      AND (@SportId IS NULL OR a.sport_id = @SportId)
   );
-
   SELECT @MonthInteractions = COUNT(*)
   FROM   dbo.interaction_log il
-  WHERE  il.logged_at >= @MonthStart3
+  WHERE  il.logged_at >= @MonthStart
     AND  EXISTS (
-      SELECT 1 FROM dbo.vwAlumni va
-      WHERE  va.id = il.user_id
-        AND  (@SportId IS NULL OR va.sport_id = @SportId)
+      SELECT 1 FROM dbo.alumni a WHERE a.alumni_id = il.alumni_id
+        AND (@SportId IS NULL OR a.sport_id = @SportId)
     );
 
-  -- ── Alumni emails sent ─────────────────────────────────────
   DECLARE @AlumniEmailsTotal INT, @AlumniEmailsMonth INT;
-
   SELECT
     @AlumniEmailsTotal = ISNULL(COUNT(*), 0),
-    @AlumniEmailsMonth = ISNULL(SUM(CASE WHEN om.sent_at >= @MonthStart3 THEN 1 ELSE 0 END), 0)
+    @AlumniEmailsMonth = ISNULL(SUM(CASE WHEN om.sent_at >= @MonthStart THEN 1 ELSE 0 END), 0)
   FROM   dbo.outreach_messages  om
   JOIN   dbo.outreach_campaigns oc ON oc.id = om.campaign_id
-  WHERE  om.status           IN ('sent', 'responded')
-    AND  oc.target_audience  IN ('all', 'alumni_only')
+  WHERE  om.status          IN ('sent','responded')
+    AND  oc.target_audience IN ('all','alumni_only')
+    AND  om.alumni_id IS NOT NULL
     AND  (@SportId IS NULL OR EXISTS (
-      SELECT 1 FROM dbo.vwAlumni va
-      WHERE  va.id = om.user_id AND va.sport_id = @SportId
+      SELECT 1 FROM dbo.alumni a WHERE a.alumni_id = om.alumni_id AND a.sport_id = @SportId
     ));
 
-  -- ── Alumni logins (last 30 days) ───────────────────────────
-  DECLARE @AlumniLoginsLast30 INT;
-
-  SELECT @AlumniLoginsLast30 = COUNT(DISTINCT ae.user_id)
-  FROM   dbo.auth_events ae
-  WHERE  ae.user_type   = 'alumni'
-    AND  ae.event_type  = 'login'
-    AND  ae.occurred_at >= @ThirtyDaysAgo3
-    AND  EXISTS (
-      SELECT 1 FROM dbo.vwAlumni va
-      WHERE  va.id = ae.user_id
-        AND  (@SportId IS NULL OR va.sport_id = @SportId)
-    );
-
-  -- ── Player emails sent ─────────────────────────────────────
   DECLARE @PlayerEmailsTotal INT, @PlayerEmailsMonth INT;
-
   SELECT
     @PlayerEmailsTotal = ISNULL(COUNT(*), 0),
-    @PlayerEmailsMonth = ISNULL(SUM(CASE WHEN om2.sent_at >= @MonthStart3 THEN 1 ELSE 0 END), 0)
-  FROM   dbo.outreach_messages  om2
-  JOIN   dbo.outreach_campaigns oc2 ON oc2.id = om2.campaign_id
-  WHERE  om2.status          IN ('sent', 'responded')
-    AND  oc2.target_audience IN ('all', 'players_only')
+    @PlayerEmailsMonth = ISNULL(SUM(CASE WHEN om.sent_at >= @MonthStart THEN 1 ELSE 0 END), 0)
+  FROM   dbo.outreach_messages  om
+  JOIN   dbo.outreach_campaigns oc ON oc.id = om.campaign_id
+  WHERE  om.status          IN ('sent','responded')
+    AND  oc.target_audience IN ('all','players_only')
+    AND  om.player_id IS NOT NULL
     AND  (@SportId IS NULL OR EXISTS (
-      SELECT 1 FROM dbo.vwPlayers vp
-      WHERE  vp.id = om2.user_id AND vp.sport_id = @SportId
+      SELECT 1 FROM dbo.players p WHERE p.player_id = om.player_id AND p.sport_id = @SportId
     ));
 
-  -- ── Feed posts ─────────────────────────────────────────────
   DECLARE @TotalFeedPosts INT, @MonthFeedPosts INT;
-
   SELECT
     @TotalFeedPosts = ISNULL(COUNT(*), 0),
-    @MonthFeedPosts = ISNULL(SUM(CASE WHEN fp.published_at >= @MonthStart3 THEN 1 ELSE 0 END), 0)
+    @MonthFeedPosts = ISNULL(SUM(CASE WHEN fp.published_at >= @MonthStart THEN 1 ELSE 0 END), 0)
   FROM dbo.feed_posts fp;
 
-  -- ── Result row ────────────────────────────────────────────
   SELECT
     ISNULL(@TotalInteractions,  0) AS totalInteractions,
     ISNULL(@MonthInteractions,  0) AS monthInteractions,
     ISNULL(@AlumniEmailsTotal,  0) AS alumniEmailsTotal,
     ISNULL(@AlumniEmailsMonth,  0) AS alumniEmailsMonth,
-    ISNULL(@AlumniLoginsLast30, 0) AS alumniLoginsLast30Days,
+    0                              AS alumniLoginsLast30Days,
     ISNULL(@PlayerEmailsTotal,  0) AS playerEmailsTotal,
     ISNULL(@PlayerEmailsMonth,  0) AS playerEmailsMonth,
     ISNULL(@TotalFeedPosts,     0) AS totalFeedPosts,
