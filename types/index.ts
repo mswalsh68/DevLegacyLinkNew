@@ -7,9 +7,9 @@ import type { UserRole, Semester, TransferReason } from '@/lib/constants'
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 export interface UserSession {
-  userId: string         // UUID — JWT stores this in the 'sub' claim; getServerSession() maps sub → userId
-  userIntId?: number     // Integer user_id (added in migration 020) — same value across global + every App DB
-  sub?: string           // Raw JWT subject (same UUID, kept for completeness)
+  userId: string         // GUID — dbo.users.id; mapped from JWT sub claim by getServerSession()
+  userIntId: number      // Integer user_id — dbo.users.user_id; canonical ID across Global + every App DB
+  sub?: string           // Raw JWT sub claim (GUID) — kept for switch-team token re-issue stripping
   currentTeamId?: number // Set by POST /api/auth/switch-team; tells /api/config which team to load
   appDb?: string         // Tenant App DB name from dbo.teams.app_db — embedded in JWT by sp_Login / sp_SwitchTeam
   username: string
