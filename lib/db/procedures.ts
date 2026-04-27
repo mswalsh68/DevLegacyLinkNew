@@ -59,17 +59,19 @@ export async function sp_GetOrCreateUser(params: {
   firstName: string
   lastName:  string
   teamId:    number
-}): Promise<{ userId: string | null; errorCode: string | null }> {
+}): Promise<{ userId: string | null; userIntId: number | null; errorCode: string | null }> {
   const { output } = await execFull('global', 'sp_GetOrCreateUser', (r) => {
     r.input ('Email',     sql.NVarChar(255),     params.email)
     r.input ('FirstName', sql.NVarChar(100),     params.firstName)
     r.input ('LastName',  sql.NVarChar(100),     params.lastName)
     r.input ('TeamId',    sql.Int,               params.teamId)
     r.output('UserId',    sql.UniqueIdentifier)
+    r.output('UserIntId', sql.Int)
     r.output('ErrorCode', sql.NVarChar(50))
   })
   return {
     userId:    (output.UserId    as string | null) ?? null,
+    userIntId: (output.UserIntId as number | null) ?? null,
     errorCode: (output.ErrorCode as string | null) ?? null,
   }
 }

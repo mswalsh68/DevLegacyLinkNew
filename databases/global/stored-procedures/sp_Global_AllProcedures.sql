@@ -163,7 +163,7 @@ BEGIN
   SELECT @UserJson = (
     SELECT
       u.id,
-      u.user_id                             AS userId,
+      u.user_id                             AS userIntId,
       u.email,
       u.first_name                          AS firstName,
       u.last_name                           AS lastName,
@@ -417,7 +417,7 @@ BEGIN
   SELECT @UserJson = (
     SELECT
       u.id,
-      u.user_id                                AS userId,
+      u.user_id                                AS userIntId,
       u.email,
       u.first_name                             AS firstName,
       u.last_name                              AS lastName,
@@ -1126,6 +1126,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_GetOrCreateUser
   @CreatedBy UNIQUEIDENTIFIER = NULL,   -- who triggered the import; NULL = system
   -- Output
   @UserId    UNIQUEIDENTIFIER OUTPUT,
+  @UserIntId INT              OUTPUT,   -- integer user_id, consistent across Global + App DBs
   @ErrorCode NVARCHAR(50)     OUTPUT    -- NULL = success; 'CREATED' = new account made
 AS
 BEGIN
@@ -1133,6 +1134,7 @@ BEGIN
   SET XACT_ABORT ON;
   SET @ErrorCode = NULL;
   SET @UserId    = NULL;
+  SET @UserIntId = NULL;
 
   -- Validate team if provided
   IF @TeamId IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.teams WHERE id = @TeamId AND is_active = 1)
@@ -1144,7 +1146,7 @@ BEGIN
   -- Return existing user if email already registered
   IF EXISTS (SELECT 1 FROM dbo.users WHERE email = @Email)
   BEGIN
-    SELECT @UserId = id FROM dbo.users WHERE email = @Email;
+    SELECT @UserId = id, @UserIntId = user_id FROM dbo.users WHERE email = @Email;
     -- Ensure they are linked to this team
     IF @TeamId IS NOT NULL
       AND NOT EXISTS (SELECT 1 FROM dbo.user_teams WHERE user_id = @UserId AND team_id = @TeamId)
@@ -1171,6 +1173,8 @@ BEGIN
       @LastName,
       6          -- player (dbo.roles.id = 6)
     );
+
+    SELECT @UserIntId = user_id FROM dbo.users WHERE id = @UserId;
 
     IF @TeamId IS NOT NULL
     BEGIN
