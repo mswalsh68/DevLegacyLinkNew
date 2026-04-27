@@ -1,4 +1,4 @@
-// GET  /api/invite/codes?teamId=<uuid>  — list codes for a team (global_admin only)
+// GET  /api/invite/codes?teamId=<int>   — list codes for a team (global_admin only)
 // POST /api/invite/codes               — create a new invite code (global_admin only)
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
@@ -10,8 +10,9 @@ export async function GET(req: NextRequest) {
   if (!session)         return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 })
   if (!isGlobalAdmin(session)) return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
 
-  const teamId = req.nextUrl.searchParams.get('teamId') ?? session.currentTeamId
-  if (!teamId) return NextResponse.json({ error: 'teamId is required.' }, { status: 400 })
+  const teamIdStr = req.nextUrl.searchParams.get('teamId')
+  const teamId = teamIdStr ? parseInt(teamIdStr, 10) : session.currentTeamId
+  if (!teamId || (typeof teamId === 'number' && isNaN(teamId))) return NextResponse.json({ error: 'teamId is required.' }, { status: 400 })
 
   try {
     const rows = await sp_ListInviteCodes({ teamId })
@@ -32,12 +33,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
   }
 
-  const teamId   = typeof body.teamId   === 'string' ? body.teamId   : (session.currentTeamId ?? '')
+  const teamIdRaw = body.teamId
+  const teamId = typeof teamIdRaw === 'number' ? teamIdRaw
+               : typeof teamIdRaw === 'string' ? parseInt(teamIdRaw, 10)
+               : (session.currentTeamId ?? 0)
   const role     = typeof body.role     === 'string' ? body.role     : 'roster'
   const maxUses  = typeof body.maxUses  === 'number' ? body.maxUses  : null
   const expiresAt= body.expiresAt ? new Date(body.expiresAt as string) : null
 
-  if (!teamId) return NextResponse.json({ error: 'teamId is required.' }, { status: 400 })
+  if (!teamId || isNaN(teamId)) return NextResponse.json({ error: 'teamId is required.' }, { status: 400 })
 
   const token = randomUUID()
 

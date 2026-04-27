@@ -39,7 +39,7 @@ let refreshQueue: Array<(ok: boolean) => void> = []
 
 async function tryRefresh(): Promise<boolean> {
   // Preserve currentTeamId across token refresh
-  let currentTeamId: string | null = null
+  let currentTeamId: number | null = null
   try {
     const raw = typeof window !== 'undefined' ? localStorage.getItem('cfb_user') : null
     if (raw) currentTeamId = JSON.parse(raw).currentTeamId ?? null

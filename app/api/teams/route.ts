@@ -83,7 +83,7 @@ function normalizeRows(rows: Record<string, unknown>[]): TeamListItem[] {
 // ─── Public types ─────────────────────────────────────────────────────────────
 
 export interface TeamListItem extends TeamConfig {
-  teamId: string
+  teamId: number
 }
 
 // ─── Route ────────────────────────────────────────────────────────────────────

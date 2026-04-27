@@ -58,13 +58,13 @@ export async function sp_GetOrCreateUser(params: {
   email:     string
   firstName: string
   lastName:  string
-  teamId:    string
+  teamId:    number
 }): Promise<{ userId: string | null; errorCode: string | null }> {
   const { output } = await execFull('global', 'sp_GetOrCreateUser', (r) => {
     r.input ('Email',     sql.NVarChar(255),     params.email)
     r.input ('FirstName', sql.NVarChar(100),     params.firstName)
     r.input ('LastName',  sql.NVarChar(100),     params.lastName)
-    r.input ('TeamId',    sql.UniqueIdentifier,  params.teamId)
+    r.input ('TeamId',    sql.Int,               params.teamId)
     r.output('UserId',    sql.UniqueIdentifier)
     r.output('ErrorCode', sql.NVarChar(50))
   })
@@ -95,9 +95,9 @@ export async function sp_TransferPlayerToAlumni(params: {
 export type TeamConfigRow = Record<string, unknown>
 
 /** Returns config for a specific team (or the default team if teamId is omitted). */
-export async function sp_GetTeamConfig(params?: { teamId?: string }): Promise<TeamConfigRow | null> {
+export async function sp_GetTeamConfig(params?: { teamId?: number }): Promise<TeamConfigRow | null> {
   const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_GetTeamConfig', (r) => {
-    r.input('TeamId', sql.UniqueIdentifier, params?.teamId ?? null)
+    r.input('TeamId', sql.Int, params?.teamId ?? null)
   })
   return (rows as unknown as TeamConfigRow[])[0] ?? null
 }
@@ -124,11 +124,11 @@ export async function sp_GetUserTeams(params: {
  */
 export async function sp_SwitchTeam(params: {
   userId:    string
-  newTeamId: string
+  newTeamId: number
 }): Promise<{ teamJson: string | null; errorCode: string | null }> {
   const { output } = await execFull('global', 'sp_SwitchTeam', (r) => {
     r.input ('UserId',    sql.UniqueIdentifier, params.userId)
-    r.input ('NewTeamId', sql.UniqueIdentifier, params.newTeamId)
+    r.input ('NewTeamId', sql.Int,              params.newTeamId)
     r.output('TeamJson',  sql.NVarChar(sql.MAX))
     r.output('ErrorCode', sql.NVarChar(50))
   })
@@ -139,7 +139,7 @@ export async function sp_SwitchTeam(params: {
 }
 
 export async function sp_UpdateTeamConfig(params: {
-  teamId?:           string | null
+  teamId?:           number | null
   teamName?:         string | null
   teamAbbr?:         string | null
   sport?:            string | null
@@ -158,7 +158,7 @@ export async function sp_UpdateTeamConfig(params: {
   classLabel?:       string | null
 }): Promise<{ errorCode: string | null }> {
   const { output } = await execFull('global', 'sp_UpdateTeamConfig', (r) => {
-    r.input ('TeamId',            sql.UniqueIdentifier, params.teamId            ?? null)
+    r.input ('TeamId',            sql.Int,              params.teamId            ?? null)
     r.input ('TeamName',          sql.NVarChar(100),    params.teamName          ?? null)
     r.input ('TeamAbbr',          sql.NVarChar(10),     params.teamAbbr          ?? null)
     r.input ('Sport',             sql.NVarChar(50),     params.sport             ?? null)
@@ -683,7 +683,7 @@ export async function sp_CreateTeamMember(params: {
   email:     string
   firstName: string
   lastName:  string
-  teamId:    string
+  teamId:    number
   role:      string
   createdBy: string
 }): Promise<{ userId: string | null; errorCode: string | null }> {
@@ -691,7 +691,7 @@ export async function sp_CreateTeamMember(params: {
     r.input ('Email',     sql.NVarChar(255),    params.email)
     r.input ('FirstName', sql.NVarChar(100),    params.firstName)
     r.input ('LastName',  sql.NVarChar(100),    params.lastName)
-    r.input ('TeamId',    sql.UniqueIdentifier, params.teamId)
+    r.input ('TeamId',    sql.Int,              params.teamId)
     r.input ('Role',      sql.NVarChar(30),     params.role)
     r.input ('CreatedBy', sql.UniqueIdentifier, params.createdBy)
     r.output('UserId',    sql.UniqueIdentifier)
@@ -738,7 +738,7 @@ export async function sp_ValidateInviteCode(params: {
 
 /** Creates a new invite code. */
 export async function sp_CreateInviteCode(params: {
-  teamId:    string
+  teamId:    number
   role:      string
   token:     string
   createdBy: string
@@ -746,7 +746,7 @@ export async function sp_CreateInviteCode(params: {
   maxUses?:   number | null
 }): Promise<{ inviteCodeId: string | null; errorCode: string | null }> {
   const { output } = await execFull('global', 'sp_CreateInviteCode', (r) => {
-    r.input ('TeamId',       sql.UniqueIdentifier, params.teamId)
+    r.input ('TeamId',       sql.Int,              params.teamId)
     r.input ('Role',         sql.NVarChar(30),     params.role)
     r.input ('Token',        sql.NVarChar(128),    params.token)
     r.input ('CreatedBy',    sql.UniqueIdentifier, params.createdBy)
@@ -763,10 +763,10 @@ export async function sp_CreateInviteCode(params: {
 
 /** Lists all invite codes for a team. */
 export async function sp_ListInviteCodes(params: {
-  teamId: string
+  teamId: number
 }): Promise<sql.IRecordSet<Record<string, unknown>>> {
   return exec('global', 'sp_ListInviteCodes', (r) => {
-    r.input('TeamId', sql.UniqueIdentifier, params.teamId)
+    r.input('TeamId', sql.Int, params.teamId)
   })
 }
 
@@ -877,7 +877,7 @@ export async function sp_ReviewAccessRequest(params: {
   denialReason?: string | null
 }): Promise<{
   userId:    string | null
-  teamId:    string | null
+  teamId:    number | null
   finalRole: string | null
   errorCode: string | null
 }> {
@@ -888,13 +888,13 @@ export async function sp_ReviewAccessRequest(params: {
     r.input ('Role',         sql.NVarChar(30),     params.role         ?? null)
     r.input ('DenialReason', sql.NVarChar(sql.MAX),params.denialReason ?? null)
     r.output('UserId',       sql.UniqueIdentifier)
-    r.output('TeamId',       sql.UniqueIdentifier)
+    r.output('TeamId',       sql.Int)
     r.output('FinalRole',    sql.NVarChar(30))
     r.output('ErrorCode',    sql.NVarChar(50))
   })
   return {
     userId:    (output.UserId    as string | null) ?? null,
-    teamId:    (output.TeamId    as string | null) ?? null,
+    teamId:    (output.TeamId    as number | null) ?? null,
     finalRole: (output.FinalRole as string | null) ?? null,
     errorCode: (output.ErrorCode as string | null) ?? null,
   }

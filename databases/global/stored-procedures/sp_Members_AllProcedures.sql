@@ -12,7 +12,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreateTeamMember
   @Email        NVARCHAR(255),
   @FirstName    NVARCHAR(100),
   @LastName     NVARCHAR(100),
-  @TeamId       UNIQUEIDENTIFIER,
+  @TeamId       INT,
   @Role         NVARCHAR(50),          -- role_name from dbo.roles
   @CreatedBy    UNIQUEIDENTIFIER,
   @UserId       UNIQUEIDENTIFIER OUTPUT,

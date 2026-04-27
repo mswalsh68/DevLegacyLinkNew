@@ -145,11 +145,12 @@ export async function GET(req: NextRequest) {
   const defaults = getEnvDefaults()
 
   // Team resolution priority:
-  //   1. ?teamId=<uuid> query param (explicit client request)
+  //   1. ?teamId=<int> query param (explicit client request)
   //   2. session.currentTeamId from JWT (set by POST /api/auth/switch-team)
   //   3. No teamId → sp_GetTeamConfig falls back to the default team
-  const qsTeamId = req.nextUrl.searchParams.get('teamId') ?? undefined
-  let teamId = qsTeamId
+  const qsTeamIdStr = req.nextUrl.searchParams.get('teamId')
+  const qsTeamId = qsTeamIdStr ? parseInt(qsTeamIdStr, 10) : undefined
+  let teamId: number | undefined = (!qsTeamId || isNaN(qsTeamId)) ? undefined : qsTeamId
   if (!teamId) {
     try {
       const session = await getServerSession()
@@ -205,7 +206,7 @@ export async function PATCH(req: NextRequest) {
 
   try {
     const { errorCode } = await sp_UpdateTeamConfig({
-      teamId:            session.currentTeamId ?? null,
+      teamId:            session.currentTeamId ?? null,  // number | null — matches sp_UpdateTeamConfig
       teamName:          str('teamName'),
       teamAbbr:          str('teamAbbr'),
       sport:             str('sport'),

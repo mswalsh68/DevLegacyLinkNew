@@ -73,7 +73,7 @@ GO
 -- Returns a single team by primary key.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetTeamById
-  @TeamId    UNIQUEIDENTIFIER,
+  @TeamId    INT,
   @ErrorCode NVARCHAR(50) OUTPUT
 AS
 BEGIN
@@ -124,7 +124,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreateTeam
   @ExpiresAt DATETIME2        = NULL,
   @CreatedBy UNIQUEIDENTIFIER,
   -- Outputs
-  @NewTeamId UNIQUEIDENTIFIER OUTPUT,
+  @NewTeamId INT OUTPUT,
   @ErrorCode NVARCHAR(50)     OUTPUT
 AS
 BEGIN
@@ -150,10 +150,10 @@ BEGIN
     RETURN;
   END
 
-  SET @NewTeamId = NEWID();
+  INSERT INTO dbo.teams (name, abbr, tier_id, level_id, app_db, db_server, expires_at)
+  VALUES (@Name, @Abbr, @TierId, @LevelId, @AppDb, @DbServer, @ExpiresAt);
 
-  INSERT INTO dbo.teams (id, name, abbr, tier_id, level_id, app_db, db_server, expires_at)
-  VALUES (@NewTeamId, @Name, @Abbr, @TierId, @LevelId, @AppDb, @DbServer, @ExpiresAt);
+  SET @NewTeamId = SCOPE_IDENTITY();
 
   DECLARE @TierName  NVARCHAR(20);
   DECLARE @LevelName NVARCHAR(30);
@@ -162,7 +162,7 @@ BEGIN
 
   INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload)
   VALUES (
-    @CreatedBy, 'team_created', 'team', CAST(@NewTeamId AS NVARCHAR(100)),
+    @CreatedBy, 'team_created', 'team', CAST(@NewTeamId AS NVARCHAR(20)),
     JSON_OBJECT(
       'name':    @Name,
       'abbr':    @Abbr,
@@ -181,7 +181,7 @@ GO
 -- Pass @TierId / @LevelId to change tier or level.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_UpdateTeam
-  @TeamId    UNIQUEIDENTIFIER,
+  @TeamId    INT,
   @Name      NVARCHAR(100)    = NULL,
   @Abbr      NVARCHAR(10)     = NULL,
   @TierId    INT              = NULL,
@@ -239,7 +239,7 @@ BEGIN
 
   INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload)
   VALUES (
-    @ActorId, 'team_updated', 'team', CAST(@TeamId AS NVARCHAR(100)),
+    @ActorId, 'team_updated', 'team', CAST(@TeamId AS NVARCHAR(20)),
     JSON_OBJECT('before': @Before)
   );
 END;
