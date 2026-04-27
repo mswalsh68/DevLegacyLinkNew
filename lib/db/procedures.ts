@@ -1083,13 +1083,13 @@ export interface AlumniDashboardMetrics {
 }
 
 export async function sp_GetDashboardMetrics_Alumni(params: {
-  tenantId:           string
+  tenantId:           number
   sportId?:           string | null
   requestingUserId:   string
   requestingUserRole: string
 }): Promise<AlumniDashboardMetrics> {
   const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetDashboardMetrics_Alumni', (r) => {
-    r.input('TenantId',           sql.UniqueIdentifier, params.tenantId)
+    r.input('TenantId',           sql.Int,              params.tenantId)
     r.input('SportId',            sql.UniqueIdentifier, params.sportId ?? null)
     r.input('RequestingUserId',   sql.UniqueIdentifier, params.requestingUserId)
     r.input('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole)
@@ -1113,13 +1113,13 @@ export interface PlayerDashboardMetrics {
 }
 
 export async function sp_GetDashboardMetrics_Players(params: {
-  tenantId:           string
+  tenantId:           number
   sportId?:           string | null
   requestingUserId:   string
   requestingUserRole: string
 }): Promise<PlayerDashboardMetrics> {
   const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetDashboardMetrics_Players', (r) => {
-    r.input('TenantId',           sql.UniqueIdentifier, params.tenantId)
+    r.input('TenantId',           sql.Int,              params.tenantId)
     r.input('SportId',            sql.UniqueIdentifier, params.sportId ?? null)
     r.input('RequestingUserId',   sql.UniqueIdentifier, params.requestingUserId)
     r.input('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole)
@@ -1142,11 +1142,11 @@ export interface SportOption {
 }
 
 export async function sp_GetUserSports(params: {
-  tenantId:          string
+  tenantId:          number
   requestingUserId?: string | null
 }): Promise<SportOption[]> {
   const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetUserSports', (r) => {
-    r.input('TenantId',         sql.UniqueIdentifier, params.tenantId)
+    r.input('TenantId',         sql.Int,              params.tenantId)
     r.input('RequestingUserId', sql.UniqueIdentifier, params.requestingUserId ?? null)
   })
   return rows.map(r => ({
@@ -1171,13 +1171,13 @@ export interface AllEngagementMetrics {
 }
 
 export async function sp_GetDashboardMetrics_All(params: {
-  tenantId:           string
+  tenantId:           number
   sportId?:           string | null
   requestingUserId:   string
   requestingUserRole: string
 }): Promise<AllEngagementMetrics> {
   const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetDashboardMetrics_All', (r) => {
-    r.input('TenantId',           sql.UniqueIdentifier, params.tenantId)
+    r.input('TenantId',           sql.Int,              params.tenantId)
     r.input('SportId',            sql.UniqueIdentifier, params.sportId ?? null)
     r.input('RequestingUserId',   sql.UniqueIdentifier, params.requestingUserId)
     r.input('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole)
@@ -1194,4 +1194,75 @@ export async function sp_GetDashboardMetrics_All(params: {
     totalFeedPosts:         (row.totalFeedPosts         as number) ?? 0,
     monthFeedPosts:         (row.monthFeedPosts         as number) ?? 0,
   }
+}
+
+// ─── Global DB — Profile / Account ───────────────────────────────────────────
+
+import type { UserProfile } from '@/types'
+
+export async function sp_GetUserProfile(userId: string): Promise<UserProfile | null> {
+  const rows = await exec('global', 'sp_GetUserProfile', (r) => {
+    r.input('UserId', sql.UniqueIdentifier, userId)
+  })
+  return (rows[0] as unknown as UserProfile | undefined) ?? null
+}
+
+export async function sp_UpdateUserProfile(params: {
+  targetUserId: number
+  actorId:      number
+  firstName?:   string | null
+  lastName?:    string | null
+}): Promise<{ errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_UpdateUserProfile', (r) => {
+    r.input ('TargetUserId', sql.Int,          params.targetUserId)
+    r.input ('ActorId',      sql.Int,          params.actorId)
+    r.input ('FirstName',    sql.NVarChar(100), params.firstName ?? null)
+    r.input ('LastName',     sql.NVarChar(100), params.lastName  ?? null)
+    r.output('ErrorCode',    sql.NVarChar(50))
+  })
+  return { errorCode: (output.ErrorCode as string | null) ?? null }
+}
+
+export async function sp_GetPasswordHash(userId: string): Promise<string | null> {
+  const { output } = await execFull('global', 'sp_GetPasswordHash', (r) => {
+    r.input ('UserId',       sql.UniqueIdentifier, userId)
+    r.output('PasswordHash', sql.NVarChar(255))
+  })
+  return (output.PasswordHash as string | null) ?? null
+}
+
+export async function sp_ChangeEmail(params: {
+  userId:   string
+  newEmail: string
+}): Promise<{ errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_ChangeEmail', (r) => {
+    r.input ('UserId',    sql.UniqueIdentifier, params.userId)
+    r.input ('NewEmail',  sql.NVarChar(255),    params.newEmail)
+    r.output('ErrorCode', sql.NVarChar(50))
+  })
+  return { errorCode: (output.ErrorCode as string | null) ?? null }
+}
+
+export async function sp_ChangePassword(params: {
+  userId:          string
+  newPasswordHash: string
+}): Promise<{ errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_ChangePassword', (r) => {
+    r.input ('UserId',          sql.UniqueIdentifier, params.userId)
+    r.input ('NewPasswordHash', sql.NVarChar(255),    params.newPasswordHash)
+    r.output('ErrorCode',       sql.NVarChar(50))
+  })
+  return { errorCode: (output.ErrorCode as string | null) ?? null }
+}
+
+export async function sp_SetPreferredTeam(params: {
+  userId: string
+  teamId: number
+}): Promise<{ errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_SetPreferredTeam', (r) => {
+    r.input ('UserId',    sql.UniqueIdentifier, params.userId)
+    r.input ('TeamId',    sql.Int,              params.teamId)
+    r.output('ErrorCode', sql.NVarChar(50))
+  })
+  return { errorCode: (output.ErrorCode as string | null) ?? null }
 }

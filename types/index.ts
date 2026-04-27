@@ -7,15 +7,16 @@ import type { UserRole, Semester, TransferReason } from '@/lib/constants'
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 export interface UserSession {
-  userId: string         // UUID — JWT stores this in the 'sub' claim; getServerSession() maps sub → userId
-  userIntId?: number     // Integer user_id (added in migration 020) — same value across global + every App DB
-  sub?: string           // Raw JWT subject (same UUID, kept for completeness)
-  currentTeamId?: number // Set by POST /api/auth/switch-team; tells /api/config which team to load
-  appDb?: string         // Tenant App DB name from dbo.teams.app_db — embedded in JWT by sp_Login / sp_SwitchTeam
+  userId: string          // UUID — JWT stores this in the 'sub' claim; getServerSession() maps sub → userId
+  userIntId?: number      // Integer user_id (added in migration 020) — same value across global + every App DB
+  sub?: string            // Raw JWT subject (same UUID, kept for completeness)
+  currentTeamId?: number  // Set by POST /api/auth/switch-team; tells /api/config which team to load
+  preferredTeamId?: number // User's saved default team (INT, from user_team_preferences)
+  appDb?: string          // Tenant App DB name from dbo.teams.app_db — embedded in JWT by sp_Login / sp_SwitchTeam
   username: string
   email: string
-  roleId: number         // dbo.roles.id (1 = platform_owner … 7 = alumni) — source of truth since migration 018
-  role: UserRole         // dbo.roles.role_name — human-readable alias, used by permissions.ts can()
+  roleId: number          // dbo.roles.id (1 = platform_owner … 7 = alumni) — source of truth since migration 018
+  role: UserRole          // dbo.roles.role_name — human-readable alias, used by permissions.ts can()
   accountClaimed: boolean // true after first login; gates who may edit the user record
   apps: string[]
   exp: number
