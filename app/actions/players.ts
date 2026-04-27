@@ -39,7 +39,7 @@ export interface CreatePlayerInput {
   position:              string
   academicYear:          string
   recruitingClass:       number
-  globalTeamId:          string   // team ID in LegacyLinkGlobal for user registration
+  globalTeamId:          number   // team ID in LegacyLinkGlobal for user registration
   createdBy:             string
   sportId?:              string
   jerseyNumber?:         number
@@ -78,7 +78,7 @@ export interface BulkCreatePlayersInput {
   appDb:        string   // tenant App DB name from session.appDb
   players:      (Omit<BulkPlayerRow, 'userId'> & { email?: string })[]
   createdBy:    string
-  globalTeamId: string   // used for Global DB user registration
+  globalTeamId: number   // used for Global DB user registration
   sportId?:     string
 }
 
