@@ -16,7 +16,7 @@ export async function GET(
   return appDbContext.run(session.appDb, async () => {
     try {
       const { alumni, interactions, errorCode } = await sp_GetAlumniById({
-        userId,
+        alumniId:           parseInt(userId, 10),
         requestingUserId:   session.userId,
         requestingUserRole: session.role,
       })
@@ -54,7 +54,7 @@ export async function PATCH(
   return appDbContext.run(session.appDb, async () => {
     try {
       const { errorCode } = await sp_UpdateAlumni({
-        userId,
+        alumniId:             parseInt(userId, 10),
         updatedBy:            session.userId,
         phone:                body.phone            as string | undefined,
         personalEmail:        body.personalEmail    as string | undefined,
@@ -67,9 +67,6 @@ export async function PATCH(
         isDonor:              body.isDonor          != null ? Boolean(body.isDonor)          : undefined,
         lastDonationDate:     body.lastDonationDate as string | undefined,
         totalDonations:       body.totalDonations   != null ? Number(body.totalDonations)   : undefined,
-        engagementScore:      body.engagementScore  != null ? Number(body.engagementScore)  : undefined,
-        communicationConsent: body.communicationConsent != null ? Boolean(body.communicationConsent) : undefined,
-        yearsOnRoster:        body.yearsOnRoster    != null ? Number(body.yearsOnRoster)    : undefined,
         notes:                body.notes            as string | undefined,
         requestingUserId:     session.userId,
         requestingUserRole:   session.role,

@@ -59,19 +59,19 @@ export async function createAlumni(
 ): Promise<{ success: boolean; userId?: string; error?: string }> {
   return appDbContext.run(input.appDb, async () => {
     try {
-      const { userId, errorCode: globalErr } = await sp_GetOrCreateUser({
+      const { userId, userIntId, errorCode: globalErr } = await sp_GetOrCreateUser({
         email:     input.email,
         firstName: input.firstName,
         lastName:  input.lastName,
         teamId:    input.globalTeamId,
       })
 
-      if (!userId) {
+      if (!userIntId) {
         return { success: false, error: globalErr ?? 'GLOBAL_USER_CREATE_FAILED' }
       }
 
       const row: BulkAlumniRow = {
-        userId,
+        userId: userIntId,
         email:            input.email,
         firstName:        input.firstName,
         lastName:         input.lastName,
@@ -93,7 +93,7 @@ export async function createAlumni(
         return { success: false, error: result.errorJson || 'ALUMNI_CREATE_FAILED' }
       }
 
-      return { success: true, userId }
+      return { success: true, userId: userId ?? undefined }
     } catch (err) {
       console.error('[createAlumni]', err)
       return { success: false, error: 'INTERNAL_ERROR' }
@@ -116,13 +116,13 @@ export async function bulkCreateAlumni(
         if (!row.email) return row
 
         try {
-          const { userId } = await sp_GetOrCreateUser({
+          const { userIntId } = await sp_GetOrCreateUser({
             email:     row.email,
             firstName: row.firstName,
             lastName:  row.lastName,
             teamId:    input.globalTeamId,
           })
-          return { ...row, userId: userId ?? undefined }
+          return { ...row, userId: userIntId ?? undefined }
         } catch {
           return row
         }
@@ -165,7 +165,8 @@ export async function logInteraction(
 ): Promise<{ success: boolean; error?: string }> {
   return appDbContext.run(appDb, async () => {
     try {
-      await sp_LogInteraction(params)
+      const { errorCode } = await sp_LogInteraction(params)
+      if (errorCode) return { success: false, error: errorCode }
       return { success: true }
     } catch (err) {
       console.error('[logInteraction]', err)

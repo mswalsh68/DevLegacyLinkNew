@@ -16,7 +16,7 @@ export async function GET(
   return appDbContext.run(session.appDb, async () => {
     try {
       const { player, stats, errorCode } = await sp_GetPlayerById({
-        userId,
+        playerId:           parseInt(userId, 10),
         requestingUserId:   session.userId,
         requestingUserRole: session.role,
       })
@@ -54,7 +54,7 @@ export async function PATCH(
   return appDbContext.run(session.appDb, async () => {
     try {
       const { errorCode } = await sp_UpdatePlayer({
-        userId,
+        playerId:              parseInt(userId, 10),
         updatedBy:             session.userId,
         jerseyNumber:          body.jerseyNumber  != null ? Number(body.jerseyNumber)  : undefined,
         position:              body.position      as string | undefined,

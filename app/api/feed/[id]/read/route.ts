@@ -23,7 +23,7 @@ export async function POST(
 
   return appDbContext.run(session.appDb, async () => {
     try {
-      await sp_MarkPostRead({ postId: id, userId: session.userId })
+      await sp_MarkPostRead({ postId: id, userId: session.userIntId! })
       return NextResponse.json({ success: true }, { status: 202 })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)

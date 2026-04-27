@@ -20,13 +20,13 @@ export async function GET() {
   }
 
   // Admins see all sports; regular staff see only their linked sports
-  const requestingUserId = isGlobalAdmin(session) ? null : session.userId
+  const userId = isGlobalAdmin(session) ? null : (session.userIntId ?? null)
 
   return appDbContext.run(session.appDb, async () => {
     try {
       const sports = await sp_GetUserSports({
-        tenantId:          session.currentTeamId!,
-        requestingUserId,
+        tenantId: session.currentTeamId!,
+        userId,
       })
       return NextResponse.json({ success: true, data: sports })
     } catch (err) {
