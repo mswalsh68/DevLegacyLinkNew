@@ -26,15 +26,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 })
   }
 
-  let teamId: string | undefined
+  let teamId: number | undefined
   try {
     const body = await req.json()
-    teamId = body?.teamId
+    const raw = body?.teamId
+    teamId = typeof raw === 'number' ? raw : (typeof raw === 'string' ? parseInt(raw, 10) : undefined)
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
   }
 
-  if (!teamId) {
+  if (!teamId || isNaN(teamId)) {
     return NextResponse.json({ error: 'teamId required.' }, { status: 400 })
   }
 

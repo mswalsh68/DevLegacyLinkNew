@@ -110,7 +110,7 @@ BEGIN
   IF @TeamsJson IS NULL SET @TeamsJson = '[]';
 
   -- Resolve current team (first alphabetically)
-  DECLARE @CurrentTeamId UNIQUEIDENTIFIER;
+  DECLARE @CurrentTeamId INT;
   DECLARE @AppDb         NVARCHAR(100) = '';
   DECLARE @DbServer      NVARCHAR(200) = '';
 
@@ -138,11 +138,11 @@ BEGIN
   END
 
   -- Resolve preferred team (NULL if not set or team no longer accessible)
-  DECLARE @PreferredTeamId NVARCHAR(100) = NULL;
+  DECLARE @PreferredTeamId INT = NULL;
 
   IF @RoleId = 1  -- platform_owner
   BEGIN
-    SELECT @PreferredTeamId = CAST(utp.preferred_team_id AS NVARCHAR(100))
+    SELECT @PreferredTeamId = utp.preferred_team_id
     FROM dbo.user_team_preferences utp
     JOIN dbo.teams t ON t.id = utp.preferred_team_id
     WHERE utp.user_id = @UserId
@@ -150,7 +150,7 @@ BEGIN
   END
   ELSE
   BEGIN
-    SELECT @PreferredTeamId = CAST(utp.preferred_team_id AS NVARCHAR(100))
+    SELECT @PreferredTeamId = utp.preferred_team_id
     FROM dbo.user_team_preferences utp
     JOIN dbo.user_teams ut ON ut.user_id = utp.user_id AND ut.team_id = utp.preferred_team_id
     JOIN dbo.teams t       ON t.id = utp.preferred_team_id
@@ -170,7 +170,7 @@ BEGIN
       r.role_name                           AS role,
       u.is_active                           AS isActive,
       u.created_at                          AS createdAt,
-      CAST(@CurrentTeamId AS NVARCHAR(100)) AS currentTeamId,
+      @CurrentTeamId AS currentTeamId,
       @PreferredTeamId                      AS preferredTeamId,
       @AppDb                                AS appDb,
       @DbServer                             AS dbServer,
@@ -231,7 +231,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_RefreshToken
   @OldTokenHash  NVARCHAR(255),
   @NewTokenHash  NVARCHAR(255),
   @NewExpiresAt  DATETIME2,
-  @CurrentTeamId UNIQUEIDENTIFIER = NULL,   -- client's active team; used to pin DB routing
+  @CurrentTeamId INT = NULL,   -- client's active team; used to pin DB routing
   -- Outputs
   @UserJson      NVARCHAR(MAX) OUTPUT,
   @ErrorCode     NVARCHAR(50)  OUTPUT
@@ -326,7 +326,7 @@ BEGIN
 
   IF @TeamsJson IS NULL SET @TeamsJson = '[]';
 
-  DECLARE @ResolvedTeamId UNIQUEIDENTIFIER;
+  DECLARE @ResolvedTeamId INT;
   DECLARE @AppDb          NVARCHAR(100) = '';
   DECLARE @DbServer       NVARCHAR(200) = '';
 
@@ -389,11 +389,11 @@ BEGIN
   END
 
   -- Resolve preferred team (same logic as sp_Login)
-  DECLARE @PreferredTeamId NVARCHAR(100) = NULL;
+  DECLARE @PreferredTeamId INT = NULL;
 
   IF @RoleId = 1  -- platform_owner
   BEGIN
-    SELECT @PreferredTeamId = CAST(utp.preferred_team_id AS NVARCHAR(100))
+    SELECT @PreferredTeamId = utp.preferred_team_id
     FROM dbo.user_team_preferences utp
     JOIN dbo.teams t ON t.id = utp.preferred_team_id
     WHERE utp.user_id = @UserId
@@ -401,7 +401,7 @@ BEGIN
   END
   ELSE
   BEGIN
-    SELECT @PreferredTeamId = CAST(utp.preferred_team_id AS NVARCHAR(100))
+    SELECT @PreferredTeamId = utp.preferred_team_id
     FROM dbo.user_team_preferences utp
     JOIN dbo.user_teams ut ON ut.user_id = utp.user_id AND ut.team_id = utp.preferred_team_id
     JOIN dbo.teams t       ON t.id = utp.preferred_team_id
@@ -420,7 +420,7 @@ BEGIN
       r.role_name                              AS role,
       u.is_active                              AS isActive,
       u.token_version                          AS tokenVersion,
-      CAST(@ResolvedTeamId AS NVARCHAR(100))   AS currentTeamId,
+      @ResolvedTeamId AS currentTeamId,
       @PreferredTeamId                         AS preferredTeamId,
       @AppDb                                   AS appDb,
       @DbServer                                AS dbServer,
@@ -464,7 +464,7 @@ GO
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_SwitchTeam
   @UserId    UNIQUEIDENTIFIER,
-  @NewTeamId UNIQUEIDENTIFIER,
+  @NewTeamId INT,
   -- Outputs
   @TeamJson  NVARCHAR(MAX) OUTPUT,
   @ErrorCode NVARCHAR(50)  OUTPUT
@@ -528,7 +528,7 @@ BEGIN
   -- Audit the switch
   INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload)
   VALUES (
-    @UserId, 'team_switch', 'team', CAST(@NewTeamId AS NVARCHAR(100)),
+    @UserId, 'team_switch', 'team', CAST(@NewTeamId AS NVARCHAR(20)),
     JSON_OBJECT('isPlatformOwner': CASE WHEN @RoleId = 1 THEN 'true' ELSE 'false' END)
   );
 END;
@@ -601,7 +601,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreateUser
   @LastName      NVARCHAR(100),
   @RoleId        INT,                         -- FK → dbo.roles.id
   @CreatedBy     UNIQUEIDENTIFIER,
-  @TeamId        UNIQUEIDENTIFIER = NULL,
+  @TeamId        INT = NULL,
   -- Optional: immediately grant access to an app
   @GrantAppName  NVARCHAR(50)  = NULL,
   @GrantAppRole  NVARCHAR(50)  = NULL,
@@ -662,7 +662,7 @@ BEGIN
         'email':      @Email,
         'roleId':     CAST(@RoleId AS NVARCHAR),
         'roleName':   @RoleName,
-        'teamId':     ISNULL(CAST(@TeamId AS NVARCHAR(100)), ''),
+        'teamId':     ISNULL(CAST(@TeamId AS NVARCHAR(20)), ''),
         'grantedApp': ISNULL(@GrantAppName, ''),
         'grantedRole':ISNULL(@GrantAppRole, '')
       )
@@ -1020,7 +1020,7 @@ IF OBJECT_ID('dbo.sp_CheckTeamActive', 'P') IS NOT NULL
 GO
 
 CREATE PROCEDURE dbo.sp_CheckTeamActive
-  @TeamId   UNIQUEIDENTIFIER,
+  @TeamId   INT,
   @IsActive BIT OUTPUT
 AS
 BEGIN
@@ -1116,7 +1116,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_GetOrCreateUser
   @Email     NVARCHAR(255),
   @FirstName NVARCHAR(100),
   @LastName  NVARCHAR(100),
-  @TeamId    UNIQUEIDENTIFIER = NULL,
+  @TeamId    INT = NULL,
   @CreatedBy UNIQUEIDENTIFIER = NULL,   -- who triggered the import; NULL = system
   -- Output
   @UserId    UNIQUEIDENTIFIER OUTPUT,
@@ -1183,7 +1183,7 @@ BEGIN
         'roleId':   '6',
         'roleName': 'player',
         'source':   'bulk_import',
-        'teamId':   ISNULL(CAST(@TeamId AS NVARCHAR(100)), '')
+        'teamId':   ISNULL(CAST(@TeamId AS NVARCHAR(20)), '')
       )
     );
 
@@ -1379,7 +1379,7 @@ GO
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_SetPreferredTeam
   @UserId    UNIQUEIDENTIFIER,
-  @TeamId    UNIQUEIDENTIFIER,
+  @TeamId    INT,
   @ErrorCode NVARCHAR(50) OUTPUT
 AS
 BEGIN
@@ -1426,8 +1426,8 @@ BEGIN
 
   INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload)
   VALUES (
-    @UserId, 'set_preferred_team', 'team', CAST(@TeamId AS NVARCHAR(100)),
-    JSON_OBJECT('teamId': CAST(@TeamId AS NVARCHAR(100)))
+    @UserId, 'set_preferred_team', 'team', CAST(@TeamId AS NVARCHAR(20)),
+    JSON_OBJECT('teamId': CAST(@TeamId AS NVARCHAR(20)))
   );
 END;
 GO

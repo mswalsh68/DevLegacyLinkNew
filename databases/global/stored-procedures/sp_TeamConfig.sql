@@ -11,7 +11,7 @@
 -- Auto-seeds a default row if none exists for the team.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetTeamConfig
-  @TeamId UNIQUEIDENTIFIER = NULL
+  @TeamId INT = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -28,7 +28,6 @@ BEGIN
     END
 
     SELECT TOP 1
-      tc.id,
       tc.team_name                AS teamName,
       tc.team_abbr                AS teamAbbr,
       tc.sport,
@@ -61,14 +60,8 @@ BEGIN
   END
   ELSE
   BEGIN
-    -- Backward compat: no team_id → return first row, auto-seed if empty
-    IF NOT EXISTS (SELECT 1 FROM dbo.team_config)
-    BEGIN
-      INSERT INTO dbo.team_config (team_name, team_abbr) VALUES ('Team Portal', 'TEAM');
-    END
-
+    -- No team_id → return first row
     SELECT TOP 1
-      tc.id,
       tc.team_name                AS teamName,
       tc.team_abbr                AS teamAbbr,
       tc.sport,
@@ -108,7 +101,7 @@ GO
 -- change (PATCH semantics). Logo URL can be cleared with ''.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_UpdateTeamConfig
-  @TeamId            UNIQUEIDENTIFIER = NULL,
+  @TeamId            INT = NULL,
   @TeamName          NVARCHAR(100) = NULL,
   @TeamAbbr          NVARCHAR(10)  = NULL,
   @Sport             NVARCHAR(50)  = NULL,
@@ -150,11 +143,6 @@ BEGIN
     SELECT @TeamId, t.name, t.abbr
     FROM dbo.teams t WHERE t.id = @TeamId;
   END
-  ELSE IF @TeamId IS NULL AND NOT EXISTS (SELECT 1 FROM dbo.team_config)
-  BEGIN
-    INSERT INTO dbo.team_config (team_name, team_abbr) VALUES ('Team Portal', 'TEAM');
-  END
-
   UPDATE dbo.team_config SET
     team_name           = COALESCE(@TeamName,          team_name),
     team_abbr           = COALESCE(@TeamAbbr,          team_abbr),
@@ -183,7 +171,6 @@ BEGIN
     email_daily_send_limit   = COALESCE(@EmailDailySendLimit,   email_daily_send_limit),
     email_monthly_send_limit = COALESCE(@EmailMonthlySendLimit, email_monthly_send_limit),
     updated_at               = SYSUTCDATETIME()
-  WHERE (@TeamId IS NULL AND id = (SELECT TOP 1 id FROM dbo.team_config ORDER BY created_at))
-     OR (team_id = @TeamId);
+  WHERE team_id = COALESCE(@TeamId, (SELECT TOP 1 team_id FROM dbo.team_config ORDER BY created_at));
 END;
 GO

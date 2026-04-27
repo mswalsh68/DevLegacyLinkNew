@@ -89,7 +89,7 @@ GO
 -- Token is passed in from the caller (UUID generated server-side).
 
 CREATE OR ALTER PROCEDURE dbo.sp_CreateInviteCode
-  @TeamId      UNIQUEIDENTIFIER,
+  @TeamId      INT,
   @Role        NVARCHAR(30),
   @Token       NVARCHAR(128),
   @CreatedBy   UNIQUEIDENTIFIER,
@@ -113,7 +113,7 @@ BEGIN
   -- Verify creator has access to this team
   IF NOT EXISTS (
     SELECT 1 FROM dbo.users WHERE id = @CreatedBy
-      AND (global_role IN ('global_admin', 'platform_owner'))
+      AND (role_id IN (1, 2))
     UNION
     SELECT 1 FROM dbo.user_teams WHERE user_id = @CreatedBy AND team_id = @TeamId
   )
@@ -141,7 +141,7 @@ GO
 -- Returns all invite codes for a team (active and inactive).
 
 CREATE OR ALTER PROCEDURE dbo.sp_ListInviteCodes
-  @TeamId UNIQUEIDENTIFIER
+  @TeamId INT
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -214,7 +214,7 @@ BEGIN
   SET @ErrorCode = NULL;
 
   DECLARE @InviteCodeId UNIQUEIDENTIFIER;
-  DECLARE @TeamId       UNIQUEIDENTIFIER;
+  DECLARE @TeamId       INT;
   DECLARE @Role         NVARCHAR(30);
   DECLARE @IsActive     BIT;
   DECLARE @ExpiresAt    DATETIME2;
@@ -380,7 +380,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_ReviewAccessRequest
   @Role         NVARCHAR(30)  = NULL,  -- override role on approve (optional)
   @DenialReason NVARCHAR(MAX) = NULL,
   @UserId       UNIQUEIDENTIFIER OUTPUT,
-  @TeamId       UNIQUEIDENTIFIER OUTPUT,
+  @TeamId       INT OUTPUT,
   @FinalRole    NVARCHAR(30)  OUTPUT,
   @ErrorCode    NVARCHAR(50)  OUTPUT
 AS
@@ -423,15 +423,10 @@ BEGIN
       SELECT 1 FROM dbo.user_teams WHERE user_id = @UserId AND team_id = @TeamId
     )
     BEGIN
-      INSERT INTO dbo.user_teams (user_id, team_id, role)
-      VALUES (@UserId, @TeamId, @FinalRole);
+      INSERT INTO dbo.user_teams (user_id, team_id)
+      VALUES (@UserId, @TeamId);
     END
-    ELSE
-    BEGIN
-      UPDATE dbo.user_teams
-      SET    role = @FinalRole
-      WHERE  user_id = @UserId AND team_id = @TeamId;
-    END
+    -- role lives on users.role_id, not user_teams
 
     -- Grant app permission matching the role
     DECLARE @AppName NVARCHAR(50);

@@ -9,7 +9,7 @@ GO
 -- Falls back to 'starter' if the team is not found.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetTenantTier
-  @TeamId UNIQUEIDENTIFIER,
+  @TeamId INT,
   @Tier   NVARCHAR(20) OUTPUT
 AS
 BEGIN
