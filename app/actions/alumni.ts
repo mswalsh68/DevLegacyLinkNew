@@ -34,7 +34,7 @@ export interface CreateAlumniInput {
   currentEmployer?: string
   currentJobTitle?: string
   notes?:         string
-  globalTeamId:   string
+  globalTeamId:   number
   createdBy:      string
   sportId?:       string
 }
@@ -43,7 +43,7 @@ export interface BulkCreateAlumniInput {
   appDb:        string   // tenant App DB name from session.appDb
   alumni:       (Omit<BulkAlumniRow, 'userId'> & { email?: string })[]
   createdBy:    string
-  globalTeamId: string
+  globalTeamId: number
   sportId?:     string
 }
 
