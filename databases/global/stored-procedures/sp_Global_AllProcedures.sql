@@ -163,12 +163,14 @@ BEGIN
   SELECT @UserJson = (
     SELECT
       u.id,
+      u.user_id                             AS userId,
       u.email,
       u.first_name                          AS firstName,
       u.last_name                           AS lastName,
       u.role_id                             AS roleId,
       r.role_name                           AS role,
       u.is_active                           AS isActive,
+      u.account_claimed                     AS accountClaimed,
       u.created_at                          AS createdAt,
       @CurrentTeamId AS currentTeamId,
       @PreferredTeamId                      AS preferredTeamId,
@@ -192,9 +194,11 @@ BEGIN
     FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
   );
 
-  -- Update last login + write audit
+  -- Update last login; claim account on first login
   UPDATE dbo.users
-  SET last_login_at = SYSUTCDATETIME()
+  SET last_login_at   = SYSUTCDATETIME(),
+      account_claimed = 1,
+      claimed_date    = CASE WHEN account_claimed = 0 THEN SYSUTCDATETIME() ELSE claimed_date END
   WHERE id = @UserId;
 
   INSERT INTO dbo.audit_log (actor_id, actor_email, action, target_type, target_id, ip_address, payload)
@@ -413,12 +417,14 @@ BEGIN
   SELECT @UserJson = (
     SELECT
       u.id,
+      u.user_id                                AS userId,
       u.email,
       u.first_name                             AS firstName,
       u.last_name                              AS lastName,
       u.role_id                                AS roleId,
       r.role_name                              AS role,
       u.is_active                              AS isActive,
+      u.account_claimed                        AS accountClaimed,
       u.token_version                          AS tokenVersion,
       @ResolvedTeamId AS currentTeamId,
       @PreferredTeamId                         AS preferredTeamId,
