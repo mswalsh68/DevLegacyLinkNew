@@ -1,19 +1,25 @@
 -- ============================================================
 -- GLOBAL DB — USER CONTACT & PROFILE STORED PROCEDURES
 -- Run this file on: LegacyLinkGlobal database
--- Requires: 022_account_claimed_user_contact.sql to have run
+-- Requires: 023_user_contact_int_fk.sql to have run
 -- ============================================================
 -- Procedures:
---   sp_GetUserProfile    — full profile (users + user_contact)
---   sp_UpsertUserContact — create/update contact info; enforces claimed rule
---   sp_UpdateUserProfile — update first/last name; enforces claimed rule
---   sp_SyncUserToAppDb   — returns the user record for App DB sync on team switch
+--   sp_GetUserProfile    — full profile (users + user_contact); @UserId GUID
+--   sp_UpsertUserContact — create/update contact info; @TargetUserId INT
+--   sp_UpdateUserProfile — update first/last name; @TargetUserId INT
+--   sp_SyncUserToAppDb   — returns user record for App DB sync; @UserId GUID
+-- ============================================================
+-- NOTE: sp_GetUserProfile and sp_SyncUserToAppDb still accept GUID because they
+-- are called from routes that have session.userId (GUID). sp_UpsertUserContact
+-- and sp_UpdateUserProfile accept INT because they have no TS callers yet and
+-- will be wired up using session.userIntId when added.
 -- ============================================================
 
 -- ============================================================
 -- sp_GetUserProfile
 -- Returns merged profile from dbo.users + dbo.user_contact.
 -- Called by GET /api/profile for any authenticated user.
+-- @UserId: GUID (dbo.users.id) — matches session.userId
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetUserProfile
   @UserId UNIQUEIDENTIFIER
@@ -54,7 +60,7 @@ BEGIN
     uc.updated_date              AS contactUpdatedDate
   FROM dbo.users u
   JOIN dbo.roles r ON r.id = u.role_id
-  LEFT JOIN dbo.user_contact uc ON uc.user_id = u.id
+  LEFT JOIN dbo.user_contact uc ON uc.user_id = u.user_id   -- INT join after migration 023
   WHERE u.id = @UserId;
 END;
 GO
@@ -66,13 +72,17 @@ GO
 -- Permission rule:
 --   If account_claimed = 0 → any caller is allowed (admin setup)
 --   If account_claimed = 1 → @ActorId must equal @TargetUserId
+--                            unless actor is platform_owner / app_admin
 --
 -- NULL params = no change (PATCH semantics).
 -- Pass '' to explicitly clear a field.
+--
+-- @TargetUserId: INT (dbo.users.user_id) — use session.userIntId
+-- @ActorId:      INT (dbo.users.user_id) — use session.userIntId
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_UpsertUserContact
-  @TargetUserId              UNIQUEIDENTIFIER,
-  @ActorId                   UNIQUEIDENTIFIER,
+  @TargetUserId              INT,
+  @ActorId                   INT,
   -- Address
   @Phone                     NVARCHAR(20)   = NULL,
   @Address                   NVARCHAR(255)  = NULL,
@@ -103,7 +113,7 @@ BEGIN
   DECLARE @AccountClaimed BIT;
   SELECT @AccountClaimed = account_claimed
   FROM   dbo.users
-  WHERE  id = @TargetUserId;
+  WHERE  user_id = @TargetUserId;
 
   IF @AccountClaimed IS NULL
   BEGIN
@@ -116,7 +126,7 @@ BEGIN
   BEGIN
     -- Allow platform_owner (role_id = 1) and app_admin (role_id = 2) to override
     DECLARE @ActorRoleId INT;
-    SELECT @ActorRoleId = role_id FROM dbo.users WHERE id = @ActorId;
+    SELECT @ActorRoleId = role_id FROM dbo.users WHERE user_id = @ActorId;
 
     IF @ActorRoleId IS NULL OR @ActorRoleId > 2
     BEGIN
@@ -156,10 +166,13 @@ GO
 -- Updates first/last name on dbo.users.
 -- Same claimed-account permission rule as sp_UpsertUserContact.
 -- Bumps user_contact.updated_date so App DB sync picks up the change.
+--
+-- @TargetUserId: INT (dbo.users.user_id) — use session.userIntId
+-- @ActorId:      INT (dbo.users.user_id) — use session.userIntId
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_UpdateUserProfile
-  @TargetUserId UNIQUEIDENTIFIER,
-  @ActorId      UNIQUEIDENTIFIER,
+  @TargetUserId INT,
+  @ActorId      INT,
   @FirstName    NVARCHAR(100) = NULL,
   @LastName     NVARCHAR(100) = NULL,
   @ErrorCode    NVARCHAR(50)  OUTPUT
@@ -170,7 +183,7 @@ BEGIN
 
   DECLARE @AccountClaimed BIT;
   SELECT @AccountClaimed = account_claimed
-  FROM   dbo.users WHERE id = @TargetUserId;
+  FROM   dbo.users WHERE user_id = @TargetUserId;
 
   IF @AccountClaimed IS NULL
   BEGIN
@@ -181,7 +194,7 @@ BEGIN
   IF @AccountClaimed = 1 AND @ActorId <> @TargetUserId
   BEGIN
     DECLARE @ActorRoleId INT;
-    SELECT @ActorRoleId = role_id FROM dbo.users WHERE id = @ActorId;
+    SELECT @ActorRoleId = role_id FROM dbo.users WHERE user_id = @ActorId;
     IF @ActorRoleId IS NULL OR @ActorRoleId > 2
     BEGIN
       SET @ErrorCode = 'ACCOUNT_CLAIMED_EDIT_DENIED';
@@ -193,7 +206,7 @@ BEGIN
     first_name = COALESCE(@FirstName, first_name),
     last_name  = COALESCE(@LastName,  last_name),
     updated_at = SYSUTCDATETIME()
-  WHERE id = @TargetUserId;
+  WHERE user_id = @TargetUserId;
 
   -- Bump user_contact.updated_date so App DB sync picks up the name change
   IF EXISTS (SELECT 1 FROM dbo.user_contact WHERE user_id = @TargetUserId)
@@ -215,6 +228,8 @@ GO
 -- plus contact.updated_date for the delta check.
 -- The actual INSERT/UPDATE into the App DB runs via the App DB
 -- connection (sp_UpsertAppUser in the App DB).
+--
+-- @UserId: GUID (dbo.users.id) — matches session.userId
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_SyncUserToAppDb
   @UserId UNIQUEIDENTIFIER
@@ -231,7 +246,7 @@ BEGIN
     uc.updated_date  AS contactUpdatedDate
   FROM dbo.users u
   JOIN dbo.roles r ON r.id = u.role_id
-  LEFT JOIN dbo.user_contact uc ON uc.user_id = u.id
+  LEFT JOIN dbo.user_contact uc ON uc.user_id = u.user_id   -- INT join after migration 023
   WHERE u.id = @UserId;
 END;
 GO

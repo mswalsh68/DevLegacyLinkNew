@@ -19,6 +19,15 @@ function pick(row: Record<string, unknown>, ...keys: string[]): string | null {
   return null
 }
 
+function pickNumber(row: Record<string, unknown>, ...keys: string[]): number | null {
+  for (const k of keys) {
+    const v = row[k]
+    if (typeof v === 'number') return v
+    if (typeof v === 'string' && v !== '' && !isNaN(Number(v))) return Number(v)
+  }
+  return null
+}
+
 function tryArray(row: Record<string, unknown>, ...keys: string[]): string[] | null {
   for (const k of keys) {
     const v = row[k]
@@ -64,7 +73,7 @@ function normalizeRows(rows: Record<string, unknown>[]): TeamListItem[] {
                                      'AccentColor',    'accentColor',    'colorAccent')    ?? '#CFC493'
 
     return {
-      teamId:   pick(row, 'TeamId',  'teamId',  'id',    'Id')    ?? '',
+      teamId:   pickNumber(row, 'TeamId', 'teamId', 'id', 'Id') ?? 0,
       teamName: pick(row, 'TeamName','teamName', 'name',  'Name')  ?? 'Unknown Team',
       sport:    pick(row, 'Sport',   'sport')                      ?? 'Football',
       level:    pick(row, 'Level',   'level')                      ?? 'College',
