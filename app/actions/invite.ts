@@ -54,7 +54,7 @@ async function sendEmail(to: string, subject: string, html: string) {
  * Sends an approval email to the user.
  */
 export async function approveAccessRequest(params: {
-  requestId: string
+  requestId: number
   role?:     string   // optional override; defaults to role on the request
   userEmail: string   // for notification
 }): Promise<{ success: boolean; error?: string }> {
@@ -101,7 +101,7 @@ export async function approveAccessRequest(params: {
  * Sends a denial email to the user.
  */
 export async function denyAccessRequest(params: {
-  requestId:    string
+  requestId:    number
   denialReason?: string
   userEmail:    string
 }): Promise<{ success: boolean; error?: string }> {
@@ -150,7 +150,7 @@ export async function denyAccessRequest(params: {
  * Throttled to once per 48 hours by sp_SendRequestReminder.
  */
 export async function sendRequestReminder(params: {
-  requestId: string
+  requestId: number
   teamName:  string
   adminEmail?: string  // optional — falls back to CONTACT_TO_EMAIL
 }): Promise<{ success: boolean; error?: string }> {

@@ -8,7 +8,7 @@ import { useState, useTransition } from 'react'
 import { approveAccessRequest, denyAccessRequest } from '@/app/actions/invite'
 
 interface AccessRequest {
-  requestId:         string
+  requestId:         number
   userId:            string
   email:             string
   firstName:         string
@@ -47,15 +47,15 @@ export function RequestsContent({
   const [tab,      setTab]      = useState<Tab>('pending')
   const [pending,  setPending]  = useState<AccessRequest[]>(initialPending as unknown as AccessRequest[])
   const [reviewed, setReviewed] = useState<AccessRequest[]>(initialReviewed as unknown as AccessRequest[])
-  const [errors,   setErrors]   = useState<Record<string, string>>({})
+  const [errors,   setErrors]   = useState<Record<number, string>>({})
   const [isPending, startTransition] = useTransition()
 
   // Per-row state for deny modal
-  const [denyingId,     setDenyingId]     = useState<string | null>(null)
+  const [denyingId,     setDenyingId]     = useState<number | null>(null)
   const [denialReason,  setDenialReason]  = useState('')
-  const [roleOverrides, setRoleOverrides] = useState<Record<string, string>>({})
+  const [roleOverrides, setRoleOverrides] = useState<Record<number, string>>({})
 
-  function setError(id: string, msg: string) {
+  function setError(id: number, msg: string) {
     setErrors(e => ({ ...e, [id]: msg }))
   }
 

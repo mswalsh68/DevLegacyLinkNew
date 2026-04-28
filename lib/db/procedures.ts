@@ -59,19 +59,17 @@ export async function sp_GetOrCreateUser(params: {
   firstName: string
   lastName:  string
   teamId:    number
-}): Promise<{ userId: string | null; userIntId: number | null; errorCode: string | null }> {
+}): Promise<{ userId: number | null; errorCode: string | null }> {
   const { output } = await execFull('global', 'sp_GetOrCreateUser', (r) => {
-    r.input ('Email',     sql.NVarChar(255),     params.email)
-    r.input ('FirstName', sql.NVarChar(100),     params.firstName)
-    r.input ('LastName',  sql.NVarChar(100),     params.lastName)
-    r.input ('TeamId',    sql.Int,               params.teamId)
-    r.output('UserId',    sql.UniqueIdentifier)
-    r.output('UserIntId', sql.Int)
+    r.input ('Email',     sql.NVarChar(255), params.email)
+    r.input ('FirstName', sql.NVarChar(100), params.firstName)
+    r.input ('LastName',  sql.NVarChar(100), params.lastName)
+    r.input ('TeamId',    sql.Int,           params.teamId)
+    r.output('UserId',    sql.BigInt)
     r.output('ErrorCode', sql.NVarChar(50))
   })
   return {
-    userId:    (output.UserId    as string | null) ?? null,
-    userIntId: (output.UserIntId as number | null) ?? null,
+    userId:    (output.UserId    as number | null) ?? null,
     errorCode: (output.ErrorCode as string | null) ?? null,
   }
 }
@@ -82,12 +80,12 @@ export async function sp_GetOrCreateUser(params: {
  * sp_GraduatePlayer has already flipped status in the App DB.
  */
 export async function sp_TransferPlayerToAlumni(params: {
-  userId:    string
-  grantedBy: string
+  userId:    number
+  grantedBy: number
 }): Promise<void> {
   await execFull('global', 'sp_TransferPlayerToAlumni', (r) => {
-    r.input('UserId',    sql.UniqueIdentifier, params.userId)
-    r.input('GrantedBy', sql.NVarChar(100),    params.grantedBy)
+    r.input('UserId',    sql.BigInt, params.userId)
+    r.input('GrantedBy', sql.BigInt, params.grantedBy)
   })
 }
 
@@ -112,10 +110,10 @@ export async function sp_GetTeams(): Promise<TeamConfigRow[]> {
 
 /** Returns the teams a specific user has access to. */
 export async function sp_GetUserTeams(params: {
-  userId: string
+  userId: number
 }): Promise<TeamConfigRow[]> {
   const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_GetUserTeams', (r) => {
-    r.input('UserId', sql.UniqueIdentifier, params.userId)
+    r.input('UserId', sql.BigInt, params.userId)
   })
   return rows as unknown as TeamConfigRow[]
 }
@@ -125,12 +123,12 @@ export async function sp_GetUserTeams(params: {
  * platform_owner bypasses the user_teams membership check.
  */
 export async function sp_SwitchTeam(params: {
-  userId:    string
+  userId:    number
   newTeamId: number
 }): Promise<{ teamJson: string | null; errorCode: string | null }> {
   const { output } = await execFull('global', 'sp_SwitchTeam', (r) => {
-    r.input ('UserId',    sql.UniqueIdentifier, params.userId)
-    r.input ('NewTeamId', sql.Int,              params.newTeamId)
+    r.input ('UserId',    sql.BigInt, params.userId)
+    r.input ('NewTeamId', sql.Int,    params.newTeamId)
     r.output('TeamJson',  sql.NVarChar(sql.MAX))
     r.output('ErrorCode', sql.NVarChar(50))
   })
@@ -185,14 +183,14 @@ export async function sp_UpdateTeamConfig(params: {
 // ─── App DB — Players ─────────────────────────────────────────────────────────
 
 export async function sp_GetPlayers(params: {
-  search?:         string
-  position?:       string
-  academicYear?:   string
-  recruitingClass?: number
-  sportId?:        string
-  page?:           number
-  pageSize?:       number
-  requestingUserId?:   string
+  search?:             string
+  position?:           string
+  academicYear?:       string
+  recruitingClass?:    number
+  sportId?:            string
+  page?:               number
+  pageSize?:           number
+  requestingUserId?:   number | null
   requestingUserRole?: string
 } = {}) {
   const { recordset, output } = await execFull('app', 'sp_GetPlayers', (r) => {
@@ -203,8 +201,8 @@ export async function sp_GetPlayers(params: {
     r.input ('SportId',          sql.UniqueIdentifier, params.sportId        ?? null)
     r.input ('Page',             sql.Int,              params.page     ?? 1)
     r.input ('PageSize',         sql.Int,              params.pageSize ?? 50)
-    r.input ('RequestingUserId',   sql.UniqueIdentifier, params.requestingUserId   ?? null)
-    r.input ('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole ?? null)
+    r.input ('RequestingUserId',   sql.Int, params.requestingUserId   ?? null)
+    r.input ('RequestingUserRole', sql.NVarChar(50),   params.requestingUserRole ?? null)
     r.output('TotalCount', sql.Int)
   })
   return {
@@ -215,13 +213,13 @@ export async function sp_GetPlayers(params: {
 
 export async function sp_GetPlayerById(params: {
   playerId:            number
-  requestingUserId?:   string
+  requestingUserId?:   number | null
   requestingUserRole?: string
 }) {
   const { recordsets, output } = await execFull('app', 'sp_GetPlayerById', (r) => {
-    r.input ('PlayerId',           sql.Int,              params.playerId)
-    r.input ('RequestingUserId',   sql.UniqueIdentifier, params.requestingUserId   ?? null)
-    r.input ('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole ?? null)
+    r.input ('PlayerId',           sql.Int, params.playerId)
+    r.input ('RequestingUserId',   sql.Int, params.requestingUserId   ?? null)
+    r.input ('RequestingUserRole', sql.NVarChar(50), params.requestingUserRole ?? null)
     r.output('ErrorCode', sql.NVarChar(50))
   })
   return {
@@ -243,7 +241,7 @@ export async function sp_CreatePlayer(params: {
   position:              string
   academicYear:          string
   recruitingClass:       number
-  createdBy:             string
+  createdBy:             number
   sportId?:              string
   jerseyNumber?:         number
   heightInches?:         number
@@ -265,7 +263,7 @@ export async function sp_CreatePlayer(params: {
   parent2Phone?:         string
   parent2Email?:         string
   notes?:                string
-  requestingUserId?:     string
+  requestingUserId?:     number | null
   requestingUserRole?:   string
 }): Promise<{ errorCode: string | null }> {
   const { output } = await execFull('app', 'sp_CreatePlayer', (r) => {
@@ -276,7 +274,7 @@ export async function sp_CreatePlayer(params: {
     r.input ('Position',              sql.NVarChar(10),     params.position)
     r.input ('AcademicYear',          sql.NVarChar(20),     params.academicYear)
     r.input ('RecruitingClass',       sql.SmallInt,         params.recruitingClass)
-    r.input ('CreatedBy',             sql.UniqueIdentifier, params.createdBy)
+    r.input ('CreatedBy',             sql.Int,              params.createdBy)
     r.input ('SportId',               sql.UniqueIdentifier, params.sportId              ?? null)
     r.input ('JerseyNumber',          sql.TinyInt,          params.jerseyNumber          ?? null)
     r.input ('HeightInches',          sql.TinyInt,          params.heightInches          ?? null)
@@ -298,7 +296,7 @@ export async function sp_CreatePlayer(params: {
     r.input ('Parent2Phone',          sql.NVarChar(20),     params.parent2Phone          ?? null)
     r.input ('Parent2Email',          sql.NVarChar(255),    params.parent2Email          ?? null)
     r.input ('Notes',                 sql.NVarChar(sql.MAX),params.notes                 ?? null)
-    r.input ('RequestingUserId',      sql.UniqueIdentifier, params.requestingUserId      ?? null)
+    r.input ('RequestingUserId',      sql.Int,              params.requestingUserId      ?? null)
     r.input ('RequestingUserRole',    sql.NVarChar(50),     params.requestingUserRole    ?? null)
     r.output('ErrorCode', sql.NVarChar(50))
   })
@@ -307,7 +305,7 @@ export async function sp_CreatePlayer(params: {
 
 export async function sp_UpdatePlayer(params: {
   playerId:              number
-  updatedBy:             string
+  updatedBy:             number
   jerseyNumber?:         number
   position?:             string
   academicYear?:         string
@@ -328,12 +326,12 @@ export async function sp_UpdatePlayer(params: {
   parent2Phone?:         string
   parent2Email?:         string
   notes?:                string
-  requestingUserId?:     string
+  requestingUserId?:     number | null
   requestingUserRole?:   string
 }): Promise<{ errorCode: string | null }> {
   const { output } = await execFull('app', 'sp_UpdatePlayer', (r) => {
     r.input ('PlayerId',              sql.Int,              params.playerId)
-    r.input ('UpdatedBy',             sql.UniqueIdentifier, params.updatedBy)
+    r.input ('UpdatedBy',             sql.Int,              params.updatedBy)
     r.input ('JerseyNumber',          sql.TinyInt,          params.jerseyNumber          ?? null)
     r.input ('Position',              sql.NVarChar(10),     params.position              ?? null)
     r.input ('AcademicYear',          sql.NVarChar(20),     params.academicYear          ?? null)
@@ -354,7 +352,7 @@ export async function sp_UpdatePlayer(params: {
     r.input ('Parent2Phone',          sql.NVarChar(20),     params.parent2Phone          ?? null)
     r.input ('Parent2Email',          sql.NVarChar(255),    params.parent2Email          ?? null)
     r.input ('Notes',                 sql.NVarChar(sql.MAX),params.notes                 ?? null)
-    r.input ('RequestingUserId',      sql.UniqueIdentifier, params.requestingUserId      ?? null)
+    r.input ('RequestingUserId',      sql.Int,              params.requestingUserId      ?? null)
     r.input ('RequestingUserRole',    sql.NVarChar(50),     params.requestingUserRole    ?? null)
     r.output('ErrorCode', sql.NVarChar(50))
   })
@@ -370,7 +368,7 @@ export async function sp_GraduatePlayer(params: {
   playerIds:      number[]
   graduationYear: number
   semester:       string
-  triggeredBy:    string
+  triggeredBy:    number
 }): Promise<{
   transactionId:  string
   successCount:   number
@@ -381,7 +379,7 @@ export async function sp_GraduatePlayer(params: {
     r.input ('PlayerIds',      sql.NVarChar(sql.MAX), JSON.stringify(params.playerIds))
     r.input ('GraduationYear', sql.SmallInt,          params.graduationYear)
     r.input ('Semester',       sql.NVarChar(10),      params.semester)
-    r.input ('TriggeredBy',    sql.NVarChar(100),     params.triggeredBy)
+    r.input ('TriggeredBy',    sql.Int,               params.triggeredBy)
     r.output('TransactionId',  sql.UniqueIdentifier)
     r.output('SuccessCount',   sql.Int)
     r.output('FailureJson',    sql.NVarChar(sql.MAX))
@@ -397,15 +395,15 @@ export async function sp_GraduatePlayer(params: {
 
 export async function sp_RemovePlayer(params: {
   playerId:            number
-  removedBy:           string
-  requestingUserId?:   string
+  removedBy:           number
+  requestingUserId?:   number | null
   requestingUserRole?: string
 }): Promise<{ errorCode: string | null }> {
   const { output } = await execFull('app', 'sp_RemovePlayer', (r) => {
-    r.input ('PlayerId',           sql.Int,              params.playerId)
-    r.input ('RemovedBy',          sql.UniqueIdentifier, params.removedBy)
-    r.input ('RequestingUserId',   sql.UniqueIdentifier, params.requestingUserId   ?? null)
-    r.input ('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole ?? null)
+    r.input ('PlayerId',           sql.Int,          params.playerId)
+    r.input ('RemovedBy',          sql.Int,          params.removedBy)
+    r.input ('RequestingUserId',   sql.Int,          params.requestingUserId   ?? null)
+    r.input ('RequestingUserRole', sql.NVarChar(50), params.requestingUserRole ?? null)
     r.output('ErrorCode', sql.NVarChar(50))
   })
   return { errorCode: (output.ErrorCode as string | null) ?? null }
@@ -417,12 +415,12 @@ export async function sp_RemovePlayer(params: {
  */
 export async function sp_BulkCreatePlayers(params: {
   players:   BulkPlayerRow[]
-  createdBy: string
+  createdBy: number
   sportId?:  string
 }): Promise<{ successCount: number; skippedCount: number; errorJson: string }> {
   const { output } = await execFull('app', 'sp_BulkCreatePlayers', (r) => {
     r.input ('PlayersJson', sql.NVarChar(sql.MAX), JSON.stringify(params.players))
-    r.input ('CreatedBy',   sql.UniqueIdentifier,  params.createdBy)
+    r.input ('CreatedBy',   sql.Int,               params.createdBy)
     r.input ('SportId',     sql.UniqueIdentifier,  params.sportId ?? null)
     r.output('SuccessCount', sql.Int)
     r.output('SkippedCount', sql.Int)
@@ -436,7 +434,7 @@ export async function sp_BulkCreatePlayers(params: {
 }
 
 export interface BulkPlayerRow {
-  userId?:               number   // resolved by caller via sp_GetOrCreateUser (userIntId)
+  userId?:               number   // resolved by caller via sp_GetOrCreateUser
   email?:                string
   firstName:             string
   lastName:              string
@@ -465,14 +463,14 @@ export interface BulkPlayerRow {
 // ─── App DB — Alumni ──────────────────────────────────────────────────────────
 
 export async function sp_GetAlumni(params: {
-  search?:    string
-  isDonor?:   boolean
-  gradYear?:  number
-  position?:  string
-  sportId?:   string
-  page?:      number
-  pageSize?:  number
-  requestingUserId?:   string
+  search?:             string
+  isDonor?:            boolean
+  gradYear?:           number
+  position?:           string
+  sportId?:            string
+  page?:               number
+  pageSize?:           number
+  requestingUserId?:   number | null
   requestingUserRole?: string
 } = {}) {
   const { recordset, output } = await execFull('app', 'sp_GetAlumni', (r) => {
@@ -483,7 +481,7 @@ export async function sp_GetAlumni(params: {
     r.input ('SportId',            sql.UniqueIdentifier, params.sportId   ?? null)
     r.input ('Page',               sql.Int,              params.page     ?? 1)
     r.input ('PageSize',           sql.Int,              params.pageSize ?? 50)
-    r.input ('RequestingUserId',   sql.UniqueIdentifier, params.requestingUserId   ?? null)
+    r.input ('RequestingUserId',   sql.Int,              params.requestingUserId   ?? null)
     r.input ('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole ?? null)
     r.output('TotalCount', sql.Int)
   })
@@ -495,25 +493,25 @@ export async function sp_GetAlumni(params: {
 
 export async function sp_GetAlumniById(params: {
   alumniId:            number
-  requestingUserId?:   string
+  requestingUserId?:   number | null
   requestingUserRole?: string
 }) {
   const { recordsets, output } = await execFull('app', 'sp_GetAlumniById', (r) => {
-    r.input ('AlumniId',           sql.Int,              params.alumniId)
-    r.input ('RequestingUserId',   sql.UniqueIdentifier, params.requestingUserId   ?? null)
-    r.input ('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole ?? null)
+    r.input ('AlumniId',           sql.Int,          params.alumniId)
+    r.input ('RequestingUserId',   sql.Int,          params.requestingUserId   ?? null)
+    r.input ('RequestingUserRole', sql.NVarChar(50), params.requestingUserRole ?? null)
     r.output('ErrorCode', sql.NVarChar(50))
   })
   return {
-    alumni:    recordsets[0]?.[0] ?? null,
-    interactions: recordsets[1]   ?? [],
-    errorCode: (output.ErrorCode as string | null) ?? null,
+    alumni:       recordsets[0]?.[0] ?? null,
+    interactions: recordsets[1]      ?? [],
+    errorCode:    (output.ErrorCode as string | null) ?? null,
   }
 }
 
 export async function sp_UpdateAlumni(params: {
   alumniId:            number
-  updatedBy:           string
+  updatedBy:           number
   phone?:              string
   personalEmail?:      string
   linkedInUrl?:        string
@@ -526,12 +524,12 @@ export async function sp_UpdateAlumni(params: {
   lastDonationDate?:   string
   totalDonations?:     number
   notes?:              string
-  requestingUserId?:   string
+  requestingUserId?:   number | null
   requestingUserRole?: string
 }): Promise<{ errorCode: string | null }> {
   const { output } = await execFull('app', 'sp_UpdateAlumni', (r) => {
     r.input ('AlumniId',             sql.Int,              params.alumniId)
-    r.input ('UpdatedBy',            sql.UniqueIdentifier, params.updatedBy)
+    r.input ('UpdatedBy',            sql.Int,              params.updatedBy)
     r.input ('Phone',                sql.NVarChar(20),     params.phone              ?? null)
     r.input ('PersonalEmail',        sql.NVarChar(255),    params.personalEmail      ?? null)
     r.input ('LinkedInUrl',          sql.NVarChar(500),    params.linkedInUrl        ?? null)
@@ -544,7 +542,7 @@ export async function sp_UpdateAlumni(params: {
     r.input ('LastDonationDate',     sql.Date,             params.lastDonationDate   ?? null)
     r.input ('TotalDonations',       sql.Decimal(10, 2),   params.totalDonations     ?? null)
     r.input ('Notes',                sql.NVarChar(sql.MAX),params.notes              ?? null)
-    r.input ('RequestingUserId',     sql.UniqueIdentifier, params.requestingUserId   ?? null)
+    r.input ('RequestingUserId',     sql.Int,              params.requestingUserId   ?? null)
     r.input ('RequestingUserRole',   sql.NVarChar(50),     params.requestingUserRole ?? null)
     r.output('ErrorCode', sql.NVarChar(50))
   })
@@ -577,12 +575,12 @@ export async function sp_LogInteraction(params: {
  */
 export async function sp_BulkCreateAlumni(params: {
   alumni:    BulkAlumniRow[]
-  createdBy: string
+  createdBy: number
   sportId?:  string
 }): Promise<{ successCount: number; skippedCount: number; errorJson: string }> {
   const { output } = await execFull('app', 'sp_BulkCreateAlumni', (r) => {
     r.input ('AlumniJson',   sql.NVarChar(sql.MAX), JSON.stringify(params.alumni))
-    r.input ('CreatedBy',    sql.UniqueIdentifier,  params.createdBy)
+    r.input ('CreatedBy',    sql.Int,               params.createdBy)
     r.input ('SportId',      sql.UniqueIdentifier,  params.sportId ?? null)
     r.output('SuccessCount', sql.Int)
     r.output('SkippedCount', sql.Int)
@@ -596,27 +594,27 @@ export async function sp_BulkCreateAlumni(params: {
 }
 
 export interface BulkAlumniRow {
-  userId?:            number   // resolved by caller via sp_GetOrCreateUser (userIntId)
-  email?:             string
-  firstName:          string
-  lastName:           string
-  graduationYear?:    number
+  userId?:             number   // resolved by caller via sp_GetOrCreateUser
+  email?:              string
+  firstName:           string
+  lastName:            string
+  graduationYear?:     number
   graduationSemester?: string
-  phone?:             string
-  linkedInUrl?:       string
-  currentEmployer?:   string
-  currentJobTitle?:   string
-  currentCity?:       string
-  currentState?:      string
-  isDonor?:           boolean
-  notes?:             string
+  phone?:              string
+  linkedInUrl?:        string
+  currentEmployer?:    string
+  currentJobTitle?:    string
+  currentCity?:        string
+  currentState?:       string
+  isDonor?:            boolean
+  notes?:              string
 }
 
 // ─── App DB — Campaigns ───────────────────────────────────────────────────────
 
 export async function sp_CreateCampaign(params: {
   name:            string
-  createdBy:       string
+  createdBy:       number
   targetAudience:  string
   description?:    string
   audienceFilters?: string
@@ -630,7 +628,7 @@ export async function sp_CreateCampaign(params: {
 }): Promise<{ campaignId: string | null; errorCode: string | null }> {
   const { output } = await execFull('app', 'sp_CreateCampaign', (r) => {
     r.input ('Name',            sql.NVarChar(300),    params.name)
-    r.input ('CreatedBy',       sql.UniqueIdentifier, params.createdBy)
+    r.input ('CreatedBy',       sql.Int,              params.createdBy)
     r.input ('TargetAudience',  sql.NVarChar(30),     params.targetAudience)
     r.input ('Description',     sql.NVarChar(sql.MAX),params.description     ?? null)
     r.input ('AudienceFilters', sql.NVarChar(sql.MAX),params.audienceFilters ?? null)
@@ -652,24 +650,24 @@ export async function sp_CreateCampaign(params: {
 
 export async function sp_GetCampaigns(params: {
   sportId?:            string
-  requestingUserId?:   string
+  requestingUserId?:   number | null
   requestingUserRole?: string
 } = {}) {
   return exec('app', 'sp_GetCampaigns', (r) => {
     r.input('SportId',            sql.UniqueIdentifier, params.sportId            ?? null)
-    r.input('RequestingUserId',   sql.UniqueIdentifier, params.requestingUserId   ?? null)
+    r.input('RequestingUserId',   sql.Int,              params.requestingUserId   ?? null)
     r.input('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole ?? null)
   })
 }
 
 export async function sp_GetAlumniStats(params: {
   sportId?:            string
-  requestingUserId?:   string
+  requestingUserId?:   number | null
   requestingUserRole?: string
 } = {}) {
   return exec('app', 'sp_GetAlumniStats', (r) => {
     r.input('SportId',            sql.UniqueIdentifier, params.sportId            ?? null)
-    r.input('RequestingUserId',   sql.UniqueIdentifier, params.requestingUserId   ?? null)
+    r.input('RequestingUserId',   sql.Int,              params.requestingUserId   ?? null)
     r.input('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole ?? null)
   })
 }
@@ -683,20 +681,20 @@ export async function sp_CreateTeamMember(params: {
   lastName:  string
   teamId:    number
   role:      string
-  createdBy: string
-}): Promise<{ userId: string | null; errorCode: string | null }> {
+  createdBy: number
+}): Promise<{ userId: number | null; errorCode: string | null }> {
   const { output } = await execFull('global', 'sp_CreateTeamMember', (r) => {
-    r.input ('Email',     sql.NVarChar(255),    params.email)
-    r.input ('FirstName', sql.NVarChar(100),    params.firstName)
-    r.input ('LastName',  sql.NVarChar(100),    params.lastName)
-    r.input ('TeamId',    sql.Int,              params.teamId)
-    r.input ('Role',      sql.NVarChar(30),     params.role)
-    r.input ('CreatedBy', sql.UniqueIdentifier, params.createdBy)
-    r.output('UserId',    sql.UniqueIdentifier)
+    r.input ('Email',     sql.NVarChar(255), params.email)
+    r.input ('FirstName', sql.NVarChar(100), params.firstName)
+    r.input ('LastName',  sql.NVarChar(100), params.lastName)
+    r.input ('TeamId',    sql.Int,           params.teamId)
+    r.input ('Role',      sql.NVarChar(30),  params.role)
+    r.input ('CreatedBy', sql.BigInt,        params.createdBy)
+    r.output('UserId',    sql.BigInt)
     r.output('ErrorCode', sql.NVarChar(50))
   })
   return {
-    userId:    (output.UserId    as string | null) ?? null,
+    userId:    (output.UserId    as number | null) ?? null,
     errorCode: (output.ErrorCode as string | null) ?? null,
   }
 }
@@ -709,17 +707,17 @@ export async function sp_RegisterUserViaInvite(params: {
   passwordHash: string
   firstName:    string
   lastName:     string
-}): Promise<{ userId: string | null; errorCode: string | null }> {
+}): Promise<{ userId: number | null; errorCode: string | null }> {
   const { output } = await execFull('global', 'sp_RegisterUserViaInvite', (r) => {
-    r.input ('Email',        sql.NVarChar(255), params.email)
+    r.input ('Email',        sql.NVarChar(255),     params.email)
     r.input ('PasswordHash', sql.NVarChar(sql.MAX), params.passwordHash)
-    r.input ('FirstName',    sql.NVarChar(100), params.firstName)
-    r.input ('LastName',     sql.NVarChar(100), params.lastName)
-    r.output('UserId',       sql.UniqueIdentifier)
+    r.input ('FirstName',    sql.NVarChar(100),     params.firstName)
+    r.input ('LastName',     sql.NVarChar(100),     params.lastName)
+    r.output('UserId',       sql.BigInt)
     r.output('ErrorCode',    sql.NVarChar(50))
   })
   return {
-    userId:    (output.UserId    as string | null) ?? null,
+    userId:    (output.UserId    as number | null) ?? null,
     errorCode: (output.ErrorCode as string | null) ?? null,
   }
 }
@@ -739,22 +737,22 @@ export async function sp_CreateInviteCode(params: {
   teamId:    number
   role:      string
   token:     string
-  createdBy: string
+  createdBy: number
   expiresAt?: Date | null
   maxUses?:   number | null
-}): Promise<{ inviteCodeId: string | null; errorCode: string | null }> {
+}): Promise<{ inviteCodeId: number | null; errorCode: string | null }> {
   const { output } = await execFull('global', 'sp_CreateInviteCode', (r) => {
-    r.input ('TeamId',       sql.Int,              params.teamId)
-    r.input ('Role',         sql.NVarChar(30),     params.role)
-    r.input ('Token',        sql.NVarChar(128),    params.token)
-    r.input ('CreatedBy',    sql.UniqueIdentifier, params.createdBy)
-    r.input ('ExpiresAt',    sql.DateTime2,        params.expiresAt ?? null)
-    r.input ('MaxUses',      sql.Int,              params.maxUses   ?? null)
-    r.output('InviteCodeId', sql.UniqueIdentifier)
+    r.input ('TeamId',       sql.Int,           params.teamId)
+    r.input ('Role',         sql.NVarChar(30),  params.role)
+    r.input ('Token',        sql.NVarChar(128), params.token)
+    r.input ('CreatedBy',    sql.BigInt,        params.createdBy)
+    r.input ('ExpiresAt',    sql.DateTime2,     params.expiresAt ?? null)
+    r.input ('MaxUses',      sql.Int,           params.maxUses   ?? null)
+    r.output('InviteCodeId', sql.BigInt)
     r.output('ErrorCode',    sql.NVarChar(50))
   })
   return {
-    inviteCodeId: (output.InviteCodeId as string | null) ?? null,
+    inviteCodeId: (output.InviteCodeId as number | null) ?? null,
     errorCode:    (output.ErrorCode    as string | null) ?? null,
   }
 }
@@ -770,128 +768,80 @@ export async function sp_ListInviteCodes(params: {
 
 /** Deactivates an invite code. */
 export async function sp_DeactivateInviteCode(params: {
-  inviteCodeId:  string
-  deactivatedBy: string
+  inviteCodeId:  number
+  deactivatedBy: number
 }): Promise<{ errorCode: string | null }> {
   const { output } = await execFull('global', 'sp_DeactivateInviteCode', (r) => {
-    r.input ('InviteCodeId',  sql.UniqueIdentifier, params.inviteCodeId)
-    r.input ('DeactivatedBy', sql.UniqueIdentifier, params.deactivatedBy)
+    r.input ('InviteCodeId',  sql.BigInt,      params.inviteCodeId)
+    r.input ('DeactivatedBy', sql.BigInt,      params.deactivatedBy)
     r.output('ErrorCode',     sql.NVarChar(50))
   })
   return { errorCode: (output.ErrorCode as string | null) ?? null }
 }
 
-/** Creates a time-limited setup token for a pre-created user (INVITE_PENDING). */
-export async function sp_CreateInviteToken(params: {
-  userId:    string
-  tokenHash: string
-  expiresAt: Date
-}): Promise<void> {
-  await exec('global', 'sp_CreateInviteToken', (r) => {
-    r.input('UserId',    sql.UniqueIdentifier, params.userId)
-    r.input('TokenHash', sql.VarChar(128),     params.tokenHash)
-    r.input('ExpiresAt', sql.DateTime2,        params.expiresAt)
-  })
-}
-
-/** Validates a setup token. Returns user info or null if invalid/expired. */
-export async function sp_ValidateInviteToken(params: {
-  tokenHash: string
-}): Promise<{ firstName: string; lastName: string; email: string } | null> {
-  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_ValidateInviteToken', (r) => {
-    r.input('TokenHash', sql.VarChar(128), params.tokenHash)
-  })
-  if (!rows || rows.length === 0) return null
-  const row = rows[0]
-  return {
-    firstName: row.firstName as string,
-    lastName:  row.lastName  as string,
-    email:     row.email     as string,
-  }
-}
-
-/** Redeems a setup token, sets the user's password, activates the account. */
-export async function sp_RedeemInviteToken(params: {
-  tokenHash:    string
-  passwordHash: string
-}): Promise<{ userId: string | null; email: string | null; errorCode: string | null }> {
-  const { output } = await execFull('global', 'sp_RedeemInviteToken', (r) => {
-    r.input ('TokenHash',    sql.VarChar(128),     params.tokenHash)
-    r.input ('PasswordHash', sql.VarChar(255),     params.passwordHash)
-    r.output('ErrorCode',    sql.NVarChar(50))
-    r.output('UserId',       sql.UniqueIdentifier)
-    r.output('Email',        sql.NVarChar(255))
-  })
-  return {
-    userId:    (output.UserId    as string | null) ?? null,
-    email:     (output.Email     as string | null) ?? null,
-    errorCode: (output.ErrorCode as string | null) ?? null,
-  }
-}
-
 /** Submits an access request. Increments invite code use_count. */
 export async function sp_SubmitAccessRequest(params: {
-  userId: string
+  userId: number
   token:  string
-}): Promise<{ requestId: string | null; errorCode: string | null }> {
+}): Promise<{ requestId: number | null; errorCode: string | null }> {
   const { output } = await execFull('global', 'sp_SubmitAccessRequest', (r) => {
-    r.input ('UserId',    sql.UniqueIdentifier, params.userId)
-    r.input ('Token',     sql.NVarChar(128),    params.token)
-    r.output('RequestId', sql.UniqueIdentifier)
+    r.input ('UserId',    sql.BigInt,       params.userId)
+    r.input ('Token',     sql.NVarChar(128),params.token)
+    r.output('RequestId', sql.BigInt)
     r.output('ErrorCode', sql.NVarChar(50))
   })
   return {
-    requestId: (output.RequestId as string | null) ?? null,
+    requestId: (output.RequestId as number | null) ?? null,
     errorCode: (output.ErrorCode as string | null) ?? null,
   }
 }
 
 /** Returns all access requests for the calling user. */
 export async function sp_GetMyAccessRequests(params: {
-  userId: string
+  userId: number
 }): Promise<sql.IRecordSet<Record<string, unknown>>> {
   return exec('global', 'sp_GetMyAccessRequests', (r) => {
-    r.input('UserId', sql.UniqueIdentifier, params.userId)
+    r.input('UserId', sql.BigInt, params.userId)
   })
 }
 
 /** Returns access requests visible to an admin (scoped by team membership). */
 export async function sp_GetPendingAccessRequests(params: {
-  adminUserId:   string
+  adminUserId:   number
   statusFilter?: 'pending' | 'approved' | 'denied' | 'all'
 }): Promise<sql.IRecordSet<Record<string, unknown>>> {
   return exec('global', 'sp_GetPendingAccessRequests', (r) => {
-    r.input('AdminUserId',  sql.UniqueIdentifier, params.adminUserId)
-    r.input('StatusFilter', sql.NVarChar(20),     params.statusFilter ?? 'pending')
+    r.input('AdminUserId',  sql.BigInt,      params.adminUserId)
+    r.input('StatusFilter', sql.NVarChar(20),params.statusFilter ?? 'pending')
   })
 }
 
 /** Approves or denies an access request. */
 export async function sp_ReviewAccessRequest(params: {
-  requestId:    string
-  reviewedBy:   string
+  requestId:    number
+  reviewedBy:   number
   action:       'approve' | 'deny'
   role?:        string | null
   denialReason?: string | null
 }): Promise<{
-  userId:    string | null
+  userId:    number | null
   teamId:    number | null
   finalRole: string | null
   errorCode: string | null
 }> {
   const { output } = await execFull('global', 'sp_ReviewAccessRequest', (r) => {
-    r.input ('RequestId',    sql.UniqueIdentifier, params.requestId)
-    r.input ('ReviewedBy',   sql.UniqueIdentifier, params.reviewedBy)
+    r.input ('RequestId',    sql.BigInt,           params.requestId)
+    r.input ('ReviewedBy',   sql.BigInt,           params.reviewedBy)
     r.input ('Action',       sql.NVarChar(10),     params.action)
     r.input ('Role',         sql.NVarChar(30),     params.role         ?? null)
     r.input ('DenialReason', sql.NVarChar(sql.MAX),params.denialReason ?? null)
-    r.output('UserId',       sql.UniqueIdentifier)
+    r.output('UserId',       sql.BigInt)
     r.output('TeamId',       sql.Int)
     r.output('FinalRole',    sql.NVarChar(30))
     r.output('ErrorCode',    sql.NVarChar(50))
   })
   return {
-    userId:    (output.UserId    as string | null) ?? null,
+    userId:    (output.UserId    as number | null) ?? null,
     teamId:    (output.TeamId    as number | null) ?? null,
     finalRole: (output.FinalRole as string | null) ?? null,
     errorCode: (output.ErrorCode as string | null) ?? null,
@@ -900,12 +850,12 @@ export async function sp_ReviewAccessRequest(params: {
 
 /** Updates reminder_sent_at. Only allowed if null or older than 48 hours. */
 export async function sp_SendRequestReminder(params: {
-  requestId: string
-  userId:    string
+  requestId: number
+  userId:    number
 }): Promise<{ errorCode: string | null }> {
   const { output } = await execFull('global', 'sp_SendRequestReminder', (r) => {
-    r.input ('RequestId', sql.UniqueIdentifier, params.requestId)
-    r.input ('UserId',    sql.UniqueIdentifier, params.userId)
+    r.input ('RequestId', sql.BigInt,      params.requestId)
+    r.input ('UserId',    sql.BigInt,      params.userId)
     r.output('ErrorCode', sql.NVarChar(50))
   })
   return { errorCode: (output.ErrorCode as string | null) ?? null }
@@ -923,7 +873,7 @@ export interface FeedPostRow {
   isPinned:      boolean
   isWelcomePost: boolean
   campaignId:    string | null
-  createdBy:     string
+  createdBy:     number
   publishedAt:   string
   createdAt:     string
   isRead:        boolean
@@ -934,7 +884,7 @@ export async function sp_GetFeed(params: {
   sportId?:           string
   page:               number
   pageSize:           number
-  requestingUserId:   string
+  requestingUserId:   number
   requestingUserRole: string
 }): Promise<{ posts: FeedPostRow[]; totalCount: number }> {
   const { recordset, output } = await execFull('app', 'sp_GetFeed', (r) => {
@@ -943,7 +893,7 @@ export async function sp_GetFeed(params: {
     r.input ('Page',                sql.Int,              params.page)
     r.input ('PageSize',            sql.Int,              params.pageSize)
     r.output('TotalCount',          sql.Int)
-    r.input ('RequestingUserId',    sql.UniqueIdentifier, params.requestingUserId)
+    r.input ('RequestingUserId',    sql.Int,              params.requestingUserId)
     r.input ('RequestingUserRole',  sql.NVarChar(50),     params.requestingUserRole)
   })
   return {
@@ -955,14 +905,14 @@ export async function sp_GetFeed(params: {
 export async function sp_GetFeedPost(params: {
   postId:             string
   viewerUserId:       number
-  requestingUserId:   string
+  requestingUserId:   number
   requestingUserRole: string
 }): Promise<{ post: FeedPostRow | null; errorCode: string | null }> {
   const { recordset, output } = await execFull('app', 'sp_GetFeedPost', (r) => {
     r.input ('PostId',              sql.UniqueIdentifier, params.postId)
     r.input ('ViewerUserId',        sql.Int,              params.viewerUserId)
     r.output('ErrorCode',           sql.NVarChar(50))
-    r.input ('RequestingUserId',    sql.UniqueIdentifier, params.requestingUserId)
+    r.input ('RequestingUserId',    sql.Int,              params.requestingUserId)
     r.input ('RequestingUserRole',  sql.NVarChar(50),     params.requestingUserRole)
   })
   const rows = recordset as unknown as FeedPostRow[]
@@ -973,7 +923,7 @@ export async function sp_GetFeedPost(params: {
 }
 
 export async function sp_CreatePost(params: {
-  createdBy:          string
+  createdBy:          number
   bodyHtml:           string
   audience:           string
   title?:             string | null
@@ -982,24 +932,24 @@ export async function sp_CreatePost(params: {
   isPinned:           boolean
   alsoEmail:          boolean
   emailSubject?:      string | null
-  requestingUserId:   string
+  requestingUserId:   number
   requestingUserRole: string
 }): Promise<{ postId: string | null; campaignId: string | null; errorCode: string | null }> {
   const { output } = await execFull('app', 'sp_CreatePost', (r) => {
-    r.input ('CreatedBy',           sql.UniqueIdentifier, params.createdBy)
-    r.input ('BodyHtml',            sql.NVarChar(sql.MAX), params.bodyHtml)
-    r.input ('Audience',            sql.NVarChar(30),     params.audience)
-    r.input ('Title',               sql.NVarChar(300),    params.title ?? null)
-    r.input ('AudienceJson',        sql.NVarChar(sql.MAX), params.audienceJson ?? null)
-    r.input ('SportId',             sql.UniqueIdentifier, params.sportId ?? null)
-    r.input ('IsPinned',            sql.Bit,              params.isPinned ? 1 : 0)
-    r.input ('AlsoEmail',           sql.Bit,              params.alsoEmail ? 1 : 0)
-    r.input ('EmailSubject',        sql.NVarChar(500),    params.emailSubject ?? null)
+    r.input ('CreatedBy',           sql.Int,               params.createdBy)
+    r.input ('BodyHtml',            sql.NVarChar(sql.MAX),  params.bodyHtml)
+    r.input ('Audience',            sql.NVarChar(30),       params.audience)
+    r.input ('Title',               sql.NVarChar(300),      params.title ?? null)
+    r.input ('AudienceJson',        sql.NVarChar(sql.MAX),  params.audienceJson ?? null)
+    r.input ('SportId',             sql.UniqueIdentifier,   params.sportId ?? null)
+    r.input ('IsPinned',            sql.Bit,                params.isPinned ? 1 : 0)
+    r.input ('AlsoEmail',           sql.Bit,                params.alsoEmail ? 1 : 0)
+    r.input ('EmailSubject',        sql.NVarChar(500),      params.emailSubject ?? null)
     r.output('NewPostId',           sql.UniqueIdentifier)
     r.output('CampaignId',          sql.UniqueIdentifier)
     r.output('ErrorCode',           sql.NVarChar(50))
-    r.input ('RequestingUserId',    sql.UniqueIdentifier, params.requestingUserId)
-    r.input ('RequestingUserRole',  sql.NVarChar(50),     params.requestingUserRole)
+    r.input ('RequestingUserId',    sql.Int,                params.requestingUserId)
+    r.input ('RequestingUserRole',  sql.NVarChar(50),       params.requestingUserRole)
   })
   return {
     postId:     (output.NewPostId   as string | null) ?? null,
@@ -1026,13 +976,13 @@ export interface PostReadStats {
 
 export async function sp_GetPostReadStats(params: {
   postId:             string
-  requestingUserId:   string
+  requestingUserId:   number
   requestingUserRole: string
 }): Promise<{ stats: PostReadStats | null; errorCode: string | null }> {
   const { recordset, output } = await execFull('app', 'sp_GetPostReadStats', (r) => {
     r.input ('PostId',              sql.UniqueIdentifier, params.postId)
     r.output('ErrorCode',           sql.NVarChar(50))
-    r.input ('RequestingUserId',    sql.UniqueIdentifier, params.requestingUserId)
+    r.input ('RequestingUserId',    sql.Int,              params.requestingUserId)
     r.input ('RequestingUserRole',  sql.NVarChar(50),     params.requestingUserRole)
   })
   const rows = recordset as unknown as PostReadStats[]
@@ -1050,18 +1000,18 @@ export async function sp_GetPostReadStats(params: {
  */
 export async function sp_DispatchCampaign(params: {
   campaignId:       string
-  dispatchedBy:     string
+  dispatchedBy:     number
   dailyRemaining?:  number
   monthlyRemaining?: number
 }): Promise<{ queuedCount: number; errorCode: string | null }> {
   const { output } = await execFull('app', 'sp_DispatchEmailCampaign', (r) => {
-    r.input ('CampaignId',        sql.UniqueIdentifier, params.campaignId)
-    r.input ('DailyRemaining',    sql.Int,              params.dailyRemaining  ?? 10000)
-    r.input ('MonthlyRemaining',  sql.Int,              params.monthlyRemaining ?? 100000)
-    r.output('QueuedCount',       sql.Int)
-    r.output('ErrorCode',         sql.NVarChar(50))
-    r.input ('RequestingUserId',  sql.UniqueIdentifier, params.dispatchedBy)
-    r.input ('RequestingUserRole', sql.NVarChar(50),    'platform_owner')
+    r.input ('CampaignId',          sql.UniqueIdentifier, params.campaignId)
+    r.input ('DailyRemaining',      sql.Int,              params.dailyRemaining  ?? 10000)
+    r.input ('MonthlyRemaining',    sql.Int,              params.monthlyRemaining ?? 100000)
+    r.output('QueuedCount',         sql.Int)
+    r.output('ErrorCode',           sql.NVarChar(50))
+    r.input ('RequestingUserId',    sql.Int,              params.dispatchedBy)
+    r.input ('RequestingUserRole',  sql.NVarChar(50),     'platform_owner')
   })
   return {
     queuedCount: (output.QueuedCount as number) ?? 0,
@@ -1083,13 +1033,13 @@ export interface AlumniDashboardMetrics {
 export async function sp_GetDashboardMetrics_Alumni(params: {
   tenantId:           number
   sportId?:           string | null
-  requestingUserId:   string
+  requestingUserId:   number
   requestingUserRole: string
 }): Promise<AlumniDashboardMetrics> {
   const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetDashboardMetrics_Alumni', (r) => {
     r.input('TenantId',           sql.Int,              params.tenantId)
     r.input('SportId',            sql.UniqueIdentifier, params.sportId ?? null)
-    r.input('RequestingUserId',   sql.UniqueIdentifier, params.requestingUserId)
+    r.input('RequestingUserId',   sql.Int,              params.requestingUserId)
     r.input('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole)
   })
   const row = rows[0] ?? {}
@@ -1113,13 +1063,13 @@ export interface PlayerDashboardMetrics {
 export async function sp_GetDashboardMetrics_Players(params: {
   tenantId:           number
   sportId?:           string | null
-  requestingUserId:   string
+  requestingUserId:   number
   requestingUserRole: string
 }): Promise<PlayerDashboardMetrics> {
   const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetDashboardMetrics_Players', (r) => {
     r.input('TenantId',           sql.Int,              params.tenantId)
     r.input('SportId',            sql.UniqueIdentifier, params.sportId ?? null)
-    r.input('RequestingUserId',   sql.UniqueIdentifier, params.requestingUserId)
+    r.input('RequestingUserId',   sql.Int,              params.requestingUserId)
     r.input('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole)
   })
   const row = rows[0] ?? {}
@@ -1171,13 +1121,13 @@ export interface AllEngagementMetrics {
 export async function sp_GetDashboardMetrics_All(params: {
   tenantId:           number
   sportId?:           string | null
-  requestingUserId:   string
+  requestingUserId:   number
   requestingUserRole: string
 }): Promise<AllEngagementMetrics> {
   const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetDashboardMetrics_All', (r) => {
     r.input('TenantId',           sql.Int,              params.tenantId)
     r.input('SportId',            sql.UniqueIdentifier, params.sportId ?? null)
-    r.input('RequestingUserId',   sql.UniqueIdentifier, params.requestingUserId)
+    r.input('RequestingUserId',   sql.Int,              params.requestingUserId)
     r.input('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole)
   })
   const row = rows[0] ?? {}
@@ -1198,9 +1148,9 @@ export async function sp_GetDashboardMetrics_All(params: {
 
 import type { UserProfile } from '@/types'
 
-export async function sp_GetUserProfile(userId: string): Promise<UserProfile | null> {
+export async function sp_GetUserProfile(userId: number): Promise<UserProfile | null> {
   const rows = await exec('global', 'sp_GetUserProfile', (r) => {
-    r.input('UserId', sql.UniqueIdentifier, userId)
+    r.input('UserId', sql.BigInt, userId)
   })
   return (rows[0] as unknown as UserProfile | undefined) ?? null
 }
@@ -1212,8 +1162,8 @@ export async function sp_UpdateUserProfile(params: {
   lastName?:    string | null
 }): Promise<{ errorCode: string | null }> {
   const { output } = await execFull('global', 'sp_UpdateUserProfile', (r) => {
-    r.input ('TargetUserId', sql.Int,          params.targetUserId)
-    r.input ('ActorId',      sql.Int,          params.actorId)
+    r.input ('TargetUserId', sql.BigInt,        params.targetUserId)
+    r.input ('ActorId',      sql.BigInt,        params.actorId)
     r.input ('FirstName',    sql.NVarChar(100), params.firstName ?? null)
     r.input ('LastName',     sql.NVarChar(100), params.lastName  ?? null)
     r.output('ErrorCode',    sql.NVarChar(50))
@@ -1221,45 +1171,45 @@ export async function sp_UpdateUserProfile(params: {
   return { errorCode: (output.ErrorCode as string | null) ?? null }
 }
 
-export async function sp_GetPasswordHash(userId: string): Promise<string | null> {
+export async function sp_GetPasswordHash(userId: number): Promise<string | null> {
   const { output } = await execFull('global', 'sp_GetPasswordHash', (r) => {
-    r.input ('UserId',       sql.UniqueIdentifier, userId)
+    r.input ('UserId',       sql.BigInt,       userId)
     r.output('PasswordHash', sql.NVarChar(255))
   })
   return (output.PasswordHash as string | null) ?? null
 }
 
 export async function sp_ChangeEmail(params: {
-  userId:   string
+  userId:   number
   newEmail: string
 }): Promise<{ errorCode: string | null }> {
   const { output } = await execFull('global', 'sp_ChangeEmail', (r) => {
-    r.input ('UserId',    sql.UniqueIdentifier, params.userId)
-    r.input ('NewEmail',  sql.NVarChar(255),    params.newEmail)
+    r.input ('UserId',    sql.BigInt,       params.userId)
+    r.input ('NewEmail',  sql.NVarChar(255),params.newEmail)
     r.output('ErrorCode', sql.NVarChar(50))
   })
   return { errorCode: (output.ErrorCode as string | null) ?? null }
 }
 
 export async function sp_ChangePassword(params: {
-  userId:          string
+  userId:          number
   newPasswordHash: string
 }): Promise<{ errorCode: string | null }> {
   const { output } = await execFull('global', 'sp_ChangePassword', (r) => {
-    r.input ('UserId',          sql.UniqueIdentifier, params.userId)
-    r.input ('NewPasswordHash', sql.NVarChar(255),    params.newPasswordHash)
+    r.input ('UserId',          sql.BigInt,       params.userId)
+    r.input ('NewPasswordHash', sql.NVarChar(255), params.newPasswordHash)
     r.output('ErrorCode',       sql.NVarChar(50))
   })
   return { errorCode: (output.ErrorCode as string | null) ?? null }
 }
 
 export async function sp_SetPreferredTeam(params: {
-  userId: string
+  userId: number
   teamId: number
 }): Promise<{ errorCode: string | null }> {
   const { output } = await execFull('global', 'sp_SetPreferredTeam', (r) => {
-    r.input ('UserId',    sql.UniqueIdentifier, params.userId)
-    r.input ('TeamId',    sql.Int,              params.teamId)
+    r.input ('UserId',    sql.BigInt, params.userId)
+    r.input ('TeamId',    sql.Int,    params.teamId)
     r.output('ErrorCode', sql.NVarChar(50))
   })
   return { errorCode: (output.ErrorCode as string | null) ?? null }

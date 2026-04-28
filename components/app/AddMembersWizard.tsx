@@ -11,7 +11,7 @@ import { Modal }  from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { createPlayer }     from '@/app/actions/players'
 import { createAlumni }     from '@/app/actions/alumni'
-import { createCoachStaff, generateInviteCode, generateSetupLink } from '@/app/actions/members'
+import { createCoachStaff, generateInviteCode } from '@/app/actions/members'
 import { bulkCreatePlayers } from '@/app/actions/players'
 import { bulkCreateAlumni }  from '@/app/actions/alumni'
 
@@ -25,7 +25,6 @@ interface WizardResult {
   success:    boolean
   message:    string
   inviteUrl?: string
-  setupUrl?:  string   // one-time account activation link for directly-created users
   count?:     number
   errors?:    string
 }
@@ -44,7 +43,7 @@ export interface AddMembersWizardProps {
   sport:         string
   positions:     string[]
   academicYears: string[]
-  userId:        string
+  userId:        number
   appDb:         string         // tenant App DB name from session.appDb
   userRoleId:    number         // creator's roleId — enforces "at or below your level"
   sports:        SportOption[]  // active sports for this team
@@ -322,11 +321,9 @@ export function AddMembersWizard({
         sportId:         selSportId || undefined,
       })
       if (res.success) {
-        const setup = res.userId ? await generateSetupLink(res.userId) : null
         setResult({
-          success:  true,
-          message:  `${firstName} ${lastName} added to the roster.`,
-          setupUrl: setup?.setupUrl,
+          success: true,
+          message: `${firstName} ${lastName} added to the roster.`,
         })
         setStep('result')
       } else {
@@ -344,11 +341,9 @@ export function AddMembersWizard({
         sportId:        selSportId || undefined,
       })
       if (res.success) {
-        const setup = res.userId ? await generateSetupLink(res.userId) : null
         setResult({
-          success:  true,
-          message:  `${firstName} ${lastName} added to alumni.`,
-          setupUrl: setup?.setupUrl,
+          success: true,
+          message: `${firstName} ${lastName} added to alumni.`,
         })
         setStep('result')
       } else {
@@ -360,11 +355,9 @@ export function AddMembersWizard({
         email, firstName, lastName, teamId, role: coachRole,
       })
       if (res.success) {
-        const setup = res.userId ? await generateSetupLink(res.userId) : null
         setResult({
-          success:  true,
-          message:  `${firstName} ${lastName} added as ${coachRole.replace(/_/g, ' ')}.`,
-          setupUrl: setup?.setupUrl,
+          success: true,
+          message: `${firstName} ${lastName} added as ${coachRole.replace(/_/g, ' ')}.`,
         })
         setStep('result')
       } else {
@@ -787,37 +780,6 @@ export function AddMembersWizard({
             <p style={{ fontSize: 13, color: 'var(--color-warning)', marginBottom: 16 }}>
               {result.errors}
             </p>
-          )}
-
-          {/* Setup URL — one-time activation link for directly-created users */}
-          {result.setupUrl && (
-            <div style={{ marginBottom: 20 }}>
-              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-gray-700)', marginBottom: 8 }}>
-                Share this link so they can set their password:
-              </p>
-              <div style={{
-                backgroundColor: 'var(--color-gray-50)',
-                border:          '1px solid var(--color-gray-200)',
-                borderRadius:    8,
-                padding:         '10px 14px',
-                fontSize:        12,
-                color:           'var(--color-gray-700)',
-                wordBreak:       'break-all',
-                textAlign:       'left',
-                marginBottom:    10,
-              }}>
-                {result.setupUrl}
-              </div>
-              <Button
-                label={urlCopied ? 'Copied!' : 'Copy Setup Link'}
-                variant={urlCopied ? 'secondary' : 'primary'}
-                onClick={() => copyUrl(result.setupUrl!)}
-                fullWidth
-              />
-              <p style={{ fontSize: 12, color: 'var(--color-gray-500)', marginTop: 8 }}>
-                Expires in 7 days. Single use — the link becomes inactive once they set their password.
-              </p>
-            </div>
           )}
 
           {/* Invite URL display */}

@@ -20,7 +20,7 @@ export async function GET() {
   }
 
   // Admins see all sports; regular staff see only their linked sports
-  const userId = isGlobalAdmin(session) ? null : (session.userIntId ?? null)
+  const userId = isGlobalAdmin(session) ? null : session.userId
 
   return appDbContext.run(session.appDb, async () => {
     try {

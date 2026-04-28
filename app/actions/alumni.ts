@@ -35,14 +35,14 @@ export interface CreateAlumniInput {
   currentJobTitle?: string
   notes?:         string
   globalTeamId:   number
-  createdBy:      string
+  createdBy:      number
   sportId?:       string
 }
 
 export interface BulkCreateAlumniInput {
   appDb:        string   // tenant App DB name from session.appDb
   alumni:       (Omit<BulkAlumniRow, 'userId'> & { email?: string })[]
-  createdBy:    string
+  createdBy:    number
   globalTeamId: number
   sportId?:     string
 }
@@ -56,22 +56,22 @@ export interface BulkCreateAlumniInput {
  */
 export async function createAlumni(
   input: CreateAlumniInput,
-): Promise<{ success: boolean; userId?: string; error?: string }> {
+): Promise<{ success: boolean; userId?: number; error?: string }> {
   return appDbContext.run(input.appDb, async () => {
     try {
-      const { userId, userIntId, errorCode: globalErr } = await sp_GetOrCreateUser({
+      const { userId, errorCode: globalErr } = await sp_GetOrCreateUser({
         email:     input.email,
         firstName: input.firstName,
         lastName:  input.lastName,
         teamId:    input.globalTeamId,
       })
 
-      if (!userIntId) {
+      if (!userId) {
         return { success: false, error: globalErr ?? 'GLOBAL_USER_CREATE_FAILED' }
       }
 
       const row: BulkAlumniRow = {
-        userId: userIntId,
+        userId,
         email:            input.email,
         firstName:        input.firstName,
         lastName:         input.lastName,
@@ -116,13 +116,13 @@ export async function bulkCreateAlumni(
         if (!row.email) return row
 
         try {
-          const { userIntId } = await sp_GetOrCreateUser({
+          const { userId: resolvedId } = await sp_GetOrCreateUser({
             email:     row.email,
             firstName: row.firstName,
             lastName:  row.lastName,
             teamId:    input.globalTeamId,
           })
-          return { ...row, userId: userIntId ?? undefined }
+          return { ...row, userId: resolvedId ?? undefined }
         } catch {
           return row
         }

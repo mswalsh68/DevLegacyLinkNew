@@ -34,11 +34,6 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
   }
 
-  const userIntId = session.userIntId
-  if (!userIntId) {
-    return NextResponse.json({ success: false, error: 'Session missing integer user ID.' }, { status: 500 })
-  }
-
   let body: unknown
   try { body = await req.json() } catch {
     return NextResponse.json({ success: false, error: 'Invalid JSON body.' }, { status: 400 })
@@ -54,8 +49,8 @@ export async function PATCH(req: NextRequest) {
 
   try {
     const { errorCode } = await sp_UpdateUserProfile({
-      targetUserId: userIntId,
-      actorId:      userIntId,
+      targetUserId: session.userId,
+      actorId:      session.userId,
       firstName:    p.data.firstName,
       lastName:     p.data.lastName,
     })

@@ -14,8 +14,8 @@ GO
 --   @PlayerId INT   = dbo.players.player_id
 --   @AlumniId INT   = dbo.alumni.alumni_id
 --   @UserId   INT   = dbo.users.user_id  (logged-in staff/viewer)
---   @RequestingUserId UNIQUEIDENTIFIER = JWT sub (session GUID, kept for compatibility)
---   @CreatedBy / @UpdatedBy UNIQUEIDENTIFIER = staff JWT sub (stored in campaign tables)
+--   @RequestingUserId INT = NULL = Global user_id of the calling user (authorization)
+--   @CreatedBy / @UpdatedBy INT = Global user_id of staff member (stored in campaign tables)
 -- ============================================================
 
 -- ============================================================
@@ -150,7 +150,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_GetPlayers
   @Page            INT              = 1,
   @PageSize        INT              = 50,
   @TotalCount      INT              OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -217,7 +217,7 @@ GO
 CREATE OR ALTER PROCEDURE dbo.sp_GetPlayerById
   @PlayerId  INT,
   @ErrorCode NVARCHAR(50) OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -310,9 +310,9 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreatePlayer
   @Parent2Phone          NVARCHAR(20)     = NULL,
   @Parent2Email          NVARCHAR(255)    = NULL,
   @Notes                 NVARCHAR(MAX)    = NULL,
-  @CreatedBy             UNIQUEIDENTIFIER,
+  @CreatedBy             INT,
   @ErrorCode             NVARCHAR(50)     OUTPUT,
-  @RequestingUserId      UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId      INT              = NULL,
   @RequestingUserRole    NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -431,9 +431,9 @@ CREATE OR ALTER PROCEDURE dbo.sp_UpdatePlayer
   @Parent2Phone          NVARCHAR(20)     = NULL,
   @Parent2Email          NVARCHAR(255)    = NULL,
   @Notes                 NVARCHAR(MAX)    = NULL,
-  @UpdatedBy             UNIQUEIDENTIFIER,
+  @UpdatedBy             INT,
   @ErrorCode             NVARCHAR(50)     OUTPUT,
-  @RequestingUserId      UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId      INT              = NULL,
   @RequestingUserRole    NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -492,7 +492,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_GraduatePlayer
   @PlayerIds      NVARCHAR(MAX),   -- JSON array of INT player_ids
   @GraduationYear SMALLINT,
   @Semester       NVARCHAR(10),    -- 'spring' | 'fall' | 'summer'
-  @TriggeredBy    NVARCHAR(100),
+  @TriggeredBy    INT,
   @TransactionId  UNIQUEIDENTIFIER OUTPUT,
   @SuccessCount   INT              OUTPUT,
   @FailureJson    NVARCHAR(MAX)    OUTPUT,
@@ -590,7 +590,7 @@ BEGIN
            triggered_by_user_id, status)
         VALUES
           (@TransactionId, @currentId, @newAlumniId, @GraduationYear, @Semester,
-           TRY_CAST(@TriggeredBy AS INT), 'success');
+           @TriggeredBy, 'success');
 
       COMMIT TRANSACTION;
       SET @SuccessCount += 1;
@@ -608,7 +608,7 @@ BEGIN
          triggered_by_user_id, status, notes)
       VALUES
         (@TransactionId, @currentId, NULL, @GraduationYear, @Semester,
-         TRY_CAST(@TriggeredBy AS INT), 'failed', @errMsg);
+         @TriggeredBy, 'failed', @errMsg);
     END CATCH;
 
     FETCH NEXT FROM cur INTO @currentId;
@@ -630,9 +630,9 @@ GO
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_RemovePlayer
   @PlayerId  INT,
-  @RemovedBy UNIQUEIDENTIFIER,
+  @RemovedBy INT,
   @ErrorCode NVARCHAR(50) OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -661,7 +661,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_UpsertPlayerStats
   @GamesPlayed TINYINT       = NULL,
   @StatsJson   NVARCHAR(MAX) = NULL,
   @ErrorCode   NVARCHAR(50)  OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -702,7 +702,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_GetAlumni
   @Page      INT              = 1,
   @PageSize  INT              = 50,
   @TotalCount INT             OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -771,7 +771,7 @@ GO
 CREATE OR ALTER PROCEDURE dbo.sp_GetAlumniById
   @AlumniId  INT,
   @ErrorCode NVARCHAR(50) OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -845,9 +845,9 @@ CREATE OR ALTER PROCEDURE dbo.sp_UpdateAlumni
   @LastDonationDate DATE          = NULL,
   @TotalDonations  DECIMAL(10,2)  = NULL,
   @Notes           NVARCHAR(MAX)  = NULL,
-  @UpdatedBy       UNIQUEIDENTIFIER,
+  @UpdatedBy       INT,
   @ErrorCode       NVARCHAR(50)   OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -902,7 +902,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_LogInteraction
   @Outcome    NVARCHAR(50)  = NULL,
   @FollowUpAt DATETIME2     = NULL,
   @ErrorCode  NVARCHAR(50)  OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -939,7 +939,7 @@ GO
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetAlumniStats
   @SportId            UNIQUEIDENTIFIER = NULL,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -987,7 +987,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreateAlumni
   @Notes              NVARCHAR(MAX)    = NULL,
   @NewAlumniId        INT              OUTPUT,
   @ErrorCode          NVARCHAR(50)     OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -1048,12 +1048,12 @@ GO
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_BulkCreatePlayers
   @PlayersJson  NVARCHAR(MAX),  -- each row: userId INT, email, firstName, lastName, ...
-  @CreatedBy    UNIQUEIDENTIFIER,
+  @CreatedBy    INT,
   @SportId      UNIQUEIDENTIFIER = NULL,
   @SuccessCount INT OUTPUT,
   @SkippedCount INT OUTPUT,
   @ErrorJson    NVARCHAR(MAX) OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -1248,12 +1248,12 @@ GO
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_BulkCreateAlumni
   @AlumniJson   NVARCHAR(MAX),
-  @CreatedBy    UNIQUEIDENTIFIER,
+  @CreatedBy    INT,
   @SportId      UNIQUEIDENTIFIER = NULL,
   @SuccessCount INT OUTPUT,
   @SkippedCount INT OUTPUT,
   @ErrorJson    NVARCHAR(MAX) OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -1442,7 +1442,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreateCampaign
   @TargetAudience  NVARCHAR(30),
   @AudienceFilters NVARCHAR(MAX)    = NULL,
   @ScheduledAt     DATETIME2        = NULL,
-  @CreatedBy       UNIQUEIDENTIFIER,
+  @CreatedBy       INT,
   @SportId         UNIQUEIDENTIFIER = NULL,
   @SubjectLine     NVARCHAR(500)    = NULL,
   @BodyHtml        NVARCHAR(MAX)    = NULL,
@@ -1451,7 +1451,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreateCampaign
   @PhysicalAddress NVARCHAR(500)    = NULL,
   @NewCampaignId   UNIQUEIDENTIFIER OUTPUT,
   @ErrorCode       NVARCHAR(50)     OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -1486,7 +1486,7 @@ GO
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetCampaigns
   @SportId            UNIQUEIDENTIFIER = NULL,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -1522,7 +1522,7 @@ GO
 CREATE OR ALTER PROCEDURE dbo.sp_GetCampaignDetail
   @CampaignId UNIQUEIDENTIFIER,
   @ErrorCode  NVARCHAR(50) OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -1578,7 +1578,7 @@ GO
 CREATE OR ALTER PROCEDURE dbo.sp_CancelCampaign
   @CampaignId UNIQUEIDENTIFIER,
   @ErrorCode  NVARCHAR(50) OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -1604,7 +1604,7 @@ GO
 CREATE OR ALTER PROCEDURE dbo.sp_ResolveAudienceForCampaign
   @CampaignId UNIQUEIDENTIFIER,
   @ErrorCode  NVARCHAR(50) OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -1703,7 +1703,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_DispatchEmailCampaign
   @MonthlyRemaining INT,
   @QueuedCount      INT OUTPUT,
   @ErrorCode        NVARCHAR(50) OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -1931,7 +1931,7 @@ GO
 -- sp_CreatePost
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_CreatePost
-  @CreatedBy    UNIQUEIDENTIFIER,
+  @CreatedBy    INT,
   @BodyHtml     NVARCHAR(MAX),
   @Audience     NVARCHAR(30),
   @Title        NVARCHAR(300)    = NULL,
@@ -1943,7 +1943,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreatePost
   @NewPostId    UNIQUEIDENTIFIER OUTPUT,
   @CampaignId   UNIQUEIDENTIFIER OUTPUT,
   @ErrorCode    NVARCHAR(50)     OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -2012,7 +2012,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_GetFeed
   @Page         INT              = 1,
   @PageSize     INT              = 20,
   @TotalCount   INT              OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -2131,7 +2131,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_GetFeedPost
   @PostId       UNIQUEIDENTIFIER,
   @ViewerUserId INT,
   @ErrorCode    NVARCHAR(50) OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -2225,7 +2225,7 @@ GO
 CREATE OR ALTER PROCEDURE dbo.sp_GetPostReadStats
   @PostId    UNIQUEIDENTIFIER,
   @ErrorCode NVARCHAR(50) OUTPUT,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -2306,7 +2306,7 @@ GO
 CREATE OR ALTER PROCEDURE dbo.sp_GetDashboardMetrics_Alumni
   @TenantId           INT,
   @SportId            UNIQUEIDENTIFIER = NULL,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -2374,7 +2374,7 @@ GO
 CREATE OR ALTER PROCEDURE dbo.sp_GetDashboardMetrics_Players
   @TenantId           INT,
   @SportId            UNIQUEIDENTIFIER = NULL,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN
@@ -2417,7 +2417,7 @@ GO
 CREATE OR ALTER PROCEDURE dbo.sp_GetDashboardMetrics_All
   @TenantId           INT,
   @SportId            UNIQUEIDENTIFIER = NULL,
-  @RequestingUserId   UNIQUEIDENTIFIER = NULL,
+  @RequestingUserId   INT              = NULL,
   @RequestingUserRole NVARCHAR(50)     = NULL
 AS
 BEGIN

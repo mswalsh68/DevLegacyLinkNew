@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation'
 import { sendRequestReminder } from '@/app/actions/invite'
 
 interface AccessRequest {
-  requestId:       string
+  requestId:       number
   teamId:          number
   teamName:        string
   sport:           string

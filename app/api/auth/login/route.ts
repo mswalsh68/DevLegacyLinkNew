@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
   console.log(`[/api/auth/login] Attempt: ${email} at ${timestamp}`)
 
   // ── Call sp_Login ────────────────────────────────────────────────────────
-  let userId: string
+  let userId: number
   let passwordHash: string
   let userJson: Record<string, unknown>
 
@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
     request.input('Email',      sql.NVarChar(255), email)
     request.input('IpAddress',  sql.NVarChar(100), req.headers.get('x-forwarded-for') ?? null)
     request.input('DeviceInfo', sql.NVarChar(255), req.headers.get('user-agent') ?? null)
-    request.output('UserId',       sql.UniqueIdentifier)
+    request.output('UserId',       sql.BigInt)
     request.output('PasswordHash', sql.NVarChar(sql.MAX))
     request.output('UserJson',     sql.NVarChar(sql.MAX))
     request.output('ErrorCode',    sql.NVarChar(50))
@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid email or password.' }, { status: 401 })
     }
 
-    userId       = output.UserId       as string
+    userId       = output.UserId       as number
     passwordHash = output.PasswordHash as string
     userJson     = JSON.parse(output.UserJson as string) as Record<string, unknown>
 
@@ -95,13 +95,15 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Sign tokens ──────────────────────────────────────────────────────────
-  const accessToken = await new SignJWT({ sub: userId, ...userJson })
+  // sub is stored as a string per JWT spec; userId numeric claim is primary
+  const subStr = String(userId)
+  const accessToken = await new SignJWT({ sub: subStr, userId, ...userJson })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(cfg.accessExpiry)
     .sign(cfg.jwtSecret)
 
-  const refreshToken = await new SignJWT({ sub: userId })
+  const refreshToken = await new SignJWT({ sub: subStr })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(cfg.refreshExpiry)
@@ -123,7 +125,7 @@ export async function POST(req: NextRequest) {
     data: {
       // sp_Login now returns `role` (role_name) + `roleId` (INT) directly.
       // Keeping `globalRole` fallback for any old tokens still in circulation.
-      user: { userId, id: userId, ...userJson, role: userJson.role ?? userJson.globalRole },
+      user: { userId, ...userJson, role: userJson.role ?? userJson.globalRole },
       accessToken,
       refreshToken,
     },

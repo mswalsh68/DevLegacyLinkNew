@@ -25,7 +25,7 @@ export async function GET(
     try {
       const { post, errorCode } = await sp_GetFeedPost({
         postId:             id,
-        viewerUserId:       session.userIntId!,
+        viewerUserId:       session.userId,
         requestingUserId:   session.userId,
         requestingUserRole: session.role,
       })

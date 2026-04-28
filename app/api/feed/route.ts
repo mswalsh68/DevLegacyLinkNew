@@ -26,7 +26,7 @@ export async function GET(req: Request) {
   return appDbContext.run(session.appDb, async () => {
     try {
       const { posts, totalCount } = await sp_GetFeed({
-        viewerUserId:       session.userIntId!,
+        viewerUserId:       session.userId,
         sportId,
         page,
         pageSize,

@@ -17,12 +17,17 @@ export async function getServerSession(): Promise<UserSession | null> {
     const payload = JSON.parse(
       Buffer.from(token.split('.')[1], 'base64url').toString(),
     )
-    // JWT stores userId in the 'sub' claim (UUID). Map it to userId if absent.
-    if (payload.sub && !payload.userId) {
-      payload.userId = payload.sub
+    // JWT stores userId as a numeric claim. Parse from sub if absent.
+    if (!payload.userId && payload.sub) {
+      const parsed = Number(payload.sub)
+      if (!isNaN(parsed)) payload.userId = parsed
+    }
+    // Ensure userId is always a number (handles old string-encoded JWTs in flight)
+    if (typeof payload.userId === 'string') {
+      const parsed = Number(payload.userId)
+      if (!isNaN(parsed)) payload.userId = parsed
     }
     // Backward-compat: old JWTs (pre-migration 018) used globalRole instead of role.
-    // Safe to remove once all active sessions have been refreshed post-deployment.
     if (payload.globalRole && !payload.role) {
       payload.role = payload.globalRole
     }

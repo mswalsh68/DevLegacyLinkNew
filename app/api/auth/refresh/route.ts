@@ -38,25 +38,24 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Verify refresh token ───────────────────────────────────────────────────
-  let userId: string
+  let userId: number
   try {
     const { payload } = await jwtVerify(refreshToken, secrets.refreshKey)
-    userId = (payload.sub ?? payload.userId) as string
-    if (!userId) throw new Error('Missing userId in refresh token payload.')
+    const raw = payload.userId ?? (payload.sub ? Number(payload.sub) : undefined)
+    userId = Number(raw)
+    if (!userId || isNaN(userId)) throw new Error('Missing userId in refresh token payload.')
   } catch {
     return NextResponse.json({ error: 'Invalid or expired refresh token.' }, { status: 401 })
   }
 
   // ── Fetch fresh user data from DB ──────────────────────────────────────────
-  // Calling sp_GetUserById (or equivalent) ensures we get up-to-date role/teams.
-  // Falls back to minimal payload if SP is unavailable.
   let userJson: Record<string, unknown> = { userId }
 
   try {
-    const db  = await getPool('global')
+    const db   = await getPool('global')
     const req2 = db.request()
-    req2.input('UserId', sql.UniqueIdentifier, userId)
-    req2.output('UserJson', sql.NVarChar(sql.MAX))
+    req2.input ('UserId',    sql.BigInt,            userId)
+    req2.output('UserJson',  sql.NVarChar(sql.MAX))
     req2.output('ErrorCode', sql.NVarChar(50))
 
     const { output } = await req2.execute('dbo.sp_GetUserById')
@@ -70,12 +69,12 @@ export async function POST(req: NextRequest) {
 
   // ── Preserve currentTeamId from request body ───────────────────────────────
   try {
-    const body = await req.json() as { currentTeamId?: string }
+    const body = await req.json() as { currentTeamId?: number }
     if (body?.currentTeamId) userJson.currentTeamId = body.currentTeamId
   } catch { /* no body / not JSON — ignore */ }
 
   // ── Sign new access token ──────────────────────────────────────────────────
-  const accessToken = await new SignJWT({ sub: userId, ...userJson })
+  const accessToken = await new SignJWT({ sub: String(userId), userId, ...userJson })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(secrets.accessExpiry)

@@ -103,7 +103,7 @@ export async function GET() {
     const session = await getServerSession()
 
     if (session?.userId) {
-      const rows = await sp_GetUserTeams({ userId: String(session.userId) })
+      const rows = await sp_GetUserTeams({ userId: session.userId })
       if (rows.length > 0) {
         return NextResponse.json(
           { success: true, data: normalizeRows(rows) },

@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
   const cookieBase = { httpOnly: true, secure: isProd, sameSite: 'lax' as const, path: '/' }
 
   // ── Resolve userId and build JWT payload ──────────────────────────────────
-  let userId:   string
+  let userId:   number
   let userJson: Record<string, unknown>
 
   if (mode === 'signup') {
@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to create account.' }, { status: 500 })
     }
 
-    userId   = newId
+    userId = newId
     userJson = { email, firstName, lastName, roleId: 7, role: 'alumni', appPermissions: [], teams: [] }
 
   } else {
@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
       request.input ('Email',       sql.NVarChar(255), email)
       request.input ('IpAddress',   sql.NVarChar(100), req.headers.get('x-forwarded-for') ?? null)
       request.input ('DeviceInfo',  sql.NVarChar(255), req.headers.get('user-agent')      ?? null)
-      request.output('UserId',      sql.UniqueIdentifier)
+      request.output('UserId',      sql.BigInt)
       request.output('PasswordHash',sql.NVarChar(sql.MAX))
       request.output('UserJson',    sql.NVarChar(sql.MAX))
       request.output('ErrorCode',   sql.NVarChar(50))
@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Invalid email or password.' }, { status: 401 })
       }
 
-      userId   = output.UserId as string
+      userId   = output.UserId as number
       userJson = JSON.parse(output.UserJson as string) as Record<string, unknown>
     } catch (err) {
       console.error('[POST /api/invite/request] login error', err)
@@ -140,13 +140,14 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Issue JWT so user is logged in ────────────────────────────────────────
-  const accessToken = await new SignJWT({ sub: userId, ...userJson })
+  const subStr = String(userId)
+  const accessToken = await new SignJWT({ sub: subStr, userId, ...userJson })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(cfg.accessExpiry)
     .sign(cfg.jwtSecret)
 
-  const refreshToken = await new SignJWT({ sub: userId })
+  const refreshToken = await new SignJWT({ sub: subStr })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(cfg.refreshExpiry)
@@ -155,7 +156,7 @@ export async function POST(req: NextRequest) {
   const response = NextResponse.json({
     success:   true,
     requestId: requestId,
-    data:      { user: { id: userId, ...userJson }, accessToken },
+    data:      { user: { userId, ...userJson }, accessToken },
   })
 
   response.cookies.set('access_token',  accessToken,  { ...cookieBase, maxAge: 15 * 60 })

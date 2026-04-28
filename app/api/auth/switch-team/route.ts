@@ -62,9 +62,10 @@ export async function POST(req: NextRequest) {
 
     // Re-issue the access token with currentTeamId updated.
     // Spread the existing session claims so username, role, apps etc. are preserved.
-    const { userId: _uid, sub: _sub, exp: _exp, iat: _iat, ...restClaims } = session
+    const { userId: _uid, exp: _exp, iat: _iat, ...restClaims } = session
     const newAccessToken = await new SignJWT({
-      sub:           session.userId,
+      sub:           String(session.userId),
+      userId:        session.userId,
       ...restClaims,
       currentTeamId: teamId,
     })

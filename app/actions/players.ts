@@ -40,7 +40,7 @@ export interface CreatePlayerInput {
   academicYear:          string
   recruitingClass:       number
   globalTeamId:          number   // team ID in LegacyLinkGlobal for user registration
-  createdBy:             string
+  createdBy:             number
   sportId?:              string
   jerseyNumber?:         number
   heightInches?:         number
@@ -62,7 +62,7 @@ export interface CreatePlayerInput {
   parent2Phone?:         string
   parent2Email?:         string
   notes?:                string
-  requestingUserId?:     string
+  requestingUserId?:     number | null
   requestingUserRole?:   string
 }
 
@@ -71,13 +71,13 @@ export interface GraduatePlayersInput {
   playerIds:      number[]
   graduationYear: number
   semester:       'spring' | 'fall' | 'summer'
-  triggeredBy:    string
+  triggeredBy:    number
 }
 
 export interface BulkCreatePlayersInput {
   appDb:        string   // tenant App DB name from session.appDb
   players:      (Omit<BulkPlayerRow, 'userId'> & { email?: string })[]
-  createdBy:    string
+  createdBy:    number
   globalTeamId: number   // used for Global DB user registration
   sportId?:     string
 }
@@ -91,24 +91,24 @@ export interface BulkCreatePlayersInput {
  */
 export async function createPlayer(
   input: CreatePlayerInput,
-): Promise<{ success: boolean; userId?: string; error?: string }> {
+): Promise<{ success: boolean; userId?: number; error?: string }> {
   return appDbContext.run(input.appDb, async () => {
   try {
     // 1. Global DB
-    const { userId, userIntId, errorCode: globalErr } = await sp_GetOrCreateUser({
+    const { userId, errorCode: globalErr } = await sp_GetOrCreateUser({
       email:     input.email,
       firstName: input.firstName,
       lastName:  input.lastName,
       teamId:    input.globalTeamId,
     })
 
-    if (!userIntId) {
+    if (!userId) {
       return { success: false, error: globalErr ?? 'GLOBAL_USER_CREATE_FAILED' }
     }
 
     // 2. App DB — sp_CreatePlayer takes INT userId
     const { errorCode } = await sp_CreatePlayer({
-      userId: userIntId,
+      userId,
       email:                 input.email,
       firstName:             input.firstName,
       lastName:              input.lastName,
@@ -263,13 +263,13 @@ export async function bulkCreatePlayers(
         if (!row.email) return row  // no email → SP will generate a userId
 
         try {
-          const { userIntId } = await sp_GetOrCreateUser({
+          const { userId: resolvedId } = await sp_GetOrCreateUser({
             email:     row.email,
             firstName: row.firstName,
             lastName:  row.lastName,
             teamId:    input.globalTeamId,
           })
-          return { ...row, userId: userIntId ?? undefined }
+          return { ...row, userId: resolvedId ?? undefined }
         } catch {
           // If Global DB lookup fails for one row, pass without userId —
           // the SP skips user_id so the player row still gets created.

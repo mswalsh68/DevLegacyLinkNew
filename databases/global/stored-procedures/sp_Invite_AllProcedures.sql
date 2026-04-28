@@ -1,33 +1,27 @@
 -- ─── Invite Code & Access Request Stored Procedures ─────────────────────────
--- All procedures assume tables from migrations 016 + 017 + 018 + 019 exist.
--- Column notes (post-migration-019):
---   users.global_role        → DROPPED; use users.role_id + dbo.roles
---   access_requests.role     → DROPPED; use access_requests.role_id + dbo.roles
---   invite_codes.role        → still NVARCHAR(30) — invite codes carry a role name
+-- All procedures assume tables from migrations 016 + 017 + 018 + 019 + 024 exist.
+-- Updated for migration 024: UNIQUEIDENTIFIER → BIGINT for all user IDs;
+--   invite_codes.id and access_requests.id are now BIGINT IDENTITY (no NEWID()).
 -- ─────────────────────────────────────────────────────────────────────────────
 
 -- ─── sp_RegisterUserViaInvite ─────────────────────────────────────────────────
 -- Creates a new user account for self-signup via invite code.
--- Unlike sp_GetOrCreateUser (which sets password_hash = 'INVITE_PENDING'),
--- this SP stores the bcrypt hash supplied by the caller so the user can log in
--- immediately after their access request is approved.
--- Returns EMAIL_EXISTS if the email is already in use (caller should switch to login).
+-- Returns EMAIL_EXISTS if the email is already in use.
 
 CREATE OR ALTER PROCEDURE dbo.sp_RegisterUserViaInvite
   @Email        NVARCHAR(255),
   @PasswordHash NVARCHAR(MAX),
   @FirstName    NVARCHAR(100),
   @LastName     NVARCHAR(100),
-  @UserId       UNIQUEIDENTIFIER OUTPUT,
-  @ErrorCode    NVARCHAR(50)     OUTPUT
+  @UserId       BIGINT       OUTPUT,
+  @ErrorCode    NVARCHAR(50) OUTPUT
 AS
 BEGIN
   SET NOCOUNT ON;
   SET @ErrorCode = NULL;
   SET @UserId    = NULL;
 
-  -- Check for existing account
-  SELECT @UserId = id FROM dbo.users WHERE email = @Email;
+  SELECT @UserId = user_id FROM dbo.users WHERE email = @Email;
 
   IF @UserId IS NOT NULL
   BEGIN
@@ -35,18 +29,18 @@ BEGIN
     RETURN;
   END
 
-  SET @UserId = NEWID();
-
   -- role_id = 7 (alumni) — lowest privilege, placeholder until request is approved
-  INSERT INTO dbo.users (id, email, password_hash, first_name, last_name, role_id, is_active, created_at)
-  VALUES (@UserId, @Email, @PasswordHash, @FirstName, @LastName, 7, 1, SYSUTCDATETIME());
+  INSERT INTO dbo.users (email, password_hash, first_name, last_name, role_id, is_active)
+  VALUES (@Email, @PasswordHash, @FirstName, @LastName, 7, 1);
+
+  SET @UserId = SCOPE_IDENTITY();
 
   INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload, performed_at)
   VALUES (
     @UserId,
     'user_self_registered',
     'user',
-    @UserId,
+    CAST(@UserId AS NVARCHAR(20)),
     (SELECT @Email AS email, 'invite_code' AS via FOR JSON PATH, WITHOUT_ARRAY_WRAPPER),
     SYSUTCDATETIME()
   );
@@ -55,7 +49,6 @@ GO
 
 -- ─── sp_ValidateInviteCode ────────────────────────────────────────────────────
 -- Looks up a token and returns team + role info without modifying anything.
--- Use this for the preview card before account creation or form submission.
 
 CREATE OR ALTER PROCEDURE dbo.sp_ValidateInviteCode
   @Token NVARCHAR(128)
@@ -93,30 +86,28 @@ GO
 -- Token is passed in from the caller (UUID generated server-side).
 
 CREATE OR ALTER PROCEDURE dbo.sp_CreateInviteCode
-  @TeamId      INT,
-  @Role        NVARCHAR(30),
-  @Token       NVARCHAR(128),
-  @CreatedBy   UNIQUEIDENTIFIER,
-  @ExpiresAt   DATETIME2        = NULL,
-  @MaxUses     INT              = NULL,
-  @InviteCodeId UNIQUEIDENTIFIER OUTPUT,
-  @ErrorCode   NVARCHAR(50)     OUTPUT
+  @TeamId       INT,
+  @Role         NVARCHAR(30),
+  @Token        NVARCHAR(128),
+  @CreatedBy    BIGINT,
+  @ExpiresAt    DATETIME2     = NULL,
+  @MaxUses      INT           = NULL,
+  @InviteCodeId BIGINT        OUTPUT,
+  @ErrorCode    NVARCHAR(50)  OUTPUT
 AS
 BEGIN
   SET NOCOUNT ON;
   SET @ErrorCode    = NULL;
-  SET @InviteCodeId = NEWID();
+  SET @InviteCodeId = NULL;
 
-  -- Verify team exists and is active
   IF NOT EXISTS (SELECT 1 FROM dbo.teams WHERE id = @TeamId AND is_active = 1)
   BEGIN
     SET @ErrorCode = 'TEAM_NOT_FOUND';
     RETURN;
   END
 
-  -- Verify creator has access to this team (platform_owner or app_admin, or team member)
   IF NOT EXISTS (
-    SELECT 1 FROM dbo.users WHERE id = @CreatedBy AND role_id IN (1, 2)
+    SELECT 1 FROM dbo.users WHERE user_id = @CreatedBy AND role_id IN (1, 2)
     UNION
     SELECT 1 FROM dbo.user_teams WHERE user_id = @CreatedBy AND team_id = @TeamId
   )
@@ -125,15 +116,17 @@ BEGIN
     RETURN;
   END
 
-  INSERT INTO dbo.invite_codes (id, team_id, role, token, created_by, expires_at, max_uses)
-  VALUES (@InviteCodeId, @TeamId, @Role, @Token, @CreatedBy, @ExpiresAt, @MaxUses);
+  INSERT INTO dbo.invite_codes (team_id, role, token, created_by, expires_at, max_uses)
+  VALUES (@TeamId, @Role, @Token, @CreatedBy, @ExpiresAt, @MaxUses);
+
+  SET @InviteCodeId = SCOPE_IDENTITY();
 
   INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload, performed_at)
   VALUES (
     @CreatedBy,
     'invite_code_created',
     'invite_code',
-    @InviteCodeId,
+    CAST(@InviteCodeId AS NVARCHAR(20)),
     (SELECT @TeamId AS teamId, @Role AS role FOR JSON PATH, WITHOUT_ARRAY_WRAPPER),
     SYSUTCDATETIME()
   );
@@ -141,7 +134,6 @@ END
 GO
 
 -- ─── sp_ListInviteCodes ───────────────────────────────────────────────────────
--- Returns all invite codes for a team (active and inactive).
 
 CREATE OR ALTER PROCEDURE dbo.sp_ListInviteCodes
   @TeamId INT
@@ -161,7 +153,7 @@ BEGIN
     u.first_name    AS createdByFirstName,
     u.last_name     AS createdByLastName
   FROM dbo.invite_codes ic
-  JOIN dbo.users u ON u.id = ic.created_by
+  JOIN dbo.users u ON u.user_id = ic.created_by
   WHERE ic.team_id = @TeamId
   ORDER BY ic.created_at DESC;
 END
@@ -170,8 +162,8 @@ GO
 -- ─── sp_DeactivateInviteCode ──────────────────────────────────────────────────
 
 CREATE OR ALTER PROCEDURE dbo.sp_DeactivateInviteCode
-  @InviteCodeId  UNIQUEIDENTIFIER,
-  @DeactivatedBy UNIQUEIDENTIFIER,
+  @InviteCodeId  BIGINT,
+  @DeactivatedBy BIGINT,
   @ErrorCode     NVARCHAR(50) OUTPUT
 AS
 BEGIN
@@ -193,7 +185,7 @@ BEGIN
     @DeactivatedBy,
     'invite_code_deactivated',
     'invite_code',
-    @InviteCodeId,
+    CAST(@InviteCodeId AS NVARCHAR(20)),
     NULL,
     SYSUTCDATETIME()
   );
@@ -202,22 +194,19 @@ GO
 
 -- ─── sp_SubmitAccessRequest ───────────────────────────────────────────────────
 -- Creates an access_request row and increments the invite code use_count.
--- Validates the code is still valid before writing.
--- One pending request per user+team is enforced (idempotent).
--- Stores role_id (INT FK → dbo.roles) looked up from invite_codes.role name.
 
 CREATE OR ALTER PROCEDURE dbo.sp_SubmitAccessRequest
-  @UserId       UNIQUEIDENTIFIER,
+  @UserId       BIGINT,
   @Token        NVARCHAR(128),
-  @RequestId    UNIQUEIDENTIFIER OUTPUT,
-  @ErrorCode    NVARCHAR(50)     OUTPUT
+  @RequestId    BIGINT       OUTPUT,
+  @ErrorCode    NVARCHAR(50) OUTPUT
 AS
 BEGIN
   SET NOCOUNT ON;
   SET @RequestId = NULL;
   SET @ErrorCode = NULL;
 
-  DECLARE @InviteCodeId UNIQUEIDENTIFIER;
+  DECLARE @InviteCodeId BIGINT;
   DECLARE @TeamId       INT;
   DECLARE @RoleName     NVARCHAR(30);
   DECLARE @RoleId       INT;
@@ -261,7 +250,7 @@ BEGIN
     RETURN;
   END
 
-  -- Idempotent: if a pending request already exists for this user+team, return it
+  -- Idempotent: return existing pending request if already submitted
   SELECT @RequestId = id
   FROM   dbo.access_requests
   WHERE  user_id = @UserId AND team_id = @TeamId AND status = 'pending';
@@ -272,18 +261,16 @@ BEGIN
     RETURN;
   END
 
-  -- Map role name → role_id (default to 7/alumni if not found)
   SELECT @RoleId = id FROM dbo.roles WHERE role_name = @RoleName;
   IF @RoleId IS NULL SET @RoleId = 7;
 
-  SET @RequestId = NEWID();
-
   INSERT INTO dbo.access_requests
-    (id, user_id, team_id, role_id, invite_code_id, status)
+    (user_id, team_id, role_id, invite_code_id, status)
   VALUES
-    (@RequestId, @UserId, @TeamId, @RoleId, @InviteCodeId, 'pending');
+    (@UserId, @TeamId, @RoleId, @InviteCodeId, 'pending');
 
-  -- Increment use count
+  SET @RequestId = SCOPE_IDENTITY();
+
   UPDATE dbo.invite_codes
   SET    use_count = use_count + 1
   WHERE  id = @InviteCodeId;
@@ -293,7 +280,7 @@ BEGIN
     @UserId,
     'access_request_submitted',
     'access_request',
-    @RequestId,
+    CAST(@RequestId AS NVARCHAR(20)),
     (SELECT @TeamId AS teamId, @RoleName AS role FOR JSON PATH, WITHOUT_ARRAY_WRAPPER),
     SYSUTCDATETIME()
   );
@@ -301,10 +288,9 @@ END
 GO
 
 -- ─── sp_GetMyAccessRequests ───────────────────────────────────────────────────
--- Returns all access requests for a given user with team + status details.
 
 CREATE OR ALTER PROCEDURE dbo.sp_GetMyAccessRequests
-  @UserId UNIQUEIDENTIFIER
+  @UserId BIGINT
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -330,19 +316,16 @@ END
 GO
 
 -- ─── sp_GetPendingAccessRequests ─────────────────────────────────────────────
--- Returns pending requests visible to a given admin.
--- role_id IN (1,2) = platform_owner / app_admin — see all teams.
--- Others see only their teams.
 
 CREATE OR ALTER PROCEDURE dbo.sp_GetPendingAccessRequests
-  @AdminUserId  UNIQUEIDENTIFIER,
-  @StatusFilter NVARCHAR(20) = 'pending'   -- 'pending' | 'approved' | 'denied' | 'all'
+  @AdminUserId  BIGINT,
+  @StatusFilter NVARCHAR(20) = 'pending'
 AS
 BEGIN
   SET NOCOUNT ON;
 
   DECLARE @AdminRoleId INT;
-  SELECT @AdminRoleId = role_id FROM dbo.users WHERE id = @AdminUserId;
+  SELECT @AdminRoleId = role_id FROM dbo.users WHERE user_id = @AdminUserId;
 
   SELECT
     ar.id               AS requestId,
@@ -361,10 +344,10 @@ BEGIN
     rv.last_name        AS reviewedByLastName,
     ar.reviewed_at      AS reviewedAt
   FROM dbo.access_requests ar
-  JOIN dbo.users u             ON u.id      = ar.user_id
-  JOIN dbo.teams t             ON t.id      = ar.team_id
-  LEFT JOIN dbo.users rv       ON rv.id     = ar.reviewed_by
-  LEFT JOIN dbo.roles r        ON r.id      = ar.role_id
+  JOIN dbo.users u             ON u.user_id  = ar.user_id
+  JOIN dbo.teams t             ON t.id       = ar.team_id
+  LEFT JOIN dbo.users rv       ON rv.user_id = ar.reviewed_by
+  LEFT JOIN dbo.roles r        ON r.id       = ar.role_id
   WHERE
     (@StatusFilter = 'all' OR ar.status = @StatusFilter)
     AND (
@@ -379,18 +362,15 @@ END
 GO
 
 -- ─── sp_ReviewAccessRequest ───────────────────────────────────────────────────
--- Approves or denies an access request.
--- On APPROVE: inserts into user_teams and grants an app_permission.
--- On DENY: sets status and stores optional denial_reason.
 
 CREATE OR ALTER PROCEDURE dbo.sp_ReviewAccessRequest
-  @RequestId    UNIQUEIDENTIFIER,
-  @ReviewedBy   UNIQUEIDENTIFIER,
-  @Action       NVARCHAR(10),          -- 'approve' | 'deny'
-  @Role         NVARCHAR(30)  = NULL,  -- override role name on approve (optional)
+  @RequestId    BIGINT,
+  @ReviewedBy   BIGINT,
+  @Action       NVARCHAR(10),
+  @Role         NVARCHAR(30)  = NULL,
   @DenialReason NVARCHAR(MAX) = NULL,
-  @UserId       UNIQUEIDENTIFIER OUTPUT,
-  @TeamId       INT OUTPUT,
+  @UserId       BIGINT        OUTPUT,
+  @TeamId       INT           OUTPUT,
   @FinalRole    NVARCHAR(30)  OUTPUT,
   @ErrorCode    NVARCHAR(50)  OUTPUT
 AS
@@ -401,9 +381,9 @@ BEGIN
   SET @TeamId    = NULL;
   SET @FinalRole = NULL;
 
-  DECLARE @CurrentStatus  NVARCHAR(20);
+  DECLARE @CurrentStatus   NVARCHAR(20);
   DECLARE @RequestedRoleId INT;
-  DECLARE @RequestedRole  NVARCHAR(30);
+  DECLARE @RequestedRole   NVARCHAR(30);
 
   SELECT
     @UserId          = ar.user_id,
@@ -425,14 +405,12 @@ BEGIN
     RETURN;
   END
 
-  -- Look up role name from role_id
   SELECT @RequestedRole = role_name FROM dbo.roles WHERE id = @RequestedRoleId;
 
   SET @FinalRole = COALESCE(@Role, @RequestedRole);
 
   IF @Action = 'approve'
   BEGIN
-    -- Insert into user_teams if not already a member
     IF NOT EXISTS (
       SELECT 1 FROM dbo.user_teams WHERE user_id = @UserId AND team_id = @TeamId
     )
@@ -441,7 +419,6 @@ BEGIN
       VALUES (@UserId, @TeamId);
     END
 
-    -- Grant app permission matching the role
     DECLARE @AppName NVARCHAR(50);
     SET @AppName = CASE
       WHEN @FinalRole IN ('roster', 'coach_staff') THEN 'roster'
@@ -471,7 +448,7 @@ BEGIN
       @ReviewedBy,
       'access_request_approved',
       'access_request',
-      @RequestId,
+      CAST(@RequestId AS NVARCHAR(20)),
       (SELECT @UserId AS userId, @TeamId AS teamId, @FinalRole AS role FOR JSON PATH, WITHOUT_ARRAY_WRAPPER),
       SYSUTCDATETIME()
     );
@@ -492,7 +469,7 @@ BEGIN
       @ReviewedBy,
       'access_request_denied',
       'access_request',
-      @RequestId,
+      CAST(@RequestId AS NVARCHAR(20)),
       (SELECT @UserId AS userId, @DenialReason AS reason FOR JSON PATH, WITHOUT_ARRAY_WRAPPER),
       SYSUTCDATETIME()
     );
@@ -505,20 +482,19 @@ END
 GO
 
 -- ─── sp_SendRequestReminder ───────────────────────────────────────────────────
--- Sets reminder_sent_at to now. Only allowed if null or older than 48 hours.
 
 CREATE OR ALTER PROCEDURE dbo.sp_SendRequestReminder
-  @RequestId UNIQUEIDENTIFIER,
-  @UserId    UNIQUEIDENTIFIER,
+  @RequestId BIGINT,
+  @UserId    BIGINT,
   @ErrorCode NVARCHAR(50) OUTPUT
 AS
 BEGIN
   SET NOCOUNT ON;
   SET @ErrorCode = NULL;
 
-  DECLARE @CurrentStatus     NVARCHAR(20);
-  DECLARE @ReminderSentAt    DATETIME2;
-  DECLARE @RequestUserId     UNIQUEIDENTIFIER;
+  DECLARE @CurrentStatus  NVARCHAR(20);
+  DECLARE @ReminderSentAt DATETIME2;
+  DECLARE @RequestUserId  BIGINT;
 
   SELECT
     @CurrentStatus  = status,

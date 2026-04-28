@@ -15,7 +15,7 @@ export async function PATCH(
 
   try {
     const { errorCode } = await sp_DeactivateInviteCode({
-      inviteCodeId:  id,
+      inviteCodeId:  parseInt(id, 10),
       deactivatedBy: session.userId,
     })
 

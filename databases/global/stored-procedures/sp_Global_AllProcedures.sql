@@ -1,17 +1,18 @@
 -- ============================================================
 -- GLOBAL DB — ALL STORED PROCEDURES
 -- Run this file on: LegacyLinkGlobal database
--- Requires: HASHBYTES support (Azure SQL — built in)
--- Run after: 018_roles_table.sql
+-- Run after: 024_bigint_user_pk.sql
 -- ============================================================
--- Migration 018 changes reflected here:
---   • All platform_owner checks use role_id = 1 instead of global_role = 'platform_owner'
---   • UserJson now emits roleId (INT) + role (role_name string) from dbo.roles
---   • sp_CreateUser accepts @RoleId INT instead of @GlobalRole NVARCHAR
---   • sp_UpdateUser accepts @RoleId INT instead of @GlobalRole NVARCHAR
---   • sp_GetUsers filters by @RoleId INT instead of @GlobalRole NVARCHAR
---   • sp_GetOrCreateUser inserts role_id = 6 (player)
---   • DUAL-WRITE: global_role string is kept in sync until migration 019 drops it
+-- Migration 024 changes reflected here:
+--   • All user ID params changed UNIQUEIDENTIFIER → BIGINT
+--   • All WHERE/JOIN clauses updated: u.id → u.user_id
+--   • sp_Login / sp_RefreshToken JSON: removed GUID id field,
+--     renamed userIntId → userId
+--   • sp_CreateUser / sp_GetOrCreateUser use SCOPE_IDENTITY()
+--     instead of NEWID() — BIGINT IDENTITY does the work
+--   • sp_GetOrCreateUser: removed @UserIntId output (redundant)
+--   • Removed legacy invite_tokens SPs (table dropped in 024;
+--     use sp_CreateInviteCode in sp_Invite_AllProcedures.sql)
 -- ============================================================
 
 -- ============================================================
@@ -25,18 +26,17 @@ CREATE OR ALTER PROCEDURE dbo.sp_Login
   @IpAddress   NVARCHAR(50)   = NULL,
   @DeviceInfo  NVARCHAR(255)  = NULL,
   -- Outputs
-  @UserId       UNIQUEIDENTIFIER OUTPUT,
+  @UserId       BIGINT           OUTPUT,
   @PasswordHash NVARCHAR(255)    OUTPUT,
-  @UserJson     NVARCHAR(MAX)    OUTPUT,  -- full user + teams + permissions payload
-  @ErrorCode    NVARCHAR(50)     OUTPUT   -- NULL = success
+  @UserJson     NVARCHAR(MAX)    OUTPUT,
+  @ErrorCode    NVARCHAR(50)     OUTPUT
 AS
 BEGIN
   SET NOCOUNT ON;
   SET @ErrorCode = NULL;
 
-  -- Fetch user
   SELECT
-    @UserId       = u.id,
+    @UserId       = u.user_id,
     @PasswordHash = u.password_hash
   FROM dbo.users u
   WHERE u.email = @Email;
@@ -47,28 +47,23 @@ BEGIN
     RETURN;
   END
 
-  -- Check account is active
-  IF NOT EXISTS (SELECT 1 FROM dbo.users WHERE id = @UserId AND is_active = 1)
+  IF NOT EXISTS (SELECT 1 FROM dbo.users WHERE user_id = @UserId AND is_active = 1)
   BEGIN
     SET @ErrorCode = 'ACCOUNT_INACTIVE';
     RETURN;
   END
 
-  -- Resolve role from normalized table
   DECLARE @RoleId   INT;
   DECLARE @RoleName NVARCHAR(50);
 
   SELECT @RoleId = u.role_id, @RoleName = r.role_name
   FROM   dbo.users u
   JOIN   dbo.roles r ON r.id = u.role_id
-  WHERE  u.id = @UserId;
+  WHERE  u.user_id = @UserId;
 
-  -- Build teams JSON:
-  --   platform_owner (role_id = 1)  -> all active teams
-  --   everyone else                 -> their user_teams rows
   DECLARE @TeamsJson NVARCHAR(MAX);
 
-  IF @RoleId = 1  -- platform_owner
+  IF @RoleId = 1  -- platform_owner: all active teams
   BEGIN
     SELECT @TeamsJson = (
       SELECT
@@ -100,7 +95,7 @@ BEGIN
       FROM dbo.user_teams ut
       JOIN  dbo.teams t        ON t.id      = ut.team_id
       LEFT JOIN dbo.team_config tc ON tc.team_id = t.id
-      WHERE ut.user_id  = @UserId
+      WHERE ut.user_id   = @UserId
         AND ut.is_active = 1
       ORDER BY t.name
       FOR JSON PATH
@@ -109,12 +104,11 @@ BEGIN
 
   IF @TeamsJson IS NULL SET @TeamsJson = '[]';
 
-  -- Resolve current team (first alphabetically)
   DECLARE @CurrentTeamId INT;
   DECLARE @AppDb         NVARCHAR(100) = '';
   DECLARE @DbServer      NVARCHAR(200) = '';
 
-  IF @RoleId = 1  -- platform_owner
+  IF @RoleId = 1
   BEGIN
     SELECT TOP 1
       @CurrentTeamId = t.id,
@@ -132,15 +126,14 @@ BEGIN
       @DbServer      = t.db_server
     FROM dbo.user_teams ut
     JOIN dbo.teams t ON t.id = ut.team_id
-    WHERE ut.user_id  = @UserId
+    WHERE ut.user_id   = @UserId
       AND ut.is_active = 1
     ORDER BY t.name;
   END
 
-  -- Resolve preferred team (NULL if not set or team no longer accessible)
   DECLARE @PreferredTeamId INT = NULL;
 
-  IF @RoleId = 1  -- platform_owner
+  IF @RoleId = 1
   BEGIN
     SELECT @PreferredTeamId = utp.preferred_team_id
     FROM dbo.user_team_preferences utp
@@ -154,16 +147,14 @@ BEGIN
     FROM dbo.user_team_preferences utp
     JOIN dbo.user_teams ut ON ut.user_id = utp.user_id AND ut.team_id = utp.preferred_team_id
     JOIN dbo.teams t       ON t.id = utp.preferred_team_id
-    WHERE utp.user_id   = @UserId
-      AND ut.is_active   = 1
-      AND t.is_active    = 1;
+    WHERE utp.user_id  = @UserId
+      AND ut.is_active  = 1
+      AND t.is_active   = 1;
   END
 
-  -- Build full payload JSON
   SELECT @UserJson = (
     SELECT
-      u.id,
-      u.user_id                             AS userIntId,
+      u.user_id                             AS userId,
       u.email,
       u.first_name                          AS firstName,
       u.last_name                           AS lastName,
@@ -172,7 +163,7 @@ BEGIN
       u.is_active                           AS isActive,
       u.account_claimed                     AS accountClaimed,
       u.created_at                          AS createdAt,
-      @CurrentTeamId AS currentTeamId,
+      @CurrentTeamId                        AS currentTeamId,
       @PreferredTeamId                      AS preferredTeamId,
       @AppDb                                AS appDb,
       @DbServer                             AS dbServer,
@@ -184,35 +175,35 @@ BEGIN
           ap.granted_at AS grantedAt,
           ap.granted_by AS grantedBy
         FROM dbo.app_permissions ap
-        WHERE ap.user_id   = u.id
+        WHERE ap.user_id   = u.user_id
           AND ap.revoked_at IS NULL
         FOR JSON PATH
       ) AS appPermissions
     FROM dbo.users u
     JOIN dbo.roles r ON r.id = u.role_id
-    WHERE u.id = @UserId
+    WHERE u.user_id = @UserId
     FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
   );
 
-  -- Update last login; claim account on first login
   UPDATE dbo.users
   SET last_login_at   = SYSUTCDATETIME(),
       account_claimed = 1,
       claimed_date    = CASE WHEN account_claimed = 0 THEN SYSUTCDATETIME() ELSE claimed_date END
-  WHERE id = @UserId;
+  WHERE user_id = @UserId;
 
   INSERT INTO dbo.audit_log (actor_id, actor_email, action, target_type, target_id, ip_address, payload)
-  SELECT @UserId, @Email, 'login', 'user', CAST(@UserId AS NVARCHAR(100)), @IpAddress,
-    JSON_OBJECT('device': ISNULL(@DeviceInfo, ''));
+  VALUES (
+    @UserId, @Email, 'login', 'user', CAST(@UserId AS NVARCHAR(20)), @IpAddress,
+    JSON_OBJECT('device': ISNULL(@DeviceInfo, ''))
+  );
 END;
 GO
 
 -- ============================================================
 -- sp_StoreRefreshToken
--- Stores a hashed refresh token after successful login.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_StoreRefreshToken
-  @UserId     UNIQUEIDENTIFIER,
+  @UserId     BIGINT,
   @TokenHash  NVARCHAR(255),
   @ExpiresAt  DATETIME2,
   @DeviceInfo NVARCHAR(255) = NULL
@@ -229,13 +220,12 @@ GO
 -- sp_RefreshToken
 -- Validates an existing refresh token, revokes it, issues a
 -- new one. Returns fresh user payload including teams array.
--- Entire rotation is atomic — no partial state possible.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_RefreshToken
   @OldTokenHash  NVARCHAR(255),
   @NewTokenHash  NVARCHAR(255),
   @NewExpiresAt  DATETIME2,
-  @CurrentTeamId INT = NULL,   -- client's active team; used to pin DB routing
+  @CurrentTeamId INT = NULL,
   -- Outputs
   @UserJson      NVARCHAR(MAX) OUTPUT,
   @ErrorCode     NVARCHAR(50)  OUTPUT
@@ -245,7 +235,7 @@ BEGIN
   SET XACT_ABORT ON;
   SET @ErrorCode = NULL;
 
-  DECLARE @UserId UNIQUEIDENTIFIER;
+  DECLARE @UserId BIGINT;
 
   BEGIN TRANSACTION;
 
@@ -262,7 +252,7 @@ BEGIN
       RETURN;
     END
 
-    IF NOT EXISTS (SELECT 1 FROM dbo.users WHERE id = @UserId AND is_active = 1)
+    IF NOT EXISTS (SELECT 1 FROM dbo.users WHERE user_id = @UserId AND is_active = 1)
     BEGIN
       ROLLBACK TRANSACTION;
       SET @ErrorCode = 'ACCOUNT_INACTIVE';
@@ -278,18 +268,17 @@ BEGIN
 
   COMMIT TRANSACTION;
 
-  -- Build fresh user payload (same structure as sp_Login)
   DECLARE @RoleId   INT;
   DECLARE @RoleName NVARCHAR(50);
 
   SELECT @RoleId = u.role_id, @RoleName = r.role_name
   FROM   dbo.users u
   JOIN   dbo.roles r ON r.id = u.role_id
-  WHERE  u.id = @UserId;
+  WHERE  u.user_id = @UserId;
 
   DECLARE @TeamsJson NVARCHAR(MAX);
 
-  IF @RoleId = 1  -- platform_owner
+  IF @RoleId = 1
   BEGIN
     SELECT @TeamsJson = (
       SELECT
@@ -321,7 +310,7 @@ BEGIN
       FROM dbo.user_teams ut
       JOIN  dbo.teams t        ON t.id      = ut.team_id
       LEFT JOIN dbo.team_config tc ON tc.team_id = t.id
-      WHERE ut.user_id  = @UserId
+      WHERE ut.user_id   = @UserId
         AND ut.is_active = 1
       ORDER BY t.name
       FOR JSON PATH
@@ -334,11 +323,9 @@ BEGIN
   DECLARE @AppDb          NVARCHAR(100) = '';
   DECLARE @DbServer       NVARCHAR(200) = '';
 
-  -- Try to pin to the client's requested team.
-  -- platform_owner can hold any active team; others must have a live user_teams row.
   IF @CurrentTeamId IS NOT NULL
   BEGIN
-    IF @RoleId = 1  -- platform_owner
+    IF @RoleId = 1
     BEGIN
       SELECT
         @ResolvedTeamId = t.id,
@@ -356,18 +343,16 @@ BEGIN
         @DbServer       = t.db_server
       FROM dbo.user_teams ut
       JOIN dbo.teams t ON t.id = ut.team_id
-      WHERE ut.user_id  = @UserId
-        AND ut.team_id  = @CurrentTeamId
+      WHERE ut.user_id   = @UserId
+        AND ut.team_id   = @CurrentTeamId
         AND ut.is_active = 1
         AND t.is_active  = 1;
     END
   END
 
-  -- Fall back to first-alphabetical accessible team if requested team was
-  -- not found, not provided, or user lost access since the token was issued.
   IF @ResolvedTeamId IS NULL
   BEGIN
-    IF @RoleId = 1  -- platform_owner
+    IF @RoleId = 1
     BEGIN
       SELECT TOP 1
         @ResolvedTeamId = t.id,
@@ -385,17 +370,16 @@ BEGIN
         @DbServer       = t.db_server
       FROM dbo.user_teams ut
       JOIN dbo.teams t ON t.id = ut.team_id
-      WHERE ut.user_id  = @UserId
+      WHERE ut.user_id   = @UserId
         AND ut.is_active = 1
         AND t.is_active  = 1
       ORDER BY t.name;
     END
   END
 
-  -- Resolve preferred team (same logic as sp_Login)
   DECLARE @PreferredTeamId INT = NULL;
 
-  IF @RoleId = 1  -- platform_owner
+  IF @RoleId = 1
   BEGIN
     SELECT @PreferredTeamId = utp.preferred_team_id
     FROM dbo.user_team_preferences utp
@@ -409,15 +393,14 @@ BEGIN
     FROM dbo.user_team_preferences utp
     JOIN dbo.user_teams ut ON ut.user_id = utp.user_id AND ut.team_id = utp.preferred_team_id
     JOIN dbo.teams t       ON t.id = utp.preferred_team_id
-    WHERE utp.user_id   = @UserId
-      AND ut.is_active   = 1
-      AND t.is_active    = 1;
+    WHERE utp.user_id  = @UserId
+      AND ut.is_active  = 1
+      AND t.is_active   = 1;
   END
 
   SELECT @UserJson = (
     SELECT
-      u.id,
-      u.user_id                                AS userIntId,
+      u.user_id                                AS userId,
       u.email,
       u.first_name                             AS firstName,
       u.last_name                              AS lastName,
@@ -426,7 +409,7 @@ BEGIN
       u.is_active                              AS isActive,
       u.account_claimed                        AS accountClaimed,
       u.token_version                          AS tokenVersion,
-      @ResolvedTeamId AS currentTeamId,
+      @ResolvedTeamId                          AS currentTeamId,
       @PreferredTeamId                         AS preferredTeamId,
       @AppDb                                   AS appDb,
       @DbServer                                AS dbServer,
@@ -434,12 +417,12 @@ BEGIN
       (
         SELECT ap.app_name AS app, ap.role, ap.granted_at AS grantedAt, ap.granted_by AS grantedBy
         FROM dbo.app_permissions ap
-        WHERE ap.user_id = u.id AND ap.revoked_at IS NULL
+        WHERE ap.user_id = u.user_id AND ap.revoked_at IS NULL
         FOR JSON PATH
       ) AS appPermissions
     FROM dbo.users u
     JOIN dbo.roles r ON r.id = u.role_id
-    WHERE u.id = @UserId
+    WHERE u.user_id = @UserId
     FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
   );
 END;
@@ -447,7 +430,6 @@ GO
 
 -- ============================================================
 -- sp_Logout
--- Revokes a refresh token by its hash.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_Logout
   @TokenHash NVARCHAR(255)
@@ -466,12 +448,10 @@ GO
 -- sp_SwitchTeam
 -- Validates a user can access @NewTeamId, returns team details
 -- so the API can re-issue the JWT with updated currentTeamId.
--- platform_owner (role_id = 1) bypasses the user_teams check.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_SwitchTeam
-  @UserId    UNIQUEIDENTIFIER,
+  @UserId    BIGINT,
   @NewTeamId INT,
-  -- Outputs
   @TeamJson  NVARCHAR(MAX) OUTPUT,
   @ErrorCode NVARCHAR(50)  OUTPUT
 AS
@@ -480,18 +460,16 @@ BEGIN
   SET @ErrorCode = NULL;
   SET @TeamJson  = NULL;
 
-  -- Does the target team exist and is it active?
   IF NOT EXISTS (SELECT 1 FROM dbo.teams WHERE id = @NewTeamId AND is_active = 1)
   BEGIN
     SET @ErrorCode = 'TEAM_NOT_FOUND';
     RETURN;
   END
 
-  -- Validate access (platform_owner bypasses user_teams check)
   DECLARE @RoleId INT;
-  SELECT @RoleId = role_id FROM dbo.users WHERE id = @UserId;
+  SELECT @RoleId = role_id FROM dbo.users WHERE user_id = @UserId;
 
-  IF @RoleId <> 1  -- not platform_owner
+  IF @RoleId <> 1
   BEGIN
     IF NOT EXISTS (
       SELECT 1 FROM dbo.user_teams
@@ -505,14 +483,13 @@ BEGIN
     END
   END
 
-  -- Return team details for JWT re-issue + ThemeProvider refresh
   SELECT @TeamJson = (
     SELECT
-      t.id        AS teamId,
+      t.id                   AS teamId,
       t.name,
       t.abbr,
-      t.app_db AS appDb,
-      t.db_server AS dbServer,
+      t.app_db               AS appDb,
+      t.db_server            AS dbServer,
       tc.logo_url            AS logoUrl,
       tc.color_primary       AS colorPrimary,
       tc.color_primary_dark  AS colorPrimaryDark,
@@ -531,7 +508,6 @@ BEGIN
     FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
   );
 
-  -- Audit the switch
   INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload)
   VALUES (
     @UserId, 'team_switch', 'team', CAST(@NewTeamId AS NVARCHAR(20)),
@@ -543,10 +519,9 @@ GO
 -- ============================================================
 -- sp_GetUserTeams
 -- Returns all teams a user has access to.
--- platform_owner (role_id = 1) gets all active teams.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetUserTeams
-  @UserId UNIQUEIDENTIFIER
+  @UserId BIGINT
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -557,9 +532,9 @@ BEGIN
   SELECT @RoleId = u.role_id, @RoleName = r.role_name
   FROM   dbo.users u
   JOIN   dbo.roles r ON r.id = u.role_id
-  WHERE  u.id = @UserId;
+  WHERE  u.user_id = @UserId;
 
-  IF @RoleId = 1  -- platform_owner
+  IF @RoleId = 1
   BEGIN
     SELECT
       t.id        AS teamId,
@@ -589,7 +564,7 @@ BEGIN
     FROM dbo.user_teams ut
     JOIN  dbo.teams t        ON t.id      = ut.team_id
     LEFT JOIN dbo.team_config tc ON tc.team_id = t.id
-    WHERE ut.user_id  = @UserId
+    WHERE ut.user_id   = @UserId
       AND ut.is_active = 1
     ORDER BY t.name;
   END
@@ -605,22 +580,19 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreateUser
   @PasswordHash  NVARCHAR(255),
   @FirstName     NVARCHAR(100),
   @LastName      NVARCHAR(100),
-  @RoleId        INT,                         -- FK → dbo.roles.id
-  @CreatedBy     UNIQUEIDENTIFIER,
-  @TeamId        INT = NULL,
-  -- Optional: immediately grant access to an app
+  @RoleId        INT,
+  @CreatedBy     BIGINT,
+  @TeamId        INT           = NULL,
   @GrantAppName  NVARCHAR(50)  = NULL,
   @GrantAppRole  NVARCHAR(50)  = NULL,
-  -- Output
-  @NewUserId     UNIQUEIDENTIFIER OUTPUT,
-  @ErrorCode     NVARCHAR(50)      OUTPUT
+  @NewUserId     BIGINT        OUTPUT,
+  @ErrorCode     NVARCHAR(50)  OUTPUT
 AS
 BEGIN
   SET NOCOUNT ON;
   SET XACT_ABORT ON;
   SET @ErrorCode = NULL;
 
-  -- Validate the role exists
   DECLARE @RoleName NVARCHAR(50);
   SELECT @RoleName = role_name FROM dbo.roles WHERE id = @RoleId;
 
@@ -644,10 +616,10 @@ BEGIN
 
   BEGIN TRANSACTION;
 
-    SET @NewUserId = NEWID();
+    INSERT INTO dbo.users (email, password_hash, first_name, last_name, role_id)
+    VALUES (@Email, @PasswordHash, @FirstName, @LastName, @RoleId);
 
-    INSERT INTO dbo.users (id, email, password_hash, first_name, last_name, role_id)
-    VALUES (@NewUserId, @Email, @PasswordHash, @FirstName, @LastName, @RoleId);
+    SET @NewUserId = SCOPE_IDENTITY();
 
     IF @TeamId IS NOT NULL
     BEGIN
@@ -663,7 +635,7 @@ BEGIN
 
     INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload)
     VALUES (
-      @CreatedBy, 'user_created', 'user', CAST(@NewUserId AS NVARCHAR(100)),
+      @CreatedBy, 'user_created', 'user', CAST(@NewUserId AS NVARCHAR(20)),
       JSON_OBJECT(
         'email':      @Email,
         'roleId':     CAST(@RoleId AS NVARCHAR),
@@ -680,27 +652,25 @@ GO
 
 -- ============================================================
 -- sp_UpdateUser
--- Updates role and/or active status. App Admin or higher only
--- (enforced in the API layer).
+-- Updates role and/or active status.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_UpdateUser
-  @TargetUserId  UNIQUEIDENTIFIER,
-  @RoleId        INT           = NULL,        -- FK → dbo.roles.id; NULL = no change
+  @TargetUserId  BIGINT,
+  @RoleId        INT           = NULL,
   @IsActive      BIT           = NULL,
-  @ActorId       UNIQUEIDENTIFIER,
+  @ActorId       BIGINT,
   @ErrorCode     NVARCHAR(50)  OUTPUT
 AS
 BEGIN
   SET NOCOUNT ON;
   SET @ErrorCode = NULL;
 
-  IF NOT EXISTS (SELECT 1 FROM dbo.users WHERE id = @TargetUserId)
+  IF NOT EXISTS (SELECT 1 FROM dbo.users WHERE user_id = @TargetUserId)
   BEGIN
     SET @ErrorCode = 'USER_NOT_FOUND';
     RETURN;
   END
 
-  -- Validate role if being changed
   DECLARE @RoleName NVARCHAR(50) = NULL;
 
   IF @RoleId IS NOT NULL
@@ -718,17 +688,17 @@ BEGIN
     'roleId':   CAST(role_id AS NVARCHAR),
     'isActive': CAST(is_active AS NVARCHAR)
   )
-  FROM dbo.users WHERE id = @TargetUserId;
+  FROM dbo.users WHERE user_id = @TargetUserId;
 
   UPDATE dbo.users SET
     role_id    = COALESCE(@RoleId,   role_id),
     is_active  = COALESCE(@IsActive, is_active),
     updated_at = SYSUTCDATETIME()
-  WHERE id = @TargetUserId;
+  WHERE user_id = @TargetUserId;
 
   INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload)
   VALUES (
-    @ActorId, 'user_updated', 'user', CAST(@TargetUserId AS NVARCHAR(100)),
+    @ActorId, 'user_updated', 'user', CAST(@TargetUserId AS NVARCHAR(20)),
     JSON_OBJECT(
       'before':     @Before,
       'newRoleId':  ISNULL(CAST(@RoleId AS NVARCHAR), ''),
@@ -743,10 +713,10 @@ GO
 -- sp_GrantPermission
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GrantPermission
-  @UserId    UNIQUEIDENTIFIER,
+  @UserId    BIGINT,
   @AppName   NVARCHAR(50),
   @Role      NVARCHAR(50),
-  @GrantedBy UNIQUEIDENTIFIER,
+  @GrantedBy BIGINT,
   @ErrorCode NVARCHAR(50) OUTPUT
 AS
 BEGIN
@@ -779,7 +749,7 @@ BEGIN
 
     INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload)
     VALUES (
-      @GrantedBy, 'permission_granted', 'user', CAST(@UserId AS NVARCHAR(100)),
+      @GrantedBy, 'permission_granted', 'user', CAST(@UserId AS NVARCHAR(20)),
       JSON_OBJECT('app': @AppName, 'role': @Role)
     );
 
@@ -791,9 +761,9 @@ GO
 -- sp_RevokePermission
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_RevokePermission
-  @UserId    UNIQUEIDENTIFIER,
+  @UserId    BIGINT,
   @AppName   NVARCHAR(50),
-  @RevokedBy UNIQUEIDENTIFIER,
+  @RevokedBy BIGINT,
   @ErrorCode NVARCHAR(50) OUTPUT
 AS
 BEGIN
@@ -817,7 +787,7 @@ BEGIN
 
   INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload)
   VALUES (
-    @RevokedBy, 'permission_revoked', 'user', CAST(@UserId AS NVARCHAR(100)),
+    @RevokedBy, 'permission_revoked', 'user', CAST(@UserId AS NVARCHAR(20)),
     JSON_OBJECT('app': @AppName)
   );
 END;
@@ -827,13 +797,11 @@ GO
 -- sp_TransferPlayerToAlumni
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_TransferPlayerToAlumni
-  @UserId    UNIQUEIDENTIFIER,
-  @GrantedBy NVARCHAR(100)
+  @UserId    BIGINT,
+  @GrantedBy BIGINT
 AS
 BEGIN
   SET NOCOUNT ON;
-
-  DECLARE @GrantedByGuid UNIQUEIDENTIFIER = TRY_CAST(@GrantedBy AS UNIQUEIDENTIFIER);
 
   UPDATE dbo.app_permissions
   SET revoked_at = SYSUTCDATETIME()
@@ -847,12 +815,12 @@ BEGIN
   )
   BEGIN
     INSERT INTO dbo.app_permissions (user_id, app_name, role, granted_by)
-    VALUES (@UserId, 'alumni', 'readonly', @GrantedByGuid);
+    VALUES (@UserId, 'alumni', 'readonly', @GrantedBy);
   END
 
   INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload)
   VALUES (
-    @GrantedByGuid, 'player_graduated_to_alumni', 'user', CAST(@UserId AS NVARCHAR(100)),
+    @GrantedBy, 'player_graduated_to_alumni', 'user', CAST(@UserId AS NVARCHAR(20)),
     JSON_OBJECT('rosterRevoked': 'true', 'alumniGranted': 'true')
   );
 END;
@@ -860,12 +828,11 @@ GO
 
 -- ============================================================
 -- sp_GetUsers
--- Returns paginated user list with role info from dbo.roles.
--- @RoleId INT = NULL filters to a specific role; NULL = all.
+-- Returns paginated user list with role info.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetUsers
   @Search     NVARCHAR(255) = NULL,
-  @RoleId     INT           = NULL,   -- FK → dbo.roles.id; NULL = all roles
+  @RoleId     INT           = NULL,
   @Page       INT           = 1,
   @PageSize   INT           = 50,
   @TotalCount INT           OUTPUT
@@ -882,7 +849,7 @@ BEGIN
     AND (@RoleId IS NULL OR u.role_id = @RoleId);
 
   SELECT
-    u.id,
+    u.user_id       AS userId,
     u.email,
     u.first_name    AS firstName,
     u.last_name     AS lastName,
@@ -893,7 +860,7 @@ BEGIN
     u.created_at    AS createdAt,
     (
       SELECT COUNT(*) FROM dbo.app_permissions ap
-      WHERE ap.user_id = u.id AND ap.revoked_at IS NULL
+      WHERE ap.user_id = u.user_id AND ap.revoked_at IS NULL
     ) AS activePermissionCount
   FROM dbo.users u
   JOIN dbo.roles r ON r.id = u.role_id
@@ -908,7 +875,7 @@ GO
 -- sp_GetUserPermissions
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetUserPermissions
-  @UserId UNIQUEIDENTIFIER
+  @UserId BIGINT
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -922,110 +889,16 @@ BEGIN
     gb.email         AS grantedByEmail,
     CASE WHEN ap.revoked_at IS NULL THEN 1 ELSE 0 END AS isActive
   FROM dbo.app_permissions ap
-  JOIN dbo.users gb ON gb.id = ap.granted_by
+  JOIN dbo.users gb ON gb.user_id = ap.granted_by
   WHERE ap.user_id = @UserId
   ORDER BY ap.granted_at DESC;
 END;
 GO
 
 -- ============================================================
--- sp_CreateInviteToken
--- ============================================================
-CREATE OR ALTER PROCEDURE dbo.sp_CreateInviteToken
-  @UserId    UNIQUEIDENTIFIER,
-  @TokenHash VARCHAR(128),
-  @ExpiresAt DATETIME2
-AS
-BEGIN
-  SET NOCOUNT ON;
-
-  UPDATE dbo.invite_tokens
-  SET    used_at = SYSUTCDATETIME()
-  WHERE  user_id = @UserId AND used_at IS NULL;
-
-  INSERT INTO dbo.invite_tokens (user_id, token_hash, expires_at)
-  VALUES (@UserId, @TokenHash, @ExpiresAt);
-END;
-GO
-
--- ============================================================
--- sp_ValidateInviteToken
--- ============================================================
-CREATE OR ALTER PROCEDURE dbo.sp_ValidateInviteToken
-  @TokenHash VARCHAR(128)
-AS
-BEGIN
-  SET NOCOUNT ON;
-
-  SELECT u.first_name AS firstName, u.last_name AS lastName, u.email
-  FROM   dbo.invite_tokens it
-  JOIN   dbo.users u ON u.id = it.user_id
-  WHERE  it.token_hash = @TokenHash
-    AND  it.used_at    IS NULL
-    AND  it.expires_at  > SYSUTCDATETIME();
-END;
-GO
-
--- ============================================================
--- sp_RedeemInviteToken
--- ============================================================
-CREATE OR ALTER PROCEDURE dbo.sp_RedeemInviteToken
-  @TokenHash    VARCHAR(128),
-  @PasswordHash VARCHAR(255),
-  @ErrorCode    NVARCHAR(50)  OUTPUT,
-  @UserId       UNIQUEIDENTIFIER OUTPUT,
-  @Email        NVARCHAR(255) OUTPUT
-AS
-BEGIN
-  SET NOCOUNT ON;
-  SET @ErrorCode = NULL;
-  SET @UserId    = NULL;
-  SET @Email     = NULL;
-
-  SELECT @UserId = it.user_id
-  FROM   dbo.invite_tokens it
-  WHERE  it.token_hash = @TokenHash
-    AND  it.used_at    IS NULL
-    AND  it.expires_at  > SYSUTCDATETIME();
-
-  IF @UserId IS NULL
-  BEGIN
-    SET @ErrorCode = 'INVALID_OR_EXPIRED';
-    RETURN;
-  END
-
-  SELECT @Email = email FROM dbo.users WHERE id = @UserId;
-
-  BEGIN TRANSACTION;
-  BEGIN TRY
-    UPDATE dbo.users
-    SET    password_hash = @PasswordHash,
-           is_active     = 1
-    WHERE  id = @UserId;
-
-    UPDATE dbo.invite_tokens
-    SET    used_at = SYSUTCDATETIME()
-    WHERE  token_hash = @TokenHash;
-
-    COMMIT TRANSACTION;
-  END TRY
-  BEGIN CATCH
-    ROLLBACK TRANSACTION;
-    SET @ErrorCode = 'TRANSACTION_FAILED';
-  END CATCH
-END;
-GO
-
--- ============================================================
 -- sp_CheckTeamActive
--- Returns whether a team's subscription is currently active.
--- Used by requireActiveTeam middleware.
 -- ============================================================
-IF OBJECT_ID('dbo.sp_CheckTeamActive', 'P') IS NOT NULL
-    DROP PROCEDURE dbo.sp_CheckTeamActive;
-GO
-
-CREATE PROCEDURE dbo.sp_CheckTeamActive
+CREATE OR ALTER PROCEDURE dbo.sp_CheckTeamActive
   @TeamId   INT,
   @IsActive BIT OUTPUT
 AS
@@ -1041,32 +914,27 @@ GO
 
 -- ============================================================
 -- sp_GetTokenVersion
--- Returns the current token_version for a user.
--- Called by requireAuth middleware on every authenticated request
--- to detect revoke-all-sessions invalidation.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetTokenVersion
-  @UserId       UNIQUEIDENTIFIER,
+  @UserId       BIGINT,
   @TokenVersion INT OUTPUT
 AS
 BEGIN
   SET NOCOUNT ON;
   SET @TokenVersion = NULL;
+
   SELECT @TokenVersion = token_version
   FROM   dbo.users
-  WHERE  id = @UserId;
+  WHERE  user_id = @UserId;
 END;
 GO
 
 -- ============================================================
 -- sp_RevokeAllSessions
--- Increments token_version (invalidating all existing JWTs)
--- and revokes all active refresh tokens for a user.
--- Called by POST /auth/revoke-all-sessions.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_RevokeAllSessions
-  @UserId  UNIQUEIDENTIFIER,
-  @ActorId UNIQUEIDENTIFIER
+  @UserId  BIGINT,
+  @ActorId BIGINT
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -1077,7 +945,7 @@ BEGIN
     UPDATE dbo.users
     SET token_version = token_version + 1,
         updated_at    = SYSUTCDATETIME()
-    WHERE id = @UserId;
+    WHERE user_id = @UserId;
 
     UPDATE dbo.refresh_tokens
     SET revoked_at = SYSUTCDATETIME()
@@ -1086,8 +954,8 @@ BEGIN
 
     INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload)
     VALUES (
-      @ActorId, 'sessions_revoked', 'user', CAST(@UserId AS NVARCHAR(100)),
-      JSON_OBJECT('revokedBy': CAST(@ActorId AS NVARCHAR(100)))
+      @ActorId, 'sessions_revoked', 'user', CAST(@UserId AS NVARCHAR(20)),
+      JSON_OBJECT('revokedBy': CAST(@ActorId AS NVARCHAR(20)))
     );
 
   COMMIT TRANSACTION;
@@ -1112,69 +980,54 @@ GO
 -- sp_GetOrCreateUser
 -- Idempotent user lookup/creation for the app-DB create-player
 -- and bulk-import flows.
---
--- If a user with @Email already exists: returns their ID.
--- If not: creates the account with role_id = 6 (player) and
---   a placeholder password hash (account requires invite to
---   set a real password before they can log in).
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetOrCreateUser
   @Email     NVARCHAR(255),
   @FirstName NVARCHAR(100),
   @LastName  NVARCHAR(100),
-  @TeamId    INT = NULL,
-  @CreatedBy UNIQUEIDENTIFIER = NULL,   -- who triggered the import; NULL = system
-  -- Output
-  @UserId    UNIQUEIDENTIFIER OUTPUT,
-  @UserIntId INT              OUTPUT,   -- integer user_id, consistent across Global + App DBs
-  @ErrorCode NVARCHAR(50)     OUTPUT    -- NULL = success; 'CREATED' = new account made
+  @TeamId    INT             = NULL,
+  @CreatedBy BIGINT          = NULL,
+  @UserId    BIGINT          OUTPUT,
+  @ErrorCode NVARCHAR(50)    OUTPUT
 AS
 BEGIN
   SET NOCOUNT ON;
   SET XACT_ABORT ON;
   SET @ErrorCode = NULL;
   SET @UserId    = NULL;
-  SET @UserIntId = NULL;
 
-  -- Validate team if provided
   IF @TeamId IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.teams WHERE id = @TeamId AND is_active = 1)
   BEGIN
     SET @ErrorCode = 'TEAM_NOT_FOUND';
     RETURN;
   END
 
-  -- Return existing user if email already registered
   IF EXISTS (SELECT 1 FROM dbo.users WHERE email = @Email)
   BEGIN
-    SELECT @UserId = id, @UserIntId = user_id FROM dbo.users WHERE email = @Email;
-    -- Ensure they are linked to this team
+    SELECT @UserId = user_id FROM dbo.users WHERE email = @Email;
+
     IF @TeamId IS NOT NULL
       AND NOT EXISTS (SELECT 1 FROM dbo.user_teams WHERE user_id = @UserId AND team_id = @TeamId)
     BEGIN
       INSERT INTO dbo.user_teams (user_id, team_id)
       VALUES (@UserId, @TeamId);
     END
-    RETURN;   -- @ErrorCode stays NULL — caller treats this as success
+
+    RETURN;
   END
 
-  -- Create new account
-  -- Password hash is a sentinel value; account cannot log in until the
-  -- user redeems an invite token and sets a real password.
   BEGIN TRANSACTION;
 
-    SET @UserId = NEWID();
-
-    INSERT INTO dbo.users (id, email, password_hash, first_name, last_name, role_id)
+    INSERT INTO dbo.users (email, password_hash, first_name, last_name, role_id)
     VALUES (
-      @UserId,
       @Email,
-      'INVITE_PENDING',   -- bcrypt never matches this; login blocked until invite redeemed
+      'INVITE_PENDING',
       @FirstName,
       @LastName,
-      6          -- player (dbo.roles.id = 6)
+      6
     );
 
-    SELECT @UserIntId = user_id FROM dbo.users WHERE id = @UserId;
+    SET @UserId = SCOPE_IDENTITY();
 
     IF @TeamId IS NOT NULL
     BEGIN
@@ -1187,7 +1040,7 @@ BEGIN
       @CreatedBy,
       'user_created',
       'user',
-      CAST(@UserId AS NVARCHAR(100)),
+      CAST(@UserId AS NVARCHAR(20)),
       JSON_OBJECT(
         'email':    @Email,
         'roleId':   '6',
@@ -1199,23 +1052,22 @@ BEGIN
 
   COMMIT TRANSACTION;
 
-  SET @ErrorCode = 'CREATED';   -- informational: caller knows a new account was made
+  SET @ErrorCode = 'CREATED';
 END;
 GO
 
 -- ============================================================
 -- sp_GetUserProfile
 -- Returns profile fields for the authenticated user.
--- Called by GET /api/profile.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetUserProfile
-  @UserId UNIQUEIDENTIFIER
+  @UserId BIGINT
 AS
 BEGIN
   SET NOCOUNT ON;
 
   SELECT
-    u.id,
+    u.user_id       AS userId,
     u.email,
     u.first_name    AS firstName,
     u.last_name     AS lastName,
@@ -1223,21 +1075,19 @@ BEGIN
     r.role_name     AS role,
     u.last_login_at AS lastLoginAt,
     u.created_at    AS createdAt,
-    CAST(utp.preferred_team_id AS NVARCHAR(100)) AS preferredTeamId
+    utp.preferred_team_id AS preferredTeamId
   FROM dbo.users u
   JOIN dbo.roles r ON r.id = u.role_id
-  LEFT JOIN dbo.user_team_preferences utp ON utp.user_id = u.id
-  WHERE u.id = @UserId;
+  LEFT JOIN dbo.user_team_preferences utp ON utp.user_id = u.user_id
+  WHERE u.user_id = @UserId;
 END;
 GO
 
 -- ============================================================
 -- sp_UpdateProfile
--- Updates the display name for the authenticated user.
--- Called by PATCH /api/profile.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_UpdateProfile
-  @UserId    UNIQUEIDENTIFIER,
+  @UserId    BIGINT,
   @FirstName NVARCHAR(100),
   @LastName  NVARCHAR(100),
   @ErrorCode NVARCHAR(50) OUTPUT
@@ -1246,7 +1096,7 @@ BEGIN
   SET NOCOUNT ON;
   SET @ErrorCode = NULL;
 
-  IF NOT EXISTS (SELECT 1 FROM dbo.users WHERE id = @UserId AND is_active = 1)
+  IF NOT EXISTS (SELECT 1 FROM dbo.users WHERE user_id = @UserId AND is_active = 1)
   BEGIN
     SET @ErrorCode = 'USER_NOT_FOUND';
     RETURN;
@@ -1256,11 +1106,11 @@ BEGIN
   SET    first_name = @FirstName,
          last_name  = @LastName,
          updated_at = SYSUTCDATETIME()
-  WHERE  id = @UserId;
+  WHERE  user_id = @UserId;
 
   INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload)
   VALUES (
-    @UserId, 'profile_updated', 'user', CAST(@UserId AS NVARCHAR(100)),
+    @UserId, 'profile_updated', 'user', CAST(@UserId AS NVARCHAR(20)),
     JSON_OBJECT('firstName': @FirstName, 'lastName': @LastName)
   );
 END;
@@ -1268,13 +1118,9 @@ GO
 
 -- ============================================================
 -- sp_GetPasswordHash
--- Returns the bcrypt password hash for a user.
--- The route handler calls bcrypt.compare — password logic
--- never lives in SQL.
--- Called by PATCH /api/profile/email and /api/profile/password.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetPasswordHash
-  @UserId       UNIQUEIDENTIFIER,
+  @UserId       BIGINT,
   @PasswordHash NVARCHAR(255) OUTPUT
 AS
 BEGIN
@@ -1283,19 +1129,15 @@ BEGIN
 
   SELECT @PasswordHash = password_hash
   FROM   dbo.users
-  WHERE  id = @UserId AND is_active = 1;
+  WHERE  user_id = @UserId AND is_active = 1;
 END;
 GO
 
 -- ============================================================
 -- sp_ChangeEmail
--- Updates email and bumps token_version (invalidates all JWTs).
--- Route handler must verify current password via bcrypt before
--- calling this SP.
--- Called by PATCH /api/profile/email.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_ChangeEmail
-  @UserId    UNIQUEIDENTIFIER,
+  @UserId    BIGINT,
   @NewEmail  NVARCHAR(255),
   @ErrorCode NVARCHAR(50) OUTPUT
 AS
@@ -1303,13 +1145,13 @@ BEGIN
   SET NOCOUNT ON;
   SET @ErrorCode = NULL;
 
-  IF NOT EXISTS (SELECT 1 FROM dbo.users WHERE id = @UserId AND is_active = 1)
+  IF NOT EXISTS (SELECT 1 FROM dbo.users WHERE user_id = @UserId AND is_active = 1)
   BEGIN
     SET @ErrorCode = 'USER_NOT_FOUND';
     RETURN;
   END
 
-  IF EXISTS (SELECT 1 FROM dbo.users WHERE email = @NewEmail AND id <> @UserId)
+  IF EXISTS (SELECT 1 FROM dbo.users WHERE email = @NewEmail AND user_id <> @UserId)
   BEGIN
     SET @ErrorCode = 'EMAIL_ALREADY_EXISTS';
     RETURN;
@@ -1320,9 +1162,8 @@ BEGIN
     SET    email         = @NewEmail,
            token_version = token_version + 1,
            updated_at    = SYSUTCDATETIME()
-    WHERE  id = @UserId;
+    WHERE  user_id = @UserId;
 
-    -- Revoke all refresh tokens so the user must re-login with the new email
     UPDATE dbo.refresh_tokens
     SET    revoked_at = SYSUTCDATETIME()
     WHERE  user_id    = @UserId
@@ -1330,7 +1171,7 @@ BEGIN
 
     INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload)
     VALUES (
-      @UserId, 'email_changed', 'user', CAST(@UserId AS NVARCHAR(100)),
+      @UserId, 'email_changed', 'user', CAST(@UserId AS NVARCHAR(20)),
       JSON_OBJECT('newEmail': @NewEmail)
     );
   COMMIT TRANSACTION;
@@ -1339,13 +1180,9 @@ GO
 
 -- ============================================================
 -- sp_ChangePassword
--- Updates the password hash and bumps token_version.
--- Route handler must verify current password via bcrypt before
--- calling this SP.
--- Called by PATCH /api/profile/password.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_ChangePassword
-  @UserId          UNIQUEIDENTIFIER,
+  @UserId          BIGINT,
   @NewPasswordHash NVARCHAR(255),
   @ErrorCode       NVARCHAR(50) OUTPUT
 AS
@@ -1353,7 +1190,7 @@ BEGIN
   SET NOCOUNT ON;
   SET @ErrorCode = NULL;
 
-  IF NOT EXISTS (SELECT 1 FROM dbo.users WHERE id = @UserId AND is_active = 1)
+  IF NOT EXISTS (SELECT 1 FROM dbo.users WHERE user_id = @UserId AND is_active = 1)
   BEGIN
     SET @ErrorCode = 'USER_NOT_FOUND';
     RETURN;
@@ -1364,7 +1201,7 @@ BEGIN
     SET    password_hash  = @NewPasswordHash,
            token_version  = token_version + 1,
            updated_at     = SYSUTCDATETIME()
-    WHERE  id = @UserId;
+    WHERE  user_id = @UserId;
 
     UPDATE dbo.refresh_tokens
     SET    revoked_at = SYSUTCDATETIME()
@@ -1373,7 +1210,7 @@ BEGIN
 
     INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload)
     VALUES (
-      @UserId, 'password_changed', 'user', CAST(@UserId AS NVARCHAR(100)),
+      @UserId, 'password_changed', 'user', CAST(@UserId AS NVARCHAR(20)),
       JSON_OBJECT('source': 'self_service')
     );
   COMMIT TRANSACTION;
@@ -1382,13 +1219,9 @@ GO
 
 -- ============================================================
 -- sp_SetPreferredTeam
--- Upserts a user's preferred default team.
--- Validates the user still has access to the requested team
--- before persisting. platform_owner (role_id = 1) can pin any
--- active team.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_SetPreferredTeam
-  @UserId    UNIQUEIDENTIFIER,
+  @UserId    BIGINT,
   @TeamId    INT,
   @ErrorCode NVARCHAR(50) OUTPUT
 AS
@@ -1396,16 +1229,14 @@ BEGIN
   SET NOCOUNT ON;
   SET @ErrorCode = NULL;
 
-  -- Verify the team is active
   IF NOT EXISTS (SELECT 1 FROM dbo.teams WHERE id = @TeamId AND is_active = 1)
   BEGIN
     SET @ErrorCode = 'TEAM_NOT_FOUND';
     RETURN;
   END
 
-  -- Verify the user exists and get their role
   DECLARE @RoleId INT;
-  SELECT @RoleId = role_id FROM dbo.users WHERE id = @UserId AND is_active = 1;
+  SELECT @RoleId = role_id FROM dbo.users WHERE user_id = @UserId AND is_active = 1;
 
   IF @RoleId IS NULL
   BEGIN
@@ -1413,7 +1244,6 @@ BEGIN
     RETURN;
   END
 
-  -- platform_owner (role_id = 1) can pin any active team; others must have user_teams access
   IF @RoleId <> 1
     AND NOT EXISTS (
       SELECT 1 FROM dbo.user_teams
@@ -1424,7 +1254,6 @@ BEGIN
     RETURN;
   END
 
-  -- Upsert the preference
   IF EXISTS (SELECT 1 FROM dbo.user_team_preferences WHERE user_id = @UserId)
     UPDATE dbo.user_team_preferences
     SET    preferred_team_id = @TeamId,
