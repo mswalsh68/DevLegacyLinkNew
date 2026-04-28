@@ -507,10 +507,10 @@ BEGIN
   SET @FailureJson   = '[]';
   SET @SucceededJson = '[]';
 
-  DECLARE @failures  TABLE (player_id INT, reason NVARCHAR(500));
-  DECLARE @succeeded TABLE (player_id INT, alumni_id INT);
-  DECLARE @playerIds TABLE (player_id INT);
-  DECLARE @currentId INT;
+  DECLARE @failures   TABLE (player_id INT, reason NVARCHAR(500));
+  DECLARE @succeeded  TABLE (player_id INT, alumni_id INT);
+  DECLARE @idList     TABLE (player_id INT);
+  DECLARE @currentId  INT;
 
   IF @GraduationYear < 2000 OR @GraduationYear > 2100
   BEGIN
@@ -524,12 +524,12 @@ BEGIN
     RETURN;
   END
 
-  INSERT INTO @playerIds
+  INSERT INTO @idList
   SELECT TRY_CAST([value] AS INT)
   FROM OPENJSON(@PlayerIds)
   WHERE TRY_CAST([value] AS INT) IS NOT NULL;
 
-  DECLARE cur CURSOR FOR SELECT player_id FROM @playerIds;
+  DECLARE cur CURSOR FOR SELECT player_id FROM @idList;
   OPEN cur;
   FETCH NEXT FROM cur INTO @currentId;
 
