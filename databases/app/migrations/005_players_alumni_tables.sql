@@ -260,8 +260,8 @@ CREATE TABLE dbo.email_unsubscribes (
   )
 );
 -- Filtered unique indexes must be created outside CREATE TABLE in SQL Server
-CREATE UNIQUE INDEX UQ_unsub_player_channel    ON dbo.email_unsubscribes(player_id, channel) WHERE player_id IS NOT NULL;
-CREATE UNIQUE INDEX UQ_unsub_alumni_channel     ON dbo.email_unsubscribes(alumni_id,  channel) WHERE alumni_id  IS NOT NULL;
+CREATE UNIQUE INDEX UQ_unsub_player_channel ON dbo.email_unsubscribes(player_id, channel);
+CREATE UNIQUE INDEX UQ_unsub_alumni_channel  ON dbo.email_unsubscribes(alumni_id,  channel);
 CREATE UNIQUE INDEX UQ_email_unsubscribes_token ON dbo.email_unsubscribes(token);
 PRINT 'Created new dbo.email_unsubscribes';
 GO
@@ -305,8 +305,8 @@ CREATE TABLE dbo.outreach_messages (
   )
 );
 CREATE INDEX IX_outreach_messages_campaign ON dbo.outreach_messages(campaign_id);
-CREATE INDEX IX_outreach_messages_player   ON dbo.outreach_messages(player_id) WHERE player_id IS NOT NULL;
-CREATE INDEX IX_outreach_messages_alumni   ON dbo.outreach_messages(alumni_id) WHERE alumni_id IS NOT NULL;
+CREATE INDEX IX_outreach_messages_player ON dbo.outreach_messages(player_id);
+CREATE INDEX IX_outreach_messages_alumni ON dbo.outreach_messages(alumni_id);
 PRINT 'Created new dbo.outreach_messages';
 GO
 
