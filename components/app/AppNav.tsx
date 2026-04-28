@@ -91,9 +91,25 @@ export function AppNav() {
 
     try { localStorage.setItem('dll_selected_team_id', String(team.teamId)) } catch { /* ignore */ }
 
-    // Clear sessionStorage so ThemeProvider doesn't paint stale old-team colors
-    // on the new page load before the /api/config fetch completes.
-    try { sessionStorage.removeItem('dll_team_config') } catch { /* ignore */ }
+    // Seed sessionStorage with the new team's colors so ThemeProvider paints
+    // correctly on reload even when /api/config fails (DB type mismatch fallback).
+    try {
+      const teamConfigData = {
+        teamName:      team.teamName,
+        sport:         team.sport,
+        level:         team.level,
+        primaryColor:  team.primaryColor,
+        accentColor:   team.accentColor,
+        secondaryColor: team.secondaryColor ?? team.accentColor,
+        positions:     team.positions,
+        academicYears: team.academicYears,
+        customLabels:  team.customLabels ?? {},
+      }
+      sessionStorage.setItem(
+        'dll_team_config',
+        JSON.stringify({ data: teamConfigData, ts: Date.now(), teamId: team.teamId }),
+      )
+    } catch { /* ignore */ }
 
     // Hard reload — same pattern as the original project.
     // ThemeProvider re-mounts fresh and /api/config returns the new team's config
@@ -255,7 +271,7 @@ export function AppNav() {
                 </div>
 
                 {teams.map((team) => {
-                  const active = config.teamName === team.teamName
+                  const active = user?.currentTeamId === team.teamId
                   return (
                     <button
                       key={team.teamId}
