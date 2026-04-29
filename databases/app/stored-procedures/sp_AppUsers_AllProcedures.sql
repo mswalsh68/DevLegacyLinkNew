@@ -1,24 +1,25 @@
 -- ============================================================
 -- APP DB — USER SYNC STORED PROCEDURES
 -- Run this file on: LegacyLinkApp (and every tenant App DB)
--- Requires: 004_users_program_role.sql to have run
+-- Requires: 008_schema_refactor.sql to have run
 -- ============================================================
 -- Procedures:
 --   sp_UpsertAppUser       — sync global user record into App DB dbo.users
 --   sp_UpdateLastTeamLogin — stamp last_team_login on successful app login
 --   sp_GetProgramRoles     — returns program_role lookup for dropdowns
---   sp_SetProgramRole      — assigns a program_role to a user in this App DB
+--   sp_SetProgramRole      — upserts a users_roles record for a user
+--                            (program_role_id is now on users_roles, not users)
 -- ============================================================
 
 -- ============================================================
 -- sp_UpsertAppUser
--- Called on team switch when global data has changed
--- (sp_SyncUserToAppDb returned a contactUpdatedDate newer than
--- the App DB users.synced_at).
+-- Called on team switch when global data has changed.
 -- Creates the row if the user has never logged into this team before.
+-- NOTE: program_role_id was removed from dbo.users in migration 008.
+--       Role assignment goes through sp_SetProgramRole → users_roles.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_UpsertAppUser
-  @UserId       INT,            -- global user_id (INT, not GUID)
+  @UserId       INT,            -- global user_id (INT)
   @Email        NVARCHAR(255),
   @FirstName    NVARCHAR(100),
   @LastName     NVARCHAR(100),
@@ -80,14 +81,19 @@ GO
 
 -- ============================================================
 -- sp_SetProgramRole
--- Assigns a program_role to a user within this App DB.
+-- Upserts a users_roles record for a user within this App DB.
 -- Called by admins from the member management UI.
--- program_role is program-local only — never synced back to global.
+-- Roles are program-local — never synced back to global.
+--
+-- @Status: 'current_player' | 'alumni' | 'removed'
+-- @SportId: NULL means the role applies to any/all sports
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_SetProgramRole
   @UserId        INT,
   @ProgramRoleId INT,
-  @ErrorCode     NVARCHAR(50) OUTPUT
+  @SportId       INT           = NULL,
+  @Status        NVARCHAR(20)  = 'current_player',
+  @ErrorCode     NVARCHAR(50)  OUTPUT
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -105,8 +111,37 @@ BEGIN
     RETURN;
   END
 
-  UPDATE dbo.users
-  SET    program_role_id = @ProgramRoleId
-  WHERE  user_id = @UserId;
+  IF @SportId IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.sports WHERE id = @SportId AND is_active = 1)
+  BEGIN
+    SET @ErrorCode = 'INVALID_SPORT';
+    RETURN;
+  END
+
+  IF @Status NOT IN ('current_player', 'alumni', 'removed')
+  BEGIN
+    SET @ErrorCode = 'INVALID_STATUS';
+    RETURN;
+  END
+
+  -- Upsert into users_roles
+  IF EXISTS (
+    SELECT 1 FROM dbo.users_roles
+    WHERE user_id        = @UserId
+      AND program_role_id= @ProgramRoleId
+      AND ((@SportId IS NULL AND sport_id IS NULL) OR sport_id = @SportId)
+  )
+  BEGIN
+    UPDATE dbo.users_roles SET
+      status     = @Status,
+      updated_at = SYSUTCDATETIME()
+    WHERE user_id         = @UserId
+      AND program_role_id = @ProgramRoleId
+      AND ((@SportId IS NULL AND sport_id IS NULL) OR sport_id = @SportId);
+  END
+  ELSE
+  BEGIN
+    INSERT INTO dbo.users_roles (user_id, program_role_id, sport_id, status)
+    VALUES (@UserId, @ProgramRoleId, @SportId, @Status);
+  END
 END;
 GO
