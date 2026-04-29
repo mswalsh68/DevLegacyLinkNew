@@ -157,7 +157,12 @@ ELSE
   PRINT 'users_sports.sport_id is not GUID or does not exist — skipped';
 GO
 
--- 2d. Rename sport_id_int → sport_id (if the rename hasn't happened yet)
+-- 2d. Ensure sport_id INT NOT NULL exists on users_sports.
+--     Three cases handled:
+--       A) sport_id_int exists, sport_id gone  → rename sport_id_int
+--       B) sport_id_int exists, sport_id exists → drop sport_id_int leftover
+--       C) neither exists (both were dropped)   → ADD new INT column
+--       D) sport_id already INT NOT NULL        → nothing to do
 IF COL_LENGTH('dbo.users_sports', 'sport_id_int') IS NOT NULL
    AND COL_LENGTH('dbo.users_sports', 'sport_id') IS NULL
 BEGIN
@@ -167,17 +172,33 @@ END
 ELSE IF COL_LENGTH('dbo.users_sports', 'sport_id_int') IS NOT NULL
         AND COL_LENGTH('dbo.users_sports', 'sport_id') IS NOT NULL
 BEGIN
-  -- sport_id_int leftover alongside the new INT sport_id — just drop it
   ALTER TABLE dbo.users_sports DROP COLUMN sport_id_int;
   PRINT 'Dropped leftover sport_id_int column';
 END
+ELSE IF COL_LENGTH('dbo.users_sports', 'sport_id') IS NULL
+BEGIN
+  -- Neither column exists — add a fresh INT sport_id
+  ALTER TABLE dbo.users_sports ADD sport_id INT NULL;
+  PRINT 'Added sport_id INT column';
+END
 ELSE
-  PRINT 'sport_id_int already renamed or does not exist — skipped';
+  PRINT 'sport_id already exists — skipped';
 GO
 
--- 2e. Make sport_id NOT NULL (it was added as INT NULL)
-ALTER TABLE dbo.users_sports ALTER COLUMN sport_id INT NOT NULL;
-PRINT 'Set users_sports.sport_id NOT NULL';
+-- 2e. Make sport_id NOT NULL (safe — dev table has 0 rows)
+IF EXISTS (
+  SELECT 1 FROM sys.columns c
+  JOIN sys.types t ON t.user_type_id = c.user_type_id
+  WHERE c.object_id = OBJECT_ID('dbo.users_sports')
+    AND c.name      = 'sport_id'
+    AND c.is_nullable = 1
+)
+BEGIN
+  ALTER TABLE dbo.users_sports ALTER COLUMN sport_id INT NOT NULL;
+  PRINT 'Set users_sports.sport_id NOT NULL';
+END
+ELSE
+  PRINT 'sport_id already NOT NULL — skipped';
 GO
 
 -- 2f. Re-add FK to dbo.sports
