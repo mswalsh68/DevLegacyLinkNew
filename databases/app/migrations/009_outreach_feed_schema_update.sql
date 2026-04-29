@@ -91,6 +91,19 @@ BEGIN
     AND  c.name = 'sport_id';
   IF LEN(@fp_fk) > 0 EXEC sp_executesql @fp_fk;
 
+  -- Drop any standalone indexes on sport_id (e.g. idx_feed_posts_sport)
+  DECLARE @fp_idx NVARCHAR(MAX) = N'';
+  SELECT @fp_idx += N'DROP INDEX ' + QUOTENAME(i.name) + N' ON dbo.feed_posts; '
+  FROM   sys.indexes i
+  JOIN   sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+  JOIN   sys.columns c        ON c.object_id  = ic.object_id AND c.column_id = ic.column_id
+  LEFT JOIN sys.key_constraints kc ON kc.name = i.name AND kc.parent_object_id = i.object_id
+  WHERE  i.object_id = OBJECT_ID('dbo.feed_posts')
+    AND  c.name      = 'sport_id'
+    AND  i.type      > 0
+    AND  kc.object_id IS NULL;  -- standalone only; FK/UQ constraints handled above
+  IF LEN(@fp_idx) > 0 EXEC sp_executesql @fp_idx;
+
   ALTER TABLE dbo.feed_posts DROP COLUMN sport_id;
   ALTER TABLE dbo.feed_posts ADD sport_id INT NULL
     CONSTRAINT FK_fp_sport REFERENCES dbo.sports(id);
@@ -105,6 +118,27 @@ GO
 -- 3a. Drop old columns (FKs to players/alumni already removed in migration 008)
 IF COL_LENGTH('dbo.outreach_messages', 'player_id') IS NOT NULL
 BEGIN
+  -- Drop any CHECK constraints referencing player_id (e.g. CHK_om_recipient)
+  DECLARE @om_chk1 NVARCHAR(MAX) = N'';
+  SELECT @om_chk1 += N'ALTER TABLE dbo.outreach_messages DROP CONSTRAINT ' + QUOTENAME(cc.name) + N'; '
+  FROM   sys.check_constraints cc
+  WHERE  cc.parent_object_id = OBJECT_ID('dbo.outreach_messages')
+    AND  cc.definition LIKE N'%player_id%';
+  IF LEN(@om_chk1) > 0 EXEC sp_executesql @om_chk1;
+
+  -- Drop any standalone indexes referencing player_id (e.g. IX_outreach_messages_player)
+  DECLARE @om_idx1 NVARCHAR(MAX) = N'';
+  SELECT @om_idx1 += N'DROP INDEX ' + QUOTENAME(i.name) + N' ON dbo.outreach_messages; '
+  FROM   sys.indexes i
+  JOIN   sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+  JOIN   sys.columns c        ON c.object_id  = ic.object_id AND c.column_id = ic.column_id
+  LEFT JOIN sys.key_constraints kc ON kc.name = i.name AND kc.parent_object_id = i.object_id
+  WHERE  i.object_id = OBJECT_ID('dbo.outreach_messages')
+    AND  c.name      = 'player_id'
+    AND  i.type      > 0
+    AND  kc.object_id IS NULL;
+  IF LEN(@om_idx1) > 0 EXEC sp_executesql @om_idx1;
+
   -- Drop any residual default constraints
   DECLARE @om_dc1 NVARCHAR(200);
   SELECT TOP 1 @om_dc1 = dc.name
@@ -122,6 +156,27 @@ GO
 
 IF COL_LENGTH('dbo.outreach_messages', 'alumni_id') IS NOT NULL
 BEGIN
+  -- Drop any CHECK constraints referencing alumni_id (CHK_om_recipient may still exist if player_id block was skipped)
+  DECLARE @om_chk2 NVARCHAR(MAX) = N'';
+  SELECT @om_chk2 += N'ALTER TABLE dbo.outreach_messages DROP CONSTRAINT ' + QUOTENAME(cc.name) + N'; '
+  FROM   sys.check_constraints cc
+  WHERE  cc.parent_object_id = OBJECT_ID('dbo.outreach_messages')
+    AND  cc.definition LIKE N'%alumni_id%';
+  IF LEN(@om_chk2) > 0 EXEC sp_executesql @om_chk2;
+
+  -- Drop any standalone indexes referencing alumni_id (e.g. IX_outreach_messages_alumni)
+  DECLARE @om_idx2 NVARCHAR(MAX) = N'';
+  SELECT @om_idx2 += N'DROP INDEX ' + QUOTENAME(i.name) + N' ON dbo.outreach_messages; '
+  FROM   sys.indexes i
+  JOIN   sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+  JOIN   sys.columns c        ON c.object_id  = ic.object_id AND c.column_id = ic.column_id
+  LEFT JOIN sys.key_constraints kc ON kc.name = i.name AND kc.parent_object_id = i.object_id
+  WHERE  i.object_id = OBJECT_ID('dbo.outreach_messages')
+    AND  c.name      = 'alumni_id'
+    AND  i.type      > 0
+    AND  kc.object_id IS NULL;
+  IF LEN(@om_idx2) > 0 EXEC sp_executesql @om_idx2;
+
   DECLARE @om_dc2 NVARCHAR(200);
   SELECT TOP 1 @om_dc2 = dc.name
   FROM   sys.default_constraints dc
@@ -152,9 +207,26 @@ GO
 -- 4a. Drop old columns (FKs already removed in migration 008)
 IF COL_LENGTH('dbo.email_unsubscribes', 'player_id') IS NOT NULL
 BEGIN
-  -- Drop any unique indexes referencing player_id
-  IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_unsub_player_channel')
-    DROP INDEX UQ_unsub_player_channel ON dbo.email_unsubscribes;
+  -- Drop any CHECK constraints referencing player_id (e.g. CHK_unsub_recipient)
+  DECLARE @eu_chk1 NVARCHAR(MAX) = N'';
+  SELECT @eu_chk1 += N'ALTER TABLE dbo.email_unsubscribes DROP CONSTRAINT ' + QUOTENAME(cc.name) + N'; '
+  FROM   sys.check_constraints cc
+  WHERE  cc.parent_object_id = OBJECT_ID('dbo.email_unsubscribes')
+    AND  cc.definition LIKE N'%player_id%';
+  IF LEN(@eu_chk1) > 0 EXEC sp_executesql @eu_chk1;
+
+  -- Drop any standalone indexes referencing player_id (e.g. UQ_unsub_player_channel)
+  DECLARE @eu_idx1 NVARCHAR(MAX) = N'';
+  SELECT @eu_idx1 += N'DROP INDEX ' + QUOTENAME(i.name) + N' ON dbo.email_unsubscribes; '
+  FROM   sys.indexes i
+  JOIN   sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+  JOIN   sys.columns c        ON c.object_id  = ic.object_id AND c.column_id = ic.column_id
+  LEFT JOIN sys.key_constraints kc ON kc.name = i.name AND kc.parent_object_id = i.object_id
+  WHERE  i.object_id = OBJECT_ID('dbo.email_unsubscribes')
+    AND  c.name      = 'player_id'
+    AND  i.type      > 0
+    AND  kc.object_id IS NULL;
+  IF LEN(@eu_idx1) > 0 EXEC sp_executesql @eu_idx1;
 
   DECLARE @eu_dc1 NVARCHAR(200);
   SELECT TOP 1 @eu_dc1 = dc.name
@@ -172,8 +244,26 @@ GO
 
 IF COL_LENGTH('dbo.email_unsubscribes', 'alumni_id') IS NOT NULL
 BEGIN
-  IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_unsub_alumni_channel')
-    DROP INDEX UQ_unsub_alumni_channel ON dbo.email_unsubscribes;
+  -- Drop any CHECK constraints referencing alumni_id (CHK_unsub_recipient may still exist if player_id block was skipped)
+  DECLARE @eu_chk2 NVARCHAR(MAX) = N'';
+  SELECT @eu_chk2 += N'ALTER TABLE dbo.email_unsubscribes DROP CONSTRAINT ' + QUOTENAME(cc.name) + N'; '
+  FROM   sys.check_constraints cc
+  WHERE  cc.parent_object_id = OBJECT_ID('dbo.email_unsubscribes')
+    AND  cc.definition LIKE N'%alumni_id%';
+  IF LEN(@eu_chk2) > 0 EXEC sp_executesql @eu_chk2;
+
+  -- Drop any standalone indexes referencing alumni_id (e.g. UQ_unsub_alumni_channel)
+  DECLARE @eu_idx2 NVARCHAR(MAX) = N'';
+  SELECT @eu_idx2 += N'DROP INDEX ' + QUOTENAME(i.name) + N' ON dbo.email_unsubscribes; '
+  FROM   sys.indexes i
+  JOIN   sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+  JOIN   sys.columns c        ON c.object_id  = ic.object_id AND c.column_id = ic.column_id
+  LEFT JOIN sys.key_constraints kc ON kc.name = i.name AND kc.parent_object_id = i.object_id
+  WHERE  i.object_id = OBJECT_ID('dbo.email_unsubscribes')
+    AND  c.name      = 'alumni_id'
+    AND  i.type      > 0
+    AND  kc.object_id IS NULL;
+  IF LEN(@eu_idx2) > 0 EXEC sp_executesql @eu_idx2;
 
   DECLARE @eu_dc2 NVARCHAR(200);
   SELECT TOP 1 @eu_dc2 = dc.name

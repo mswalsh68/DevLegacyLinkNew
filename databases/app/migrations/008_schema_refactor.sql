@@ -187,8 +187,9 @@ FROM (VALUES
 ) v(id, name, abbr, default_active)
 WHERE NOT EXISTS (SELECT 1 FROM dbo.sports s WHERE s.id = v.id);
 
+DECLARE @SportsSeedCount INT = @@ROWCOUNT;  -- capture before SET resets it
 SET IDENTITY_INSERT dbo.sports OFF;
-PRINT CONCAT('Seeded ', @@ROWCOUNT, ' sports row(s) with INT IDs');
+PRINT CONCAT('Seeded ', @SportsSeedCount, ' sports row(s) with INT IDs');
 GO
 
 -- ══════════════════════════════════════════════════════════════
@@ -227,12 +228,20 @@ JOIN sys.columns c ON c.default_object_id = dc.object_id
 WHERE c.object_id = OBJECT_ID('dbo.users_sports') AND c.name = 'sport_id';
 IF @USSportDC IS NOT NULL EXEC(N'ALTER TABLE dbo.users_sports DROP CONSTRAINT [' + @USSportDC + N']');
 
--- Drop any indexes covering sport_id (e.g. UQ_users_sports) — required before DROP COLUMN
+-- Drop any indexes/constraints covering sport_id (e.g. UQ_users_sports)
+-- Must use ALTER TABLE DROP CONSTRAINT for unique key constraints,
+-- and DROP INDEX for standalone indexes — cannot mix them.
 DECLARE @USIdxDrop NVARCHAR(MAX) = N'';
-SELECT @USIdxDrop += N'DROP INDEX ' + QUOTENAME(i.name) + N' ON dbo.users_sports; '
+SELECT @USIdxDrop +=
+  CASE
+    WHEN kc.object_id IS NOT NULL
+    THEN N'ALTER TABLE dbo.users_sports DROP CONSTRAINT ' + QUOTENAME(i.name) + N'; '
+    ELSE N'DROP INDEX ' + QUOTENAME(i.name) + N' ON dbo.users_sports; '
+  END
 FROM   sys.indexes i
 JOIN   sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
 JOIN   sys.columns c        ON c.object_id  = ic.object_id AND c.column_id = ic.column_id
+LEFT JOIN sys.key_constraints kc ON kc.name = i.name AND kc.parent_object_id = i.object_id
 WHERE  i.object_id = OBJECT_ID('dbo.users_sports')
   AND  c.name      = 'sport_id'
   AND  i.type      > 0;  -- exclude heap
