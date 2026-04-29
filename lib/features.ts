@@ -12,15 +12,16 @@
 export type Tier = 'starter' | 'pro' | 'elite'
 
 const FEATURE_MATRIX: Record<string, Tier[]> = {
-  // Available on all tiers
+  // Available on all tiers (starter+)
   interactions:      ['starter', 'pro', 'elite'],
   emails_sent:       ['starter', 'pro', 'elite'],
   player_feed_posts: ['starter', 'pro', 'elite'],
+  alumni_dashboard:  ['starter', 'pro', 'elite'],
+  login_frequency:   ['starter', 'pro', 'elite'],
+  email_open_rate:   ['starter', 'pro', 'elite'],
 
-  // Pro and above
-  alumni_dashboard:  ['pro', 'elite'],
-  login_frequency:   ['pro', 'elite'],
-  email_open_rate:   ['pro', 'elite'],
+  // Pro and above — player comms + full engagement tabs
+  player_dashboard:  ['pro', 'elite'],
 
   // Elite only
   events_module:     ['elite'],

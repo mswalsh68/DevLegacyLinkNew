@@ -119,10 +119,11 @@ function NavCard({ icon, title, description, href, hoverColor = theme.primary }:
 
 type TabId = 'all' | 'alumni' | 'players'
 
-function TabBar({ active, showAlumni, onChange }: {
-  active:     TabId
-  showAlumni: boolean
-  onChange:   (t: TabId) => void
+function TabBar({ active, showAlumni, showPlayers, onChange }: {
+  active:      TabId
+  showAlumni:  boolean
+  showPlayers: boolean
+  onChange:    (t: TabId) => void
 }) {
   const tabStyle = (id: TabId): CSSProperties => ({
     padding:         '10px 20px',
@@ -147,9 +148,11 @@ function TabBar({ active, showAlumni, onChange }: {
           🎓 Alumni Engagement
         </button>
       )}
-      <button style={tabStyle('players')} onClick={() => onChange('players')}>
-        🏈 Player Communications
-      </button>
+      {showPlayers && (
+        <button style={tabStyle('players')} onClick={() => onChange('players')}>
+          🏈 Player Communications
+        </button>
+      )}
     </div>
   )
 }
@@ -213,8 +216,11 @@ export default function DashboardContent() {
   // Staff = anyone who can view roster or alumni (coaches, alumni directors, etc.)
   const isStaff = canViewRoster || canViewAlumni
 
-  // Whether the alumni comms tab is available for this tenant tier AND user role
-  const alumniTabVisible = hasFeature(tier, 'alumni_dashboard') && canViewAlumni
+  // Tab visibility:
+  //   Alumni Engagement — starter+ (all tiers) and user has alumni:view
+  //   Player Communications — pro/elite only and user has roster:view
+  const alumniTabVisible  = hasFeature(tier, 'alumni_dashboard') && canViewAlumni
+  const playerTabVisible  = hasFeature(tier, 'player_dashboard') && canViewRoster
 
   // ── Load sports (only for staff) ─────────────────────────────────────────
   useEffect(() => {
@@ -233,9 +239,9 @@ export default function DashboardContent() {
   // ── Tab state (URL-persisted) ─────────────────────────────────────────────
   const tabParam = searchParams.get('tab') as TabId | null
   const validTab: TabId =
-    tabParam === 'alumni'   && alumniTabVisible ? 'alumni'
-    : tabParam === 'players'                    ? 'players'
-    : tabParam === 'all'                        ? 'all'
+    tabParam === 'alumni'  && alumniTabVisible  ? 'alumni'
+    : tabParam === 'players' && playerTabVisible ? 'players'
+    : tabParam === 'all'                         ? 'all'
     : 'all'   // default: All Engagement
 
   const [activeTab, setActiveTab] = useState<TabId>(validTab)
@@ -293,7 +299,7 @@ export default function DashboardContent() {
           </div>
 
           {/* ── Communications tab bar ── */}
-          <TabBar active={activeTab} showAlumni={alumniTabVisible} onChange={changeTab} />
+          <TabBar active={activeTab} showAlumni={alumniTabVisible} showPlayers={playerTabVisible} onChange={changeTab} />
 
           {/* ── Sport filter dropdown (shown when user has 2+ sports) ── */}
           {showSportFilter && (
