@@ -106,14 +106,12 @@ BEGIN
 
   DECLARE @CurrentTeamId INT;
   DECLARE @AppDb         NVARCHAR(100) = '';
-  DECLARE @DbServer      NVARCHAR(200) = '';
 
   IF @RoleId = 1
   BEGIN
     SELECT TOP 1
       @CurrentTeamId = t.id,
-      @AppDb         = t.app_db,
-      @DbServer      = t.db_server
+      @AppDb         = t.app_db
     FROM dbo.teams t
     WHERE t.is_active = 1
     ORDER BY t.name;
@@ -122,8 +120,7 @@ BEGIN
   BEGIN
     SELECT TOP 1
       @CurrentTeamId = t.id,
-      @AppDb         = t.app_db,
-      @DbServer      = t.db_server
+      @AppDb         = t.app_db
     FROM dbo.user_teams ut
     JOIN dbo.teams t ON t.id = ut.team_id
     WHERE ut.user_id   = @UserId
@@ -166,7 +163,6 @@ BEGIN
       @CurrentTeamId                        AS currentTeamId,
       @PreferredTeamId                      AS preferredTeamId,
       @AppDb                                AS appDb,
-      @DbServer                             AS dbServer,
       JSON_QUERY(@TeamsJson)                AS teams,
       (
         SELECT
@@ -321,7 +317,6 @@ BEGIN
 
   DECLARE @ResolvedTeamId INT;
   DECLARE @AppDb          NVARCHAR(100) = '';
-  DECLARE @DbServer       NVARCHAR(200) = '';
 
   IF @CurrentTeamId IS NOT NULL
   BEGIN
@@ -329,8 +324,7 @@ BEGIN
     BEGIN
       SELECT
         @ResolvedTeamId = t.id,
-        @AppDb          = t.app_db,
-        @DbServer       = t.db_server
+        @AppDb          = t.app_db
       FROM dbo.teams t
       WHERE t.id        = @CurrentTeamId
         AND t.is_active = 1;
@@ -339,8 +333,7 @@ BEGIN
     BEGIN
       SELECT
         @ResolvedTeamId = t.id,
-        @AppDb          = t.app_db,
-        @DbServer       = t.db_server
+        @AppDb          = t.app_db
       FROM dbo.user_teams ut
       JOIN dbo.teams t ON t.id = ut.team_id
       WHERE ut.user_id   = @UserId
@@ -356,8 +349,7 @@ BEGIN
     BEGIN
       SELECT TOP 1
         @ResolvedTeamId = t.id,
-        @AppDb          = t.app_db,
-        @DbServer       = t.db_server
+        @AppDb          = t.app_db
       FROM dbo.teams t
       WHERE t.is_active = 1
       ORDER BY t.name;
@@ -366,8 +358,7 @@ BEGIN
     BEGIN
       SELECT TOP 1
         @ResolvedTeamId = t.id,
-        @AppDb          = t.app_db,
-        @DbServer       = t.db_server
+        @AppDb          = t.app_db
       FROM dbo.user_teams ut
       JOIN dbo.teams t ON t.id = ut.team_id
       WHERE ut.user_id   = @UserId
@@ -412,7 +403,6 @@ BEGIN
       @ResolvedTeamId                          AS currentTeamId,
       @PreferredTeamId                         AS preferredTeamId,
       @AppDb                                   AS appDb,
-      @DbServer                                AS dbServer,
       JSON_QUERY(@TeamsJson)                   AS teams,
       (
         SELECT ap.app_name AS app, ap.role, ap.granted_at AS grantedAt, ap.granted_by AS grantedBy
@@ -489,7 +479,6 @@ BEGIN
       t.name,
       t.abbr,
       t.app_db               AS appDb,
-      t.db_server            AS dbServer,
       tc.logo_url            AS logoUrl,
       tc.color_primary       AS colorPrimary,
       tc.color_primary_dark  AS colorPrimaryDark,
