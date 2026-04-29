@@ -91,6 +91,17 @@ export function AppNav() {
 
     try { localStorage.setItem('dll_selected_team_id', String(team.teamId)) } catch { /* ignore */ }
 
+    // Update cfb_user in localStorage so AuthProvider reads the correct currentTeamId
+    // on the next page load (fast-path avoids a round-trip to /api/auth/me).
+    try {
+      const raw = localStorage.getItem('cfb_user')
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, unknown>
+        parsed.currentTeamId = team.teamId
+        localStorage.setItem('cfb_user', JSON.stringify(parsed))
+      }
+    } catch { /* ignore */ }
+
     // Seed sessionStorage with the new team's colors so ThemeProvider paints
     // correctly on reload even when /api/config fails (DB type mismatch fallback).
     try {
