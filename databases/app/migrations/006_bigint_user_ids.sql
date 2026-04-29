@@ -3,13 +3,12 @@
 -- Run on: LegacyLinkApp (and every tenant App DB)
 -- Requires: 024_bigint_user_pk.sql to have run on Global DB
 -- ============================================================
--- The Global DB users table now uses BIGINT for user_id (was INT).
--- This migration updates the two App DB columns that stored the old
--- UNIQUEIDENTIFIER JWT sub as a creator reference:
---   dbo.outreach_campaigns.created_by  UNIQUEIDENTIFIER → INT
---   dbo.feed_posts.created_by          UNIQUEIDENTIFIER → INT
--- All other App DB user FKs (user_id INT) are unchanged — INT is
--- assignment-compatible with BIGINT and all user_id values are small.
+-- SQL Server does not allow ALTER COLUMN from UNIQUEIDENTIFIER to INT directly.
+-- We use the add-new / drop-old / rename pattern instead.
+--
+-- Columns changed:
+--   dbo.outreach_campaigns.created_by  UNIQUEIDENTIFIER → INT NULL
+--   dbo.feed_posts.created_by          UNIQUEIDENTIFIER → INT NULL
 -- ============================================================
 
 USE LegacyLinkApp
@@ -27,7 +26,7 @@ BEGIN
 
   IF @col_type_oc = 'uniqueidentifier'
   BEGIN
-    -- Drop any FK or default constraint on the column first
+    -- Drop any default constraint on the old column
     DECLARE @oc_constraint NVARCHAR(200) = NULL;
     SELECT TOP 1 @oc_constraint = dc.name
     FROM   sys.default_constraints dc
@@ -37,11 +36,11 @@ BEGIN
     IF @oc_constraint IS NOT NULL
       EXEC(N'ALTER TABLE dbo.outreach_campaigns DROP CONSTRAINT [' + @oc_constraint + N']');
 
-    -- Clear stale GUID values (dev env — no real data to preserve)
-    UPDATE dbo.outreach_campaigns SET created_by = NULL;
-
-    ALTER TABLE dbo.outreach_campaigns ALTER COLUMN created_by INT NULL;
-    PRINT 'Altered outreach_campaigns.created_by: UNIQUEIDENTIFIER → INT';
+    -- Add replacement INT column, drop old, rename
+    ALTER TABLE dbo.outreach_campaigns ADD created_by_int INT NULL;
+    ALTER TABLE dbo.outreach_campaigns DROP COLUMN created_by;
+    EXEC sp_rename 'dbo.outreach_campaigns.created_by_int', 'created_by', 'COLUMN';
+    PRINT 'Altered outreach_campaigns.created_by: UNIQUEIDENTIFIER → INT NULL';
   END
   ELSE
     PRINT 'outreach_campaigns.created_by already INT — skipped';
@@ -62,6 +61,7 @@ BEGIN
 
   IF @col_type_fp = 'uniqueidentifier'
   BEGIN
+    -- Drop any default constraint on the old column
     DECLARE @fp_constraint NVARCHAR(200) = NULL;
     SELECT TOP 1 @fp_constraint = dc.name
     FROM   sys.default_constraints dc
@@ -71,10 +71,12 @@ BEGIN
     IF @fp_constraint IS NOT NULL
       EXEC(N'ALTER TABLE dbo.feed_posts DROP CONSTRAINT [' + @fp_constraint + N']');
 
-    UPDATE dbo.feed_posts SET created_by = NULL;
-
-    ALTER TABLE dbo.feed_posts ALTER COLUMN created_by INT NULL;
-    PRINT 'Altered feed_posts.created_by: UNIQUEIDENTIFIER → INT';
+    -- Add replacement INT column, drop old, rename
+    -- Dev data in created_by is stale GUIDs — no value to preserve
+    ALTER TABLE dbo.feed_posts ADD created_by_int INT NULL;
+    ALTER TABLE dbo.feed_posts DROP COLUMN created_by;
+    EXEC sp_rename 'dbo.feed_posts.created_by_int', 'created_by', 'COLUMN';
+    PRINT 'Altered feed_posts.created_by: UNIQUEIDENTIFIER → INT NULL';
   END
   ELSE
     PRINT 'feed_posts.created_by already INT — skipped';
@@ -84,12 +86,13 @@ ELSE
 GO
 
 -- ─── Verification ─────────────────────────────────────────────────────────────
-SELECT c.name AS column_name, tp.name AS data_type, c.is_nullable
+SELECT OBJECT_NAME(c.object_id) AS table_name, c.name AS column_name,
+       tp.name AS data_type, c.is_nullable
 FROM   sys.columns c
 JOIN   sys.types   tp ON tp.user_type_id = c.user_type_id
 WHERE  c.object_id IN (OBJECT_ID('dbo.outreach_campaigns'), OBJECT_ID('dbo.feed_posts'))
   AND  c.name = 'created_by'
-ORDER  BY OBJECT_NAME(c.object_id), c.column_id;
+ORDER  BY table_name;
 
 PRINT '=== 006_bigint_user_ids complete ===';
 GO
