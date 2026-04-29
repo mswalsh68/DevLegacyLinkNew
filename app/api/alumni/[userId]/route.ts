@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
-import { sp_GetAlumniById, sp_UpdateAlumni } from '@/lib/db/procedures'
+import { sp_GetMemberDetails, sp_UpdateUserRole } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
+
+// ─── GET /api/alumni/[userId] ─────────────────────────────────────────────────
+// Returns the user's alumni role records + interaction history.
 
 export async function GET(
   _req: Request,
@@ -12,21 +15,27 @@ export async function GET(
   if (!session.appDb) return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
 
   const { userId } = await params
+  const uid = parseInt(userId, 10)
 
   return appDbContext.run(session.appDb, async () => {
     try {
-      const { alumni, interactions, errorCode } = await sp_GetAlumniById({
-        alumniId:           parseInt(userId, 10),
-        requestingUserId:   session.userId,
-        requestingUserRole: session.role,
-      })
+      const { roles, interactions, errorCode } = await sp_GetMemberDetails({ userId: uid })
 
-      if (errorCode === 'ALUMNI_NOT_FOUND' || !alumni) {
+      if (errorCode === 'USER_NOT_FOUND' || roles.length === 0) {
         return NextResponse.json({ success: false, error: 'Alumni record not found.' }, { status: 404 })
       }
 
-      // Normalise id → userId
-      const data = { ...alumni, userId: (alumni as Record<string, unknown>).id ?? alumni.userId }
+      const base = roles[0]
+      const data = {
+        userId:        base.userId,
+        email:         base.email,
+        firstName:     base.firstName,
+        lastName:      base.lastName,
+        platformRole:  base.platformRole,
+        lastTeamLogin: base.lastTeamLogin,
+        roles:         roles.filter(r => r.status === 'alumni'),
+      }
+
       return NextResponse.json({ success: true, data, interactions })
     } catch (err) {
       console.error('[GET /api/alumni/[userId]]', err)
@@ -34,6 +43,10 @@ export async function GET(
     }
   })
 }
+
+// ─── PATCH /api/alumni/[userId] ───────────────────────────────────────────────
+// Body: { userRoleId, positionId?, jerseyNumber?, seasonsPlayed?, classYear? }
+// userRoleId is required — returned by GET as roles[n].userRoleId.
 
 export async function PATCH(
   req: Request,
@@ -43,7 +56,8 @@ export async function PATCH(
   if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
   if (!session.appDb) return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
 
-  const { userId } = await params
+  await params   // unused — update is by userRoleId in body
+
   let body: Record<string, unknown>
   try {
     body = await req.json() as Record<string, unknown>
@@ -51,25 +65,20 @@ export async function PATCH(
     return NextResponse.json({ success: false, error: 'Invalid request body.' }, { status: 400 })
   }
 
+  const userRoleId = body.userRoleId != null ? Number(body.userRoleId) : undefined
+  if (!userRoleId) {
+    return NextResponse.json({ success: false, error: 'userRoleId is required' }, { status: 400 })
+  }
+
   return appDbContext.run(session.appDb, async () => {
     try {
-      const { errorCode } = await sp_UpdateAlumni({
-        alumniId:             parseInt(userId, 10),
-        updatedBy:            session.userId,
-        phone:                body.phone            as string | undefined,
-        personalEmail:        body.personalEmail    as string | undefined,
-        linkedInUrl:          body.linkedInUrl      as string | undefined,
-        twitterUrl:           body.twitterUrl       as string | undefined,
-        currentEmployer:      body.currentEmployer  as string | undefined,
-        currentJobTitle:      body.currentJobTitle  as string | undefined,
-        currentCity:          body.currentCity      as string | undefined,
-        currentState:         body.currentState     as string | undefined,
-        isDonor:              body.isDonor          != null ? Boolean(body.isDonor)          : undefined,
-        lastDonationDate:     body.lastDonationDate as string | undefined,
-        totalDonations:       body.totalDonations   != null ? Number(body.totalDonations)   : undefined,
-        notes:                body.notes            as string | undefined,
-        requestingUserId:     session.userId,
-        requestingUserRole:   session.role,
+      const { errorCode } = await sp_UpdateUserRole({
+        userRoleId,
+        positionId:    body.positionId    != null ? Number(body.positionId)   : null,
+        jerseyNumber:  body.jerseyNumber  != null ? Number(body.jerseyNumber)  : null,
+        seasonsPlayed: body.seasonsPlayed != null ? Number(body.seasonsPlayed) : null,
+        classYear:     body.classYear     != null ? Number(body.classYear)     : null,
+        adminUserId:   session.userId,
       })
       if (errorCode) return NextResponse.json({ success: false, error: errorCode }, { status: 400 })
       return NextResponse.json({ success: true })

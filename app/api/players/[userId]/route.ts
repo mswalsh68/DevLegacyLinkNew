@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
-import { sp_GetPlayerById, sp_UpdatePlayer } from '@/lib/db/procedures'
+import { sp_GetMemberDetails, sp_UpdateUserRole } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
+
+// ─── GET /api/players/[userId] ────────────────────────────────────────────────
+// Returns the user's roles (filtered to current_player) + interactions.
 
 export async function GET(
   _req: Request,
@@ -12,28 +15,39 @@ export async function GET(
   if (!session.appDb) return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
 
   const { userId } = await params
+  const uid = parseInt(userId, 10)
 
   return appDbContext.run(session.appDb, async () => {
     try {
-      const { player, stats, errorCode } = await sp_GetPlayerById({
-        playerId:           parseInt(userId, 10),
-        requestingUserId:   session.userId,
-        requestingUserRole: session.role,
-      })
+      const { roles, interactions, errorCode } = await sp_GetMemberDetails({ userId: uid })
 
-      if (errorCode === 'PLAYER_NOT_FOUND' || !player) {
+      if (errorCode === 'USER_NOT_FOUND' || roles.length === 0) {
         return NextResponse.json({ success: false, error: 'Player not found.' }, { status: 404 })
       }
 
-      // Normalise id → userId
-      const data = { ...player, userId: player.id ?? player.userId }
-      return NextResponse.json({ success: true, data, stats })
+      // Surface the base user fields from the first row, then attach all role rows
+      const base = roles[0]
+      const data = {
+        userId:        base.userId,
+        email:         base.email,
+        firstName:     base.firstName,
+        lastName:      base.lastName,
+        platformRole:  base.platformRole,
+        lastTeamLogin: base.lastTeamLogin,
+        roles:         roles.filter(r => r.status === 'current_player'),
+      }
+
+      return NextResponse.json({ success: true, data, interactions })
     } catch (err) {
       console.error('[GET /api/players/[userId]]', err)
       return NextResponse.json({ success: false, error: 'Failed to load player.' }, { status: 500 })
     }
   })
 }
+
+// ─── PATCH /api/players/[userId] ─────────────────────────────────────────────
+// Body: { userRoleId, positionId?, jerseyNumber?, seasonsPlayed?, classYear? }
+// userRoleId is required — returned by GET as roles[n].userRoleId.
 
 export async function PATCH(
   req: Request,
@@ -43,7 +57,8 @@ export async function PATCH(
   if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
   if (!session.appDb) return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
 
-  const { userId } = await params
+  await params   // unused — update is by userRoleId in body
+
   let body: Record<string, unknown>
   try {
     body = await req.json() as Record<string, unknown>
@@ -51,33 +66,20 @@ export async function PATCH(
     return NextResponse.json({ success: false, error: 'Invalid request body.' }, { status: 400 })
   }
 
+  const userRoleId = body.userRoleId != null ? Number(body.userRoleId) : undefined
+  if (!userRoleId) {
+    return NextResponse.json({ success: false, error: 'userRoleId is required' }, { status: 400 })
+  }
+
   return appDbContext.run(session.appDb, async () => {
     try {
-      const { errorCode } = await sp_UpdatePlayer({
-        playerId:              parseInt(userId, 10),
-        updatedBy:             session.userId,
-        jerseyNumber:          body.jerseyNumber  != null ? Number(body.jerseyNumber)  : undefined,
-        position:              body.position      as string | undefined,
-        academicYear:          body.academicYear  as string | undefined,
-        heightInches:          body.heightInches  != null ? Number(body.heightInches)  : undefined,
-        weightLbs:             body.weightLbs     != null ? Number(body.weightLbs)     : undefined,
-        major:                 body.major         as string | undefined,
-        phone:                 body.phone         as string | undefined,
-        email:                 body.email         as string | undefined,
-        instagram:             body.instagram     as string | undefined,
-        twitter:               body.twitter       as string | undefined,
-        snapchat:              body.snapchat      as string | undefined,
-        emergencyContactName:  body.emergencyContactName  as string | undefined,
-        emergencyContactPhone: body.emergencyContactPhone as string | undefined,
-        parent1Name:           body.parent1Name   as string | undefined,
-        parent1Phone:          body.parent1Phone  as string | undefined,
-        parent1Email:          body.parent1Email  as string | undefined,
-        parent2Name:           body.parent2Name   as string | undefined,
-        parent2Phone:          body.parent2Phone  as string | undefined,
-        parent2Email:          body.parent2Email  as string | undefined,
-        notes:                 body.notes         as string | undefined,
-        requestingUserId:      session.userId,
-        requestingUserRole:    session.role,
+      const { errorCode } = await sp_UpdateUserRole({
+        userRoleId,
+        positionId:    body.positionId    != null ? Number(body.positionId)   : null,
+        jerseyNumber:  body.jerseyNumber  != null ? Number(body.jerseyNumber)  : null,
+        seasonsPlayed: body.seasonsPlayed != null ? Number(body.seasonsPlayed) : null,
+        classYear:     body.classYear     != null ? Number(body.classYear)     : null,
+        adminUserId:   session.userId,
       })
       if (errorCode) return NextResponse.json({ success: false, error: errorCode }, { status: 400 })
       return NextResponse.json({ success: true })

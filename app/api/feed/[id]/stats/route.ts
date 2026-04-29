@@ -25,11 +25,7 @@ export async function GET(
 
   return appDbContext.run(session.appDb, async () => {
     try {
-      const { stats, errorCode } = await sp_GetPostReadStats({
-        postId:             id,
-        requestingUserId:   session.userId,
-        requestingUserRole: session.role,
-      })
+      const { stats, errorCode } = await sp_GetPostReadStats({ postId: id })
 
       if (errorCode === 'NOT_FOUND' || !stats) {
         return NextResponse.json({ success: false, error: 'Post not found' }, { status: 404 })

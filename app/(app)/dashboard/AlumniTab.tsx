@@ -22,7 +22,7 @@ const POST_AUDIENCES     = ['all', 'alumni_only'] as const
 
 // ─── Alumni Tab ───────────────────────────────────────────────────────────────
 
-export default function AlumniTab({ sportId }: { sportId?: string | null }) {
+export default function AlumniTab({ sportId }: { sportId?: number | null }) {
   const config = useTeamConfig()
   const tier   = config.subscriptionTier
 

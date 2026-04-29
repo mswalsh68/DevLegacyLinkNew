@@ -8,11 +8,12 @@
 //   Global DB SPs  → use 'global' key
 //   App DB SPs     → use 'app' key
 //
-// Procedures that previously called Global DB internally (sp_CreatePlayer,
-// sp_BulkCreatePlayers, sp_BulkCreateAlumni, sp_GraduatePlayer) now receive
-// the resolved userId(s) as parameters. The server actions in
-// app/actions/players.ts and app/actions/alumni.ts handle the two-step
-// Global DB → App DB coordination.
+// Schema baseline: post-migration 008 + 009
+//   dbo.players and dbo.alumni are DROPPED.
+//   Everyone is a row in dbo.users (synced from Global) with one or more
+//   rows in dbo.users_roles (user_id × sport_id × program_role_id × status).
+//   status = 'current_player' | 'alumni' | 'removed'
+//   dbo.sports.id is INT (Football = 1) — no more GUIDs.
 
 import sql from 'mssql'
 import { dbRequest, type DbKey } from './connection'
@@ -76,8 +77,7 @@ export async function sp_GetOrCreateUser(params: {
 
 /**
  * Revokes the user's 'roster' app-permission in the Global DB and grants
- * 'alumni' in its place. Called by the graduation server action after
- * sp_GraduatePlayer has already flipped status in the App DB.
+ * 'alumni' in its place.
  */
 export async function sp_TransferPlayerToAlumni(params: {
   userId:    number
@@ -90,8 +90,6 @@ export async function sp_TransferPlayerToAlumni(params: {
 }
 
 // ─── Team config row returned by sp_GetTeamConfig / sp_GetTeams ───────────────
-// SP columns can be PascalCase (TeamId, TeamName…) or camelCase — both are
-// handled by the normalizeTeamRow() helper in the route handlers.
 export type TeamConfigRow = Record<string, unknown>
 
 /** Returns config for a specific team (or the default team if teamId is omitted). */
@@ -102,7 +100,7 @@ export async function sp_GetTeamConfig(params?: { teamId?: number }): Promise<Te
   return (rows as unknown as TeamConfigRow[])[0] ?? null
 }
 
-/** Returns all active teams — used by /api/teams to populate the TeamSwitcher. */
+/** Returns all active teams. */
 export async function sp_GetTeams(): Promise<TeamConfigRow[]> {
   const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_GetTeams')
   return rows as unknown as TeamConfigRow[]
@@ -119,8 +117,8 @@ export async function sp_GetUserTeams(params: {
 }
 
 /**
- * Validates user access to the new team and returns team details for re-issuing the JWT.
- * platform_owner bypasses the user_teams membership check.
+ * Validates user access to the new team and returns team details for
+ * re-issuing the JWT.
  */
 export async function sp_SwitchTeam(params: {
   userId:    number
@@ -139,426 +137,323 @@ export async function sp_SwitchTeam(params: {
 }
 
 export async function sp_UpdateTeamConfig(params: {
-  teamId?:           number | null
-  teamName?:         string | null
-  teamAbbr?:         string | null
-  sport?:            string | null
-  level?:            string | null
-  logoUrl?:          string | null
-  colorPrimary?:     string | null
-  colorPrimaryDark?: string | null
-  colorPrimaryLight?:string | null
-  colorAccent?:      string | null
-  colorAccentDark?:  string | null
-  colorAccentLight?: string | null
-  positionsJson?:    string | null
-  academicYearsJson?:string | null
-  alumniLabel?:      string | null
-  rosterLabel?:      string | null
-  classLabel?:       string | null
+  teamId?:            number | null
+  teamName?:          string | null
+  teamAbbr?:          string | null
+  sport?:             string | null
+  level?:             string | null
+  logoUrl?:           string | null
+  colorPrimary?:      string | null
+  colorPrimaryDark?:  string | null
+  colorPrimaryLight?: string | null
+  colorAccent?:       string | null
+  colorAccentDark?:   string | null
+  colorAccentLight?:  string | null
+  positionsJson?:     string | null
+  academicYearsJson?: string | null
+  alumniLabel?:       string | null
+  rosterLabel?:       string | null
+  classLabel?:        string | null
 }): Promise<{ errorCode: string | null }> {
   const { output } = await execFull('global', 'sp_UpdateTeamConfig', (r) => {
-    r.input ('TeamId',            sql.Int,              params.teamId            ?? null)
-    r.input ('TeamName',          sql.NVarChar(100),    params.teamName          ?? null)
-    r.input ('TeamAbbr',          sql.NVarChar(10),     params.teamAbbr          ?? null)
-    r.input ('Sport',             sql.NVarChar(50),     params.sport             ?? null)
-    r.input ('Level',             sql.NVarChar(20),     params.level             ?? null)
-    r.input ('LogoUrl',           sql.NVarChar(500),    params.logoUrl           ?? null)
-    r.input ('ColorPrimary',      sql.NVarChar(7),      params.colorPrimary      ?? null)
-    r.input ('ColorPrimaryDark',  sql.NVarChar(7),      params.colorPrimaryDark  ?? null)
-    r.input ('ColorPrimaryLight', sql.NVarChar(7),      params.colorPrimaryLight ?? null)
-    r.input ('ColorAccent',       sql.NVarChar(7),      params.colorAccent       ?? null)
-    r.input ('ColorAccentDark',   sql.NVarChar(7),      params.colorAccentDark   ?? null)
-    r.input ('ColorAccentLight',  sql.NVarChar(7),      params.colorAccentLight  ?? null)
-    r.input ('PositionsJson',     sql.NVarChar(sql.MAX),params.positionsJson     ?? null)
-    r.input ('AcademicYearsJson', sql.NVarChar(sql.MAX),params.academicYearsJson ?? null)
-    r.input ('AlumniLabel',       sql.NVarChar(50),     params.alumniLabel       ?? null)
-    r.input ('RosterLabel',       sql.NVarChar(50),     params.rosterLabel       ?? null)
-    r.input ('ClassLabel',        sql.NVarChar(50),     params.classLabel        ?? null)
+    r.input ('TeamId',            sql.Int,               params.teamId            ?? null)
+    r.input ('TeamName',          sql.NVarChar(100),     params.teamName          ?? null)
+    r.input ('TeamAbbr',          sql.NVarChar(10),      params.teamAbbr          ?? null)
+    r.input ('Sport',             sql.NVarChar(50),      params.sport             ?? null)
+    r.input ('Level',             sql.NVarChar(20),      params.level             ?? null)
+    r.input ('LogoUrl',           sql.NVarChar(500),     params.logoUrl           ?? null)
+    r.input ('ColorPrimary',      sql.NVarChar(7),       params.colorPrimary      ?? null)
+    r.input ('ColorPrimaryDark',  sql.NVarChar(7),       params.colorPrimaryDark  ?? null)
+    r.input ('ColorPrimaryLight', sql.NVarChar(7),       params.colorPrimaryLight ?? null)
+    r.input ('ColorAccent',       sql.NVarChar(7),       params.colorAccent       ?? null)
+    r.input ('ColorAccentDark',   sql.NVarChar(7),       params.colorAccentDark   ?? null)
+    r.input ('ColorAccentLight',  sql.NVarChar(7),       params.colorAccentLight  ?? null)
+    r.input ('PositionsJson',     sql.NVarChar(sql.MAX), params.positionsJson     ?? null)
+    r.input ('AcademicYearsJson', sql.NVarChar(sql.MAX), params.academicYearsJson ?? null)
+    r.input ('AlumniLabel',       sql.NVarChar(50),      params.alumniLabel       ?? null)
+    r.input ('RosterLabel',       sql.NVarChar(50),      params.rosterLabel       ?? null)
+    r.input ('ClassLabel',        sql.NVarChar(50),      params.classLabel        ?? null)
     r.output('ErrorCode',         sql.NVarChar(50))
   })
   return { errorCode: (output.ErrorCode as string | null) ?? null }
 }
 
-// ─── App DB — Players ─────────────────────────────────────────────────────────
+// ─── App DB — User sync ───────────────────────────────────────────────────────
 
-export async function sp_GetPlayers(params: {
-  search?:             string
-  position?:           string
-  academicYear?:       string
-  recruitingClass?:    number
-  sportId?:            string
-  page?:               number
-  pageSize?:           number
-  requestingUserId?:   number | null
-  requestingUserRole?: string
-} = {}) {
-  const { recordset, output } = await execFull('app', 'sp_GetPlayers', (r) => {
-    r.input ('Search',           sql.NVarChar(255),    params.search         ?? null)
-    r.input ('Position',         sql.NVarChar(10),     params.position       ?? null)
-    r.input ('AcademicYear',     sql.NVarChar(20),     params.academicYear   ?? null)
-    r.input ('RecruitingClass',  sql.SmallInt,         params.recruitingClass ?? null)
-    r.input ('SportId',          sql.UniqueIdentifier, params.sportId        ?? null)
-    r.input ('Page',             sql.Int,              params.page     ?? 1)
-    r.input ('PageSize',         sql.Int,              params.pageSize ?? 50)
-    r.input ('RequestingUserId',   sql.Int, params.requestingUserId   ?? null)
-    r.input ('RequestingUserRole', sql.NVarChar(50),   params.requestingUserRole ?? null)
+/**
+ * Syncs a Global DB user into the local App DB dbo.users.
+ * Call this before sp_AddUserRole when creating a new member.
+ */
+export async function sp_UpsertUser(params: {
+  userId:       number
+  email:        string
+  firstName:    string
+  lastName:     string
+  platformRole?: string
+}): Promise<void> {
+  await exec('app', 'sp_UpsertUser', (r) => {
+    r.input('UserId',       sql.Int,           params.userId)
+    r.input('Email',        sql.NVarChar(255),  params.email)
+    r.input('FirstName',    sql.NVarChar(100),  params.firstName)
+    r.input('LastName',     sql.NVarChar(100),  params.lastName)
+    r.input('PlatformRole', sql.NVarChar(50),   params.platformRole ?? 'player')
+  })
+}
+
+// ─── App DB — Roster / Users Roles ───────────────────────────────────────────
+
+export interface RosterRow {
+  userRoleId:   number
+  userId:       number
+  firstName:    string
+  lastName:     string
+  email:        string
+  sportId:      number
+  sportName:    string
+  positionId:   number | null
+  position:     string | null
+  jerseyNumber: number | null
+  seasonsPlayed: number | null
+  classYear:    number | null
+  createdAt:    string
+  updatedAt:    string
+}
+
+/**
+ * Returns paginated current roster for a sport.
+ * Replaces the old sp_GetPlayers function.
+ */
+export async function sp_GetRoster(params: {
+  sportId:     number
+  search?:     string
+  positionId?: number
+  classYear?:  number
+  page?:       number
+  pageSize?:   number
+}): Promise<{ roster: RosterRow[]; totalCount: number }> {
+  const { recordset, output } = await execFull('app', 'sp_GetRosterBySport', (r) => {
+    r.input ('SportId',    sql.Int,           params.sportId)
+    r.input ('Search',     sql.NVarChar(255),  params.search      ?? null)
+    r.input ('PositionId', sql.Int,           params.positionId  ?? null)
+    r.input ('ClassYear',  sql.SmallInt,      params.classYear   ?? null)
+    r.input ('Page',       sql.Int,           params.page     ?? 1)
+    r.input ('PageSize',   sql.Int,           params.pageSize ?? 50)
     r.output('TotalCount', sql.Int)
   })
   return {
-    players:    recordset,
+    roster:     recordset as unknown as RosterRow[],
     totalCount: (output.TotalCount as number) ?? 0,
   }
 }
 
-export async function sp_GetPlayerById(params: {
-  playerId:            number
-  requestingUserId?:   number | null
-  requestingUserRole?: string
-}) {
-  const { recordsets, output } = await execFull('app', 'sp_GetPlayerById', (r) => {
-    r.input ('PlayerId',           sql.Int, params.playerId)
-    r.input ('RequestingUserId',   sql.Int, params.requestingUserId   ?? null)
-    r.input ('RequestingUserRole', sql.NVarChar(50), params.requestingUserRole ?? null)
-    r.output('ErrorCode', sql.NVarChar(50))
+/**
+ * Returns paginated alumni for a sport.
+ * Replaces the old sp_GetAlumni function.
+ */
+export async function sp_GetAlumniRoster(params: {
+  sportId:     number
+  search?:     string
+  positionId?: number
+  classYear?:  number
+  page?:       number
+  pageSize?:   number
+}): Promise<{ alumni: RosterRow[]; totalCount: number }> {
+  const { recordset, output } = await execFull('app', 'sp_GetAlumniBySport', (r) => {
+    r.input ('SportId',    sql.Int,           params.sportId)
+    r.input ('Search',     sql.NVarChar(255),  params.search      ?? null)
+    r.input ('PositionId', sql.Int,           params.positionId  ?? null)
+    r.input ('ClassYear',  sql.SmallInt,      params.classYear   ?? null)
+    r.input ('Page',       sql.Int,           params.page     ?? 1)
+    r.input ('PageSize',   sql.Int,           params.pageSize ?? 50)
+    r.output('TotalCount', sql.Int)
   })
   return {
-    player:    recordsets[0]?.[0] ?? null,
-    stats:     recordsets[1]      ?? [],
-    errorCode: (output.ErrorCode as string | null) ?? null,
+    alumni:     recordset as unknown as RosterRow[],
+    totalCount: (output.TotalCount as number) ?? 0,
   }
 }
 
-/**
- * Creates a player in the App DB.
- * @UserId must be resolved BEFORE calling this — use sp_GetOrCreateUser first.
- */
-export async function sp_CreatePlayer(params: {
-  userId:                number
-  email:                 string
-  firstName:             string
-  lastName:              string
-  position:              string
-  academicYear:          string
-  recruitingClass:       number
-  createdBy:             number
-  sportId?:              string
-  jerseyNumber?:         number
-  heightInches?:         number
-  weightLbs?:            number
-  homeTown?:             string
-  homeState?:            string
-  highSchool?:           string
-  major?:                string
-  phone?:                string
-  instagram?:            string
-  twitter?:              string
-  snapchat?:             string
-  emergencyContactName?:  string
-  emergencyContactPhone?: string
-  parent1Name?:          string
-  parent1Phone?:         string
-  parent1Email?:         string
-  parent2Name?:          string
-  parent2Phone?:         string
-  parent2Email?:         string
-  notes?:                string
-  requestingUserId?:     number | null
-  requestingUserRole?:   string
-}): Promise<{ errorCode: string | null }> {
-  const { output } = await execFull('app', 'sp_CreatePlayer', (r) => {
-    r.input ('UserId',                sql.Int,              params.userId)
-    r.input ('Email',                 sql.NVarChar(255),    params.email)
-    r.input ('FirstName',             sql.NVarChar(100),    params.firstName)
-    r.input ('LastName',              sql.NVarChar(100),    params.lastName)
-    r.input ('Position',              sql.NVarChar(10),     params.position)
-    r.input ('AcademicYear',          sql.NVarChar(20),     params.academicYear)
-    r.input ('RecruitingClass',       sql.SmallInt,         params.recruitingClass)
-    r.input ('CreatedBy',             sql.Int,              params.createdBy)
-    r.input ('SportId',               sql.UniqueIdentifier, params.sportId              ?? null)
-    r.input ('JerseyNumber',          sql.TinyInt,          params.jerseyNumber          ?? null)
-    r.input ('HeightInches',          sql.TinyInt,          params.heightInches          ?? null)
-    r.input ('WeightLbs',             sql.SmallInt,         params.weightLbs             ?? null)
-    r.input ('HomeTown',              sql.NVarChar(100),    params.homeTown              ?? null)
-    r.input ('HomeState',             sql.NVarChar(50),     params.homeState             ?? null)
-    r.input ('HighSchool',            sql.NVarChar(150),    params.highSchool            ?? null)
-    r.input ('Major',                 sql.NVarChar(100),    params.major                 ?? null)
-    r.input ('Phone',                 sql.NVarChar(20),     params.phone                 ?? null)
-    r.input ('Instagram',             sql.NVarChar(100),    params.instagram             ?? null)
-    r.input ('Twitter',               sql.NVarChar(100),    params.twitter               ?? null)
-    r.input ('Snapchat',              sql.NVarChar(100),    params.snapchat              ?? null)
-    r.input ('EmergencyContactName',  sql.NVarChar(150),    params.emergencyContactName  ?? null)
-    r.input ('EmergencyContactPhone', sql.NVarChar(20),     params.emergencyContactPhone ?? null)
-    r.input ('Parent1Name',           sql.NVarChar(150),    params.parent1Name           ?? null)
-    r.input ('Parent1Phone',          sql.NVarChar(20),     params.parent1Phone          ?? null)
-    r.input ('Parent1Email',          sql.NVarChar(255),    params.parent1Email          ?? null)
-    r.input ('Parent2Name',           sql.NVarChar(150),    params.parent2Name           ?? null)
-    r.input ('Parent2Phone',          sql.NVarChar(20),     params.parent2Phone          ?? null)
-    r.input ('Parent2Email',          sql.NVarChar(255),    params.parent2Email          ?? null)
-    r.input ('Notes',                 sql.NVarChar(sql.MAX),params.notes                 ?? null)
-    r.input ('RequestingUserId',      sql.Int,              params.requestingUserId      ?? null)
-    r.input ('RequestingUserRole',    sql.NVarChar(50),     params.requestingUserRole    ?? null)
-    r.output('ErrorCode', sql.NVarChar(50))
-  })
-  return { errorCode: (output.ErrorCode as string | null) ?? null }
+export interface MemberDetailsRow {
+  userId:            number
+  email:             string
+  firstName:         string
+  lastName:          string
+  platformRole:      string
+  lastTeamLogin:     string | null
+  userRoleId:        number | null
+  sportId:           number | null
+  sportName:         string | null
+  sportAbbr:         string | null
+  programRoleId:     number | null
+  programRoleDisplay: string | null
+  status:            string | null
+  positionId:        number | null
+  position:          string | null
+  jerseyNumber:      number | null
+  seasonsPlayed:     number | null
+  classYear:         number | null
+  createdAt:         string | null
+  updatedAt:         string | null
 }
 
-export async function sp_UpdatePlayer(params: {
-  playerId:              number
-  updatedBy:             number
-  jerseyNumber?:         number
-  position?:             string
-  academicYear?:         string
-  heightInches?:         number
-  weightLbs?:            number
-  major?:                string
-  phone?:                string
-  email?:                string
-  instagram?:            string
-  twitter?:              string
-  snapchat?:             string
-  emergencyContactName?:  string
-  emergencyContactPhone?: string
-  parent1Name?:          string
-  parent1Phone?:         string
-  parent1Email?:         string
-  parent2Name?:          string
-  parent2Phone?:         string
-  parent2Email?:         string
-  notes?:                string
-  requestingUserId?:     number | null
-  requestingUserRole?:   string
-}): Promise<{ errorCode: string | null }> {
-  const { output } = await execFull('app', 'sp_UpdatePlayer', (r) => {
-    r.input ('PlayerId',              sql.Int,              params.playerId)
-    r.input ('UpdatedBy',             sql.Int,              params.updatedBy)
-    r.input ('JerseyNumber',          sql.TinyInt,          params.jerseyNumber          ?? null)
-    r.input ('Position',              sql.NVarChar(10),     params.position              ?? null)
-    r.input ('AcademicYear',          sql.NVarChar(20),     params.academicYear          ?? null)
-    r.input ('HeightInches',          sql.TinyInt,          params.heightInches          ?? null)
-    r.input ('WeightLbs',             sql.SmallInt,         params.weightLbs             ?? null)
-    r.input ('Major',                 sql.NVarChar(100),    params.major                 ?? null)
-    r.input ('Phone',                 sql.NVarChar(20),     params.phone                 ?? null)
-    r.input ('Email',                 sql.NVarChar(255),    params.email                 ?? null)
-    r.input ('Instagram',             sql.NVarChar(100),    params.instagram             ?? null)
-    r.input ('Twitter',               sql.NVarChar(100),    params.twitter               ?? null)
-    r.input ('Snapchat',              sql.NVarChar(100),    params.snapchat              ?? null)
-    r.input ('EmergencyContactName',  sql.NVarChar(150),    params.emergencyContactName  ?? null)
-    r.input ('EmergencyContactPhone', sql.NVarChar(20),     params.emergencyContactPhone ?? null)
-    r.input ('Parent1Name',           sql.NVarChar(150),    params.parent1Name           ?? null)
-    r.input ('Parent1Phone',          sql.NVarChar(20),     params.parent1Phone          ?? null)
-    r.input ('Parent1Email',          sql.NVarChar(255),    params.parent1Email          ?? null)
-    r.input ('Parent2Name',           sql.NVarChar(150),    params.parent2Name           ?? null)
-    r.input ('Parent2Phone',          sql.NVarChar(20),     params.parent2Phone          ?? null)
-    r.input ('Parent2Email',          sql.NVarChar(255),    params.parent2Email          ?? null)
-    r.input ('Notes',                 sql.NVarChar(sql.MAX),params.notes                 ?? null)
-    r.input ('RequestingUserId',      sql.Int,              params.requestingUserId      ?? null)
-    r.input ('RequestingUserRole',    sql.NVarChar(50),     params.requestingUserRole    ?? null)
-    r.output('ErrorCode', sql.NVarChar(50))
-  })
-  return { errorCode: (output.ErrorCode as string | null) ?? null }
+export interface InteractionRow {
+  id:            number
+  channel:       string
+  summary:       string
+  outcome:       string | null
+  followUpAt:    string | null
+  loggedAt:      string
+  loggedByUserId: number | null
+  loggedByName:  string | null
 }
 
 /**
- * Flips status to alumni in the App DB for the given player IDs.
- * Returns @SucceededJson — the caller MUST then call sp_TransferPlayerToAlumni
- * on the Global DB for each userId in that array.
+ * Returns a user's profile + all role records + recent interactions.
+ * Two result sets: [0] roles (one row per users_roles entry), [1] interactions.
+ * Replaces sp_GetPlayerById and sp_GetAlumniById.
  */
-export async function sp_GraduatePlayer(params: {
-  playerIds:      number[]
-  graduationYear: number
-  semester:       string
-  triggeredBy:    number
+export async function sp_GetMemberDetails(params: {
+  userId: number
 }): Promise<{
-  transactionId:  string
-  successCount:   number
-  failureJson:    string
-  succeededJson:  string
+  roles:        MemberDetailsRow[]
+  interactions: InteractionRow[]
+  errorCode:    string | null
 }> {
-  const { output } = await execFull('app', 'sp_GraduatePlayer', (r) => {
-    r.input ('PlayerIds',      sql.NVarChar(sql.MAX), JSON.stringify(params.playerIds))
-    r.input ('GraduationYear', sql.SmallInt,          params.graduationYear)
-    r.input ('Semester',       sql.NVarChar(10),      params.semester)
-    r.input ('TriggeredBy',    sql.Int,               params.triggeredBy)
-    r.output('TransactionId',  sql.UniqueIdentifier)
-    r.output('SuccessCount',   sql.Int)
-    r.output('FailureJson',    sql.NVarChar(sql.MAX))
-    r.output('SucceededJson',  sql.NVarChar(sql.MAX))
-  })
-  return {
-    transactionId: (output.TransactionId  as string) ?? '',
-    successCount:  (output.SuccessCount   as number) ?? 0,
-    failureJson:   (output.FailureJson    as string) ?? '[]',
-    succeededJson: (output.SucceededJson  as string) ?? '[]',
-  }
-}
-
-export async function sp_RemovePlayer(params: {
-  playerId:            number
-  removedBy:           number
-  requestingUserId?:   number | null
-  requestingUserRole?: string
-}): Promise<{ errorCode: string | null }> {
-  const { output } = await execFull('app', 'sp_RemovePlayer', (r) => {
-    r.input ('PlayerId',           sql.Int,          params.playerId)
-    r.input ('RemovedBy',          sql.Int,          params.removedBy)
-    r.input ('RequestingUserId',   sql.Int,          params.requestingUserId   ?? null)
-    r.input ('RequestingUserRole', sql.NVarChar(50), params.requestingUserRole ?? null)
-    r.output('ErrorCode', sql.NVarChar(50))
-  })
-  return { errorCode: (output.ErrorCode as string | null) ?? null }
-}
-
-/**
- * Bulk-creates players. Each entry in the array must include a `userId`
- * that was already resolved via sp_GetOrCreateUser on the Global DB.
- */
-export async function sp_BulkCreatePlayers(params: {
-  players:   BulkPlayerRow[]
-  createdBy: number
-  sportId?:  string
-}): Promise<{ successCount: number; skippedCount: number; errorJson: string }> {
-  const { output } = await execFull('app', 'sp_BulkCreatePlayers', (r) => {
-    r.input ('PlayersJson', sql.NVarChar(sql.MAX), JSON.stringify(params.players))
-    r.input ('CreatedBy',   sql.Int,               params.createdBy)
-    r.input ('SportId',     sql.UniqueIdentifier,  params.sportId ?? null)
-    r.output('SuccessCount', sql.Int)
-    r.output('SkippedCount', sql.Int)
-    r.output('ErrorJson',    sql.NVarChar(sql.MAX))
-  })
-  return {
-    successCount: (output.SuccessCount as number) ?? 0,
-    skippedCount: (output.SkippedCount as number) ?? 0,
-    errorJson:    (output.ErrorJson    as string) ?? '[]',
-  }
-}
-
-export interface BulkPlayerRow {
-  userId?:               number   // resolved by caller via sp_GetOrCreateUser
-  email?:                string
-  firstName:             string
-  lastName:              string
-  jerseyNumber?:         number
-  position?:             string
-  academicYear?:         string
-  recruitingClass:       number
-  heightInches?:         number
-  weightLbs?:            number
-  homeTown?:             string
-  homeState?:            string
-  highSchool?:           string
-  major?:                string
-  phone?:                string
-  emergencyContactName?:  string
-  emergencyContactPhone?: string
-  parent1Name?:          string
-  parent1Phone?:         string
-  parent1Email?:         string
-  parent2Name?:          string
-  parent2Phone?:         string
-  parent2Email?:         string
-  notes?:                string
-}
-
-// ─── App DB — Alumni ──────────────────────────────────────────────────────────
-
-export async function sp_GetAlumni(params: {
-  search?:             string
-  isDonor?:            boolean
-  gradYear?:           number
-  position?:           string
-  sportId?:            string
-  page?:               number
-  pageSize?:           number
-  requestingUserId?:   number | null
-  requestingUserRole?: string
-} = {}) {
-  const { recordset, output } = await execFull('app', 'sp_GetAlumni', (r) => {
-    r.input ('Search',             sql.NVarChar(255),    params.search    ?? null)
-    r.input ('IsDonor',            sql.Bit,              params.isDonor   ?? null)
-    r.input ('GradYear',           sql.SmallInt,         params.gradYear  ?? null)
-    r.input ('Position',           sql.NVarChar(10),     params.position  ?? null)
-    r.input ('SportId',            sql.UniqueIdentifier, params.sportId   ?? null)
-    r.input ('Page',               sql.Int,              params.page     ?? 1)
-    r.input ('PageSize',           sql.Int,              params.pageSize ?? 50)
-    r.input ('RequestingUserId',   sql.Int,              params.requestingUserId   ?? null)
-    r.input ('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole ?? null)
-    r.output('TotalCount', sql.Int)
-  })
-  return {
-    alumni:     recordset,
-    totalCount: (output.TotalCount as number) ?? 0,
-  }
-}
-
-export async function sp_GetAlumniById(params: {
-  alumniId:            number
-  requestingUserId?:   number | null
-  requestingUserRole?: string
-}) {
-  const { recordsets, output } = await execFull('app', 'sp_GetAlumniById', (r) => {
-    r.input ('AlumniId',           sql.Int,          params.alumniId)
-    r.input ('RequestingUserId',   sql.Int,          params.requestingUserId   ?? null)
-    r.input ('RequestingUserRole', sql.NVarChar(50), params.requestingUserRole ?? null)
+  const { recordsets, output } = await execFull('app', 'sp_GetMemberDetails', (r) => {
+    r.input ('UserId',    sql.Int,          params.userId)
     r.output('ErrorCode', sql.NVarChar(50))
   })
   return {
-    alumni:       recordsets[0]?.[0] ?? null,
-    interactions: recordsets[1]      ?? [],
+    roles:        (recordsets[0] ?? []) as unknown as MemberDetailsRow[],
+    interactions: (recordsets[1] ?? []) as unknown as InteractionRow[],
     errorCode:    (output.ErrorCode as string | null) ?? null,
   }
 }
 
-export async function sp_UpdateAlumni(params: {
-  alumniId:            number
-  updatedBy:           number
-  phone?:              string
-  personalEmail?:      string
-  linkedInUrl?:        string
-  twitterUrl?:         string
-  currentEmployer?:    string
-  currentJobTitle?:    string
-  currentCity?:        string
-  currentState?:       string
-  isDonor?:            boolean
-  lastDonationDate?:   string
-  totalDonations?:     number
-  notes?:              string
-  requestingUserId?:   number | null
-  requestingUserRole?: string
+/**
+ * Adds a new users_roles record for a user (adds them to a sport roster).
+ * Replaces sp_CreatePlayer / sp_BulkCreatePlayers for the App DB step.
+ * Caller must first call sp_UpsertUser + sp_GetOrCreateUser (Global DB).
+ */
+export async function sp_AddUserRole(params: {
+  userId:        number
+  programRoleId: number
+  sportId?:      number | null
+  status?:       'current_player' | 'alumni' | 'removed'
+  positionId?:   number | null
+  jerseyNumber?: number | null
+  seasonsPlayed?: number | null
+  classYear?:    number | null
+  adminUserId:   number
+}): Promise<{ newUserRoleId: number | null; errorCode: string | null }> {
+  const { output } = await execFull('app', 'sp_AddUserRole', (r) => {
+    r.input ('UserId',        sql.Int,          params.userId)
+    r.input ('ProgramRoleId', sql.Int,          params.programRoleId)
+    r.input ('SportId',       sql.Int,          params.sportId       ?? null)
+    r.input ('Status',        sql.NVarChar(20), params.status        ?? 'current_player')
+    r.input ('PositionId',    sql.Int,          params.positionId    ?? null)
+    r.input ('JerseyNumber',  sql.TinyInt,      params.jerseyNumber  ?? null)
+    r.input ('SeasonsPlayed', sql.TinyInt,      params.seasonsPlayed ?? null)
+    r.input ('ClassYear',     sql.SmallInt,     params.classYear     ?? null)
+    r.input ('AdminUserId',   sql.Int,          params.adminUserId)
+    r.output('NewUserRoleId', sql.Int)
+    r.output('ErrorCode',     sql.NVarChar(50))
+  })
+  return {
+    newUserRoleId: (output.NewUserRoleId as number | null) ?? null,
+    errorCode:     (output.ErrorCode     as string | null) ?? null,
+  }
+}
+
+/**
+ * Updates mutable fields on a users_roles record.
+ * Pass only the fields you want to change — null/undefined = no change.
+ * Replaces sp_UpdatePlayer and sp_UpdateAlumni.
+ */
+export async function sp_UpdateUserRole(params: {
+  userRoleId:    number
+  positionId?:   number | null
+  jerseyNumber?: number | null
+  seasonsPlayed?: number | null
+  classYear?:    number | null
+  adminUserId:   number
 }): Promise<{ errorCode: string | null }> {
-  const { output } = await execFull('app', 'sp_UpdateAlumni', (r) => {
-    r.input ('AlumniId',             sql.Int,              params.alumniId)
-    r.input ('UpdatedBy',            sql.Int,              params.updatedBy)
-    r.input ('Phone',                sql.NVarChar(20),     params.phone              ?? null)
-    r.input ('PersonalEmail',        sql.NVarChar(255),    params.personalEmail      ?? null)
-    r.input ('LinkedInUrl',          sql.NVarChar(500),    params.linkedInUrl        ?? null)
-    r.input ('TwitterUrl',           sql.NVarChar(100),    params.twitterUrl         ?? null)
-    r.input ('CurrentEmployer',      sql.NVarChar(200),    params.currentEmployer    ?? null)
-    r.input ('CurrentJobTitle',      sql.NVarChar(150),    params.currentJobTitle    ?? null)
-    r.input ('CurrentCity',          sql.NVarChar(100),    params.currentCity        ?? null)
-    r.input ('CurrentState',         sql.NVarChar(50),     params.currentState       ?? null)
-    r.input ('IsDonor',              sql.Bit,              params.isDonor            ?? null)
-    r.input ('LastDonationDate',     sql.Date,             params.lastDonationDate   ?? null)
-    r.input ('TotalDonations',       sql.Decimal(10, 2),   params.totalDonations     ?? null)
-    r.input ('Notes',                sql.NVarChar(sql.MAX),params.notes              ?? null)
-    r.input ('RequestingUserId',     sql.Int,              params.requestingUserId   ?? null)
-    r.input ('RequestingUserRole',   sql.NVarChar(50),     params.requestingUserRole ?? null)
-    r.output('ErrorCode', sql.NVarChar(50))
+  const { output } = await execFull('app', 'sp_UpdateUserRole', (r) => {
+    r.input ('UserRoleId',   sql.Int,      params.userRoleId)
+    r.input ('PositionId',   sql.Int,      params.positionId    ?? null)
+    r.input ('JerseyNumber', sql.TinyInt,  params.jerseyNumber  ?? null)
+    r.input ('SeasonsPlayed',sql.TinyInt,  params.seasonsPlayed ?? null)
+    r.input ('ClassYear',    sql.SmallInt, params.classYear     ?? null)
+    r.input ('AdminUserId',  sql.Int,      params.adminUserId)
+    r.output('ErrorCode',    sql.NVarChar(50))
   })
   return { errorCode: (output.ErrorCode as string | null) ?? null }
 }
 
+/**
+ * Transitions a users_roles record's status (e.g. current_player → alumni).
+ * Logs the change to dbo.role_transfer_log.
+ * Replaces sp_GraduatePlayer and sp_RemovePlayer.
+ */
+export async function sp_TransferUserRole(params: {
+  userRoleId:         number
+  newStatus:          'current_player' | 'alumni' | 'removed'
+  seasonsPlayed?:     number | null
+  classYear?:         number | null
+  adminUserId:        number
+  adminAcknowledged?: boolean
+  notes?:             string | null
+}): Promise<{ errorCode: string | null }> {
+  const { output } = await execFull('app', 'sp_TransferUserRole', (r) => {
+    r.input ('UserRoleId',        sql.Int,           params.userRoleId)
+    r.input ('NewStatus',         sql.NVarChar(20),  params.newStatus)
+    r.input ('SeasonsPlayed',     sql.TinyInt,       params.seasonsPlayed     ?? null)
+    r.input ('ClassYear',         sql.SmallInt,      params.classYear         ?? null)
+    r.input ('AdminUserId',       sql.Int,           params.adminUserId)
+    r.input ('AdminAcknowledged', sql.Bit,           params.adminAcknowledged ? 1 : 0)
+    r.input ('Notes',             sql.NVarChar(sql.MAX), params.notes         ?? null)
+    r.output('ErrorCode',         sql.NVarChar(50))
+  })
+  return { errorCode: (output.ErrorCode as string | null) ?? null }
+}
+
+/** Summary stats: total current players, alumni, earliest / latest class year. */
+export async function sp_GetRosterStats(params: {
+  sportId?: number | null
+}): Promise<{
+  totalCurrentPlayers: number
+  totalAlumni:         number
+  earliestClass:       number | null
+  latestClass:         number | null
+}> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetRosterStats', (r) => {
+    r.input('SportId', sql.Int, params.sportId ?? null)
+  })
+  const row = rows[0] ?? {}
+  return {
+    totalCurrentPlayers: (row.totalCurrentPlayers as number) ?? 0,
+    totalAlumni:         (row.totalAlumni         as number) ?? 0,
+    earliestClass:       (row.earliestClass        as number | null) ?? null,
+    latestClass:         (row.latestClass          as number | null) ?? null,
+  }
+}
+
+// ─── App DB — Interactions ────────────────────────────────────────────────────
+
+/**
+ * Logs a staff interaction with a user (player or alumni).
+ * @UserId is dbo.users.user_id (not alumni_id — that column is gone).
+ */
 export async function sp_LogInteraction(params: {
-  alumniId:    number
-  loggedBy:    number
-  channel:     string
-  summary:     string
-  outcome?:    string
-  followUpAt?: string
+  userId:     number
+  loggedBy:   number
+  channel:    string
+  summary:    string
+  outcome?:   string | null
+  followUpAt?: string | null
 }): Promise<{ errorCode: string | null }> {
   const { output } = await execFull('app', 'sp_LogInteraction', (r) => {
-    r.input ('AlumniId',  sql.Int,               params.alumniId)
+    r.input ('UserId',    sql.Int,               params.userId)
     r.input ('LoggedBy',  sql.Int,               params.loggedBy)
     r.input ('Channel',   sql.NVarChar(30),      params.channel)
     r.input ('Summary',   sql.NVarChar(sql.MAX), params.summary)
@@ -569,65 +464,101 @@ export async function sp_LogInteraction(params: {
   return { errorCode: (output.ErrorCode as string | null) ?? null }
 }
 
-/**
- * Bulk-creates alumni. Each entry must include a `userId` resolved via
- * sp_GetOrCreateUser on the Global DB (for rows that have an email).
- */
-export async function sp_BulkCreateAlumni(params: {
-  alumni:    BulkAlumniRow[]
-  createdBy: number
-  sportId?:  string
-}): Promise<{ successCount: number; skippedCount: number; errorJson: string }> {
-  const { output } = await execFull('app', 'sp_BulkCreateAlumni', (r) => {
-    r.input ('AlumniJson',   sql.NVarChar(sql.MAX), JSON.stringify(params.alumni))
-    r.input ('CreatedBy',    sql.Int,               params.createdBy)
-    r.input ('SportId',      sql.UniqueIdentifier,  params.sportId ?? null)
-    r.output('SuccessCount', sql.Int)
-    r.output('SkippedCount', sql.Int)
-    r.output('ErrorJson',    sql.NVarChar(sql.MAX))
+/** Returns paginated interaction history for a user. */
+export async function sp_GetInteractionsByUser(params: {
+  userId:   number
+  page?:    number
+  pageSize?: number
+}): Promise<InteractionRow[]> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetInteractionsByUser', (r) => {
+    r.input('UserId',   sql.Int, params.userId)
+    r.input('Page',     sql.Int, params.page     ?? 1)
+    r.input('PageSize', sql.Int, params.pageSize ?? 20)
   })
-  return {
-    successCount: (output.SuccessCount as number) ?? 0,
-    skippedCount: (output.SkippedCount as number) ?? 0,
-    errorJson:    (output.ErrorJson    as string) ?? '[]',
-  }
+  return rows as unknown as InteractionRow[]
 }
 
-export interface BulkAlumniRow {
-  userId?:             number   // resolved by caller via sp_GetOrCreateUser
-  email?:              string
-  firstName:           string
-  lastName:            string
-  graduationYear?:     number
-  graduationSemester?: string
-  phone?:              string
-  linkedInUrl?:        string
-  currentEmployer?:    string
-  currentJobTitle?:    string
-  currentCity?:        string
-  currentState?:       string
-  isDonor?:            boolean
-  notes?:              string
+// ─── App DB — Sports ──────────────────────────────────────────────────────────
+
+export interface SportOption {
+  id:   number   // INT (Football = 1) — was string/GUID before migration 008
+  name: string
+  abbr: string
+}
+
+export interface PositionOption {
+  positionId:   number
+  sportId:      number
+  sportName:    string
+  positionName: string
+  positionAbbr: string | null
+  isActive:     boolean
+}
+
+/** Returns all active sports for this App DB. */
+export async function sp_GetSports(): Promise<SportOption[]> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetSports')
+  return rows.map(r => ({
+    id:   r.id   as number,
+    name: r.name as string,
+    abbr: r.abbr as string,
+  }))
+}
+
+/** Returns positions for a given sport (or all sports if sportId is null). */
+export async function sp_GetSportsPositions(params: {
+  sportId?: number | null
+}): Promise<PositionOption[]> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetSportsPositions', (r) => {
+    r.input('SportId', sql.Int, params.sportId ?? null)
+  })
+  return rows.map(r => ({
+    positionId:   r.positionId   as number,
+    sportId:      r.sportId      as number,
+    sportName:    r.sportName    as string,
+    positionName: r.positionName as string,
+    positionAbbr: r.positionAbbr as string | null,
+    isActive:     Boolean(r.isActive),
+  }))
+}
+
+/**
+ * Returns sports for a user (or all sports if userId is null, i.e. admin/platform_owner).
+ * @TenantId is accepted for convention but unused (single-tenant App DB).
+ */
+export async function sp_GetUserSports(params: {
+  tenantId: number
+  userId?:  number | null
+}): Promise<SportOption[]> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetUserSports', (r) => {
+    r.input('TenantId', sql.Int, params.tenantId)
+    r.input('UserId',   sql.Int, params.userId ?? null)
+  })
+  return rows.map(r => ({
+    id:   r.id   as number,
+    name: r.name as string,
+    abbr: r.abbr as string,
+  }))
 }
 
 // ─── App DB — Campaigns ───────────────────────────────────────────────────────
 
 export async function sp_CreateCampaign(params: {
-  name:            string
-  createdBy:       number
-  targetAudience:  string
-  description?:    string
-  audienceFilters?: string
-  scheduledAt?:    string
-  subjectLine?:    string
-  bodyHtml?:       string
-  fromName?:       string
-  replyToEmail?:   string
-  physicalAddress?: string
-  sportId?:        string
+  name:             string
+  createdBy:        number
+  targetAudience:   string
+  description?:     string | null
+  audienceFilters?: string | null
+  scheduledAt?:     string | null
+  subjectLine?:     string | null
+  bodyHtml?:        string | null
+  fromName?:        string | null
+  replyToEmail?:    string | null
+  physicalAddress?: string | null
+  sportId?:         number | null   // INT — was UNIQUEIDENTIFIER before migration 009
 }): Promise<{ campaignId: string | null; errorCode: string | null }> {
   const { output } = await execFull('app', 'sp_CreateCampaign', (r) => {
-    r.input ('Name',            sql.NVarChar(300),    params.name)
+    r.input ('Name',            sql.NVarChar(200),    params.name)
     r.input ('CreatedBy',       sql.Int,              params.createdBy)
     r.input ('TargetAudience',  sql.NVarChar(30),     params.targetAudience)
     r.input ('Description',     sql.NVarChar(sql.MAX),params.description     ?? null)
@@ -635,12 +566,12 @@ export async function sp_CreateCampaign(params: {
     r.input ('ScheduledAt',     sql.DateTime2,        params.scheduledAt     ?? null)
     r.input ('SubjectLine',     sql.NVarChar(500),    params.subjectLine     ?? null)
     r.input ('BodyHtml',        sql.NVarChar(sql.MAX),params.bodyHtml        ?? null)
-    r.input ('FromName',        sql.NVarChar(150),    params.fromName        ?? null)
+    r.input ('FromName',        sql.NVarChar(200),    params.fromName        ?? null)
     r.input ('ReplyToEmail',    sql.NVarChar(255),    params.replyToEmail    ?? null)
     r.input ('PhysicalAddress', sql.NVarChar(500),    params.physicalAddress ?? null)
-    r.input ('SportId',         sql.UniqueIdentifier, params.sportId         ?? null)
-    r.output('NewCampaignId', sql.UniqueIdentifier)
-    r.output('ErrorCode',     sql.NVarChar(50))
+    r.input ('SportId',         sql.Int,              params.sportId         ?? null)
+    r.output('NewCampaignId',   sql.UniqueIdentifier)
+    r.output('ErrorCode',       sql.NVarChar(50))
   })
   return {
     campaignId: (output.NewCampaignId as string | null) ?? null,
@@ -649,32 +580,240 @@ export async function sp_CreateCampaign(params: {
 }
 
 export async function sp_GetCampaigns(params: {
-  sportId?:            string
-  requestingUserId?:   number | null
-  requestingUserRole?: string
+  sportId?: number | null   // INT — was UNIQUEIDENTIFIER
 } = {}) {
   return exec('app', 'sp_GetCampaigns', (r) => {
-    r.input('SportId',            sql.UniqueIdentifier, params.sportId            ?? null)
-    r.input('RequestingUserId',   sql.Int,              params.requestingUserId   ?? null)
-    r.input('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole ?? null)
+    r.input('SportId', sql.Int, params.sportId ?? null)
   })
 }
 
-export async function sp_GetAlumniStats(params: {
-  sportId?:            string
-  requestingUserId?:   number | null
-  requestingUserRole?: string
-} = {}) {
-  return exec('app', 'sp_GetAlumniStats', (r) => {
-    r.input('SportId',            sql.UniqueIdentifier, params.sportId            ?? null)
-    r.input('RequestingUserId',   sql.Int,              params.requestingUserId   ?? null)
-    r.input('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole ?? null)
+/**
+ * Dispatches an outreach campaign (queues messages for all eligible recipients).
+ */
+export async function sp_DispatchCampaign(params: {
+  campaignId:        string
+  dispatchedBy:      number
+  dailyRemaining?:   number
+  monthlyRemaining?: number
+}): Promise<{ queuedCount: number; errorCode: string | null }> {
+  const { output } = await execFull('app', 'sp_DispatchEmailCampaign', (r) => {
+    r.input ('CampaignId',       sql.UniqueIdentifier, params.campaignId)
+    r.input ('DailyRemaining',   sql.Int,              params.dailyRemaining   ?? 10000)
+    r.input ('MonthlyRemaining', sql.Int,              params.monthlyRemaining ?? 100000)
+    r.output('QueuedCount',      sql.Int)
+    r.output('ErrorCode',        sql.NVarChar(50))
   })
+  return {
+    queuedCount: (output.QueuedCount as number) ?? 0,
+    errorCode:   (output.ErrorCode   as string | null) ?? null,
+  }
+}
+
+// ─── App DB — Feed ────────────────────────────────────────────────────────────
+
+export interface FeedPostRow {
+  id:            string
+  title:         string | null
+  bodyHtml:      string
+  audience:      string
+  audienceJson:  string | null
+  sportId:       number | null   // INT — was UNIQUEIDENTIFIER before migration 009
+  isPinned:      boolean
+  isWelcomePost: boolean
+  campaignId:    string | null
+  createdBy:     number
+  publishedAt:   string
+  createdAt:     string
+  isRead:        boolean
+}
+
+export async function sp_GetFeed(params: {
+  viewerUserId: number
+  sportId?:     number | null   // INT
+  page:         number
+  pageSize:     number
+}): Promise<{ posts: FeedPostRow[]; totalCount: number }> {
+  const { recordset, output } = await execFull('app', 'sp_GetFeed', (r) => {
+    r.input ('ViewerUserId', sql.Int, params.viewerUserId)
+    r.input ('SportId',      sql.Int, params.sportId ?? null)
+    r.input ('Page',         sql.Int, params.page)
+    r.input ('PageSize',     sql.Int, params.pageSize)
+    r.output('TotalCount',   sql.Int)
+  })
+  return {
+    posts:      (recordset as unknown as FeedPostRow[]) ?? [],
+    totalCount: (output.TotalCount as number) ?? 0,
+  }
+}
+
+export async function sp_GetFeedPost(params: {
+  postId:       string
+  viewerUserId: number
+}): Promise<{ post: FeedPostRow | null; errorCode: string | null }> {
+  const { recordset, output } = await execFull('app', 'sp_GetFeedPost', (r) => {
+    r.input ('PostId',       sql.UniqueIdentifier, params.postId)
+    r.input ('ViewerUserId', sql.Int,              params.viewerUserId)
+    r.output('ErrorCode',    sql.NVarChar(50))
+  })
+  const rows = recordset as unknown as FeedPostRow[]
+  return {
+    post:      rows?.[0] ?? null,
+    errorCode: (output.ErrorCode as string | null) ?? null,
+  }
+}
+
+export async function sp_CreatePost(params: {
+  createdBy:     number
+  bodyHtml:      string
+  audience:      string
+  title?:        string | null
+  audienceJson?: string | null
+  sportId?:      number | null   // INT
+  isPinned:      boolean
+  alsoEmail:     boolean
+  emailSubject?: string | null
+}): Promise<{ postId: string | null; campaignId: string | null; errorCode: string | null }> {
+  const { output } = await execFull('app', 'sp_CreatePost', (r) => {
+    r.input ('CreatedBy',   sql.Int,               params.createdBy)
+    r.input ('BodyHtml',    sql.NVarChar(sql.MAX),  params.bodyHtml)
+    r.input ('Audience',    sql.NVarChar(30),       params.audience)
+    r.input ('Title',       sql.NVarChar(300),      params.title        ?? null)
+    r.input ('AudienceJson',sql.NVarChar(sql.MAX),  params.audienceJson ?? null)
+    r.input ('SportId',     sql.Int,                params.sportId      ?? null)
+    r.input ('IsPinned',    sql.Bit,                params.isPinned ? 1 : 0)
+    r.input ('AlsoEmail',   sql.Bit,                params.alsoEmail ? 1 : 0)
+    r.input ('EmailSubject',sql.NVarChar(500),      params.emailSubject ?? null)
+    r.output('NewPostId',   sql.UniqueIdentifier)
+    r.output('CampaignId',  sql.UniqueIdentifier)
+    r.output('ErrorCode',   sql.NVarChar(50))
+  })
+  return {
+    postId:     (output.NewPostId   as string | null) ?? null,
+    campaignId: (output.CampaignId  as string | null) ?? null,
+    errorCode:  (output.ErrorCode   as string | null) ?? null,
+  }
+}
+
+export async function sp_MarkPostRead(params: {
+  postId: string
+  userId: number
+}): Promise<void> {
+  await exec('app', 'sp_MarkPostRead', (r) => {
+    r.input('PostId', sql.UniqueIdentifier, params.postId)
+    r.input('UserId', sql.Int,              params.userId)
+  })
+}
+
+export interface PostReadStats {
+  totalEligible: number
+  totalRead:     number
+  readRatePct:   number
+}
+
+export async function sp_GetPostReadStats(params: {
+  postId: string
+}): Promise<{ stats: PostReadStats | null; errorCode: string | null }> {
+  const { recordset, output } = await execFull('app', 'sp_GetPostReadStats', (r) => {
+    r.input ('PostId',    sql.UniqueIdentifier, params.postId)
+    r.output('ErrorCode', sql.NVarChar(50))
+  })
+  const rows = recordset as unknown as PostReadStats[]
+  return {
+    stats:     rows?.[0] ?? null,
+    errorCode: (output.ErrorCode as string | null) ?? null,
+  }
+}
+
+// ─── Dashboard Metrics ────────────────────────────────────────────────────────
+
+export interface AlumniDashboardMetrics {
+  totalInteractions:      number
+  monthInteractions:      number
+  totalEmailsSent:        number
+  monthEmailsSent:        number
+  alumniLoginsLast30Days: number
+  emailOpenRatePct:       number
+}
+
+export async function sp_GetDashboardMetrics_Alumni(params: {
+  tenantId: number
+  sportId?: number | null   // INT — was UNIQUEIDENTIFIER
+}): Promise<AlumniDashboardMetrics> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetDashboardMetrics_Alumni', (r) => {
+    r.input('TenantId', sql.Int, params.tenantId)
+    r.input('SportId',  sql.Int, params.sportId ?? null)
+  })
+  const row = rows[0] ?? {}
+  return {
+    totalInteractions:      (row.totalInteractions      as number) ?? 0,
+    monthInteractions:      (row.monthInteractions      as number) ?? 0,
+    totalEmailsSent:        (row.totalEmailsSent        as number) ?? 0,
+    monthEmailsSent:        (row.monthEmailsSent        as number) ?? 0,
+    alumniLoginsLast30Days: (row.alumniLoginsLast30Days as number) ?? 0,
+    emailOpenRatePct:       (row.emailOpenRatePct       as number) ?? 0,
+  }
+}
+
+export interface PlayerDashboardMetrics {
+  totalEmailsSent: number
+  monthEmailsSent: number
+  totalFeedPosts:  number
+  monthFeedPosts:  number
+}
+
+export async function sp_GetDashboardMetrics_Players(params: {
+  tenantId: number
+  sportId?: number | null   // INT
+}): Promise<PlayerDashboardMetrics> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetDashboardMetrics_Players', (r) => {
+    r.input('TenantId', sql.Int, params.tenantId)
+    r.input('SportId',  sql.Int, params.sportId ?? null)
+  })
+  const row = rows[0] ?? {}
+  return {
+    totalEmailsSent: (row.totalEmailsSent as number) ?? 0,
+    monthEmailsSent: (row.monthEmailsSent as number) ?? 0,
+    totalFeedPosts:  (row.totalFeedPosts  as number) ?? 0,
+    monthFeedPosts:  (row.monthFeedPosts  as number) ?? 0,
+  }
+}
+
+export interface AllEngagementMetrics {
+  totalInteractions:      number
+  monthInteractions:      number
+  alumniEmailsTotal:      number
+  alumniEmailsMonth:      number
+  alumniLoginsLast30Days: number
+  playerEmailsTotal:      number
+  playerEmailsMonth:      number
+  totalFeedPosts:         number
+  monthFeedPosts:         number
+}
+
+export async function sp_GetDashboardMetrics_All(params: {
+  tenantId: number
+  sportId?: number | null   // INT
+}): Promise<AllEngagementMetrics> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetDashboardMetrics_All', (r) => {
+    r.input('TenantId', sql.Int, params.tenantId)
+    r.input('SportId',  sql.Int, params.sportId ?? null)
+  })
+  const row = rows[0] ?? {}
+  return {
+    totalInteractions:      (row.totalInteractions      as number) ?? 0,
+    monthInteractions:      (row.monthInteractions      as number) ?? 0,
+    alumniEmailsTotal:      (row.alumniEmailsTotal      as number) ?? 0,
+    alumniEmailsMonth:      (row.alumniEmailsMonth      as number) ?? 0,
+    alumniLoginsLast30Days: (row.alumniLoginsLast30Days as number) ?? 0,
+    playerEmailsTotal:      (row.playerEmailsTotal      as number) ?? 0,
+    playerEmailsMonth:      (row.playerEmailsMonth      as number) ?? 0,
+    totalFeedPosts:         (row.totalFeedPosts         as number) ?? 0,
+    monthFeedPosts:         (row.monthFeedPosts         as number) ?? 0,
+  }
 }
 
 // ─── Global DB — Team Member Creation ────────────────────────────────────────
 
-/** Creates or looks up a user, assigns the given role, grants app_permissions. */
 export async function sp_CreateTeamMember(params: {
   email:     string
   firstName: string
@@ -701,7 +840,6 @@ export async function sp_CreateTeamMember(params: {
 
 // ─── Global DB — Invite Codes & Access Requests ───────────────────────────────
 
-/** Creates a new user account for self-signup via invite code. */
 export async function sp_RegisterUserViaInvite(params: {
   email:        string
   passwordHash: string
@@ -722,7 +860,6 @@ export async function sp_RegisterUserViaInvite(params: {
   }
 }
 
-/** Validates an invite token and returns team + role info. Returns null if token not found. */
 export async function sp_ValidateInviteCode(params: {
   token: string
 }): Promise<Record<string, unknown> | null> {
@@ -732,7 +869,6 @@ export async function sp_ValidateInviteCode(params: {
   return rows[0] ?? null
 }
 
-/** Creates a new invite code. */
 export async function sp_CreateInviteCode(params: {
   teamId:    number
   role:      string
@@ -757,7 +893,6 @@ export async function sp_CreateInviteCode(params: {
   }
 }
 
-/** Lists all invite codes for a team. */
 export async function sp_ListInviteCodes(params: {
   teamId: number
 }): Promise<sql.IRecordSet<Record<string, unknown>>> {
@@ -766,7 +901,6 @@ export async function sp_ListInviteCodes(params: {
   })
 }
 
-/** Deactivates an invite code. */
 export async function sp_DeactivateInviteCode(params: {
   inviteCodeId:  number
   deactivatedBy: number
@@ -779,14 +913,13 @@ export async function sp_DeactivateInviteCode(params: {
   return { errorCode: (output.ErrorCode as string | null) ?? null }
 }
 
-/** Submits an access request. Increments invite code use_count. */
 export async function sp_SubmitAccessRequest(params: {
   userId: number
   token:  string
 }): Promise<{ requestId: number | null; errorCode: string | null }> {
   const { output } = await execFull('global', 'sp_SubmitAccessRequest', (r) => {
-    r.input ('UserId',    sql.BigInt,       params.userId)
-    r.input ('Token',     sql.NVarChar(128),params.token)
+    r.input ('UserId',    sql.BigInt,        params.userId)
+    r.input ('Token',     sql.NVarChar(128), params.token)
     r.output('RequestId', sql.BigInt)
     r.output('ErrorCode', sql.NVarChar(50))
   })
@@ -796,7 +929,6 @@ export async function sp_SubmitAccessRequest(params: {
   }
 }
 
-/** Returns all access requests for the calling user. */
 export async function sp_GetMyAccessRequests(params: {
   userId: number
 }): Promise<sql.IRecordSet<Record<string, unknown>>> {
@@ -805,23 +937,21 @@ export async function sp_GetMyAccessRequests(params: {
   })
 }
 
-/** Returns access requests visible to an admin (scoped by team membership). */
 export async function sp_GetPendingAccessRequests(params: {
   adminUserId:   number
   statusFilter?: 'pending' | 'approved' | 'denied' | 'all'
 }): Promise<sql.IRecordSet<Record<string, unknown>>> {
   return exec('global', 'sp_GetPendingAccessRequests', (r) => {
-    r.input('AdminUserId',  sql.BigInt,      params.adminUserId)
-    r.input('StatusFilter', sql.NVarChar(20),params.statusFilter ?? 'pending')
+    r.input('AdminUserId',  sql.BigInt,       params.adminUserId)
+    r.input('StatusFilter', sql.NVarChar(20), params.statusFilter ?? 'pending')
   })
 }
 
-/** Approves or denies an access request. */
 export async function sp_ReviewAccessRequest(params: {
-  requestId:    number
-  reviewedBy:   number
-  action:       'approve' | 'deny'
-  role?:        string | null
+  requestId:     number
+  reviewedBy:    number
+  action:        'approve' | 'deny'
+  role?:         string | null
   denialReason?: string | null
 }): Promise<{
   userId:    number | null
@@ -830,11 +960,11 @@ export async function sp_ReviewAccessRequest(params: {
   errorCode: string | null
 }> {
   const { output } = await execFull('global', 'sp_ReviewAccessRequest', (r) => {
-    r.input ('RequestId',    sql.BigInt,           params.requestId)
-    r.input ('ReviewedBy',   sql.BigInt,           params.reviewedBy)
-    r.input ('Action',       sql.NVarChar(10),     params.action)
-    r.input ('Role',         sql.NVarChar(30),     params.role         ?? null)
-    r.input ('DenialReason', sql.NVarChar(sql.MAX),params.denialReason ?? null)
+    r.input ('RequestId',    sql.BigInt,            params.requestId)
+    r.input ('ReviewedBy',   sql.BigInt,            params.reviewedBy)
+    r.input ('Action',       sql.NVarChar(10),      params.action)
+    r.input ('Role',         sql.NVarChar(30),      params.role         ?? null)
+    r.input ('DenialReason', sql.NVarChar(sql.MAX), params.denialReason ?? null)
     r.output('UserId',       sql.BigInt)
     r.output('TeamId',       sql.Int)
     r.output('FinalRole',    sql.NVarChar(30))
@@ -848,7 +978,6 @@ export async function sp_ReviewAccessRequest(params: {
   }
 }
 
-/** Updates reminder_sent_at. Only allowed if null or older than 48 hours. */
 export async function sp_SendRequestReminder(params: {
   requestId: number
   userId:    number
@@ -859,289 +988,6 @@ export async function sp_SendRequestReminder(params: {
     r.output('ErrorCode', sql.NVarChar(50))
   })
   return { errorCode: (output.ErrorCode as string | null) ?? null }
-}
-
-// ─── App DB — Feed ────────────────────────────────────────────────────────────
-
-export interface FeedPostRow {
-  id:            string
-  title:         string | null
-  bodyHtml:      string
-  audience:      string
-  audienceJson:  string | null
-  sportId:       string | null
-  isPinned:      boolean
-  isWelcomePost: boolean
-  campaignId:    string | null
-  createdBy:     number
-  publishedAt:   string
-  createdAt:     string
-  isRead:        boolean
-}
-
-export async function sp_GetFeed(params: {
-  viewerUserId:       number
-  sportId?:           string
-  page:               number
-  pageSize:           number
-  requestingUserId:   number
-  requestingUserRole: string
-}): Promise<{ posts: FeedPostRow[]; totalCount: number }> {
-  const { recordset, output } = await execFull('app', 'sp_GetFeed', (r) => {
-    r.input ('ViewerUserId',        sql.Int,              params.viewerUserId)
-    r.input ('SportId',             sql.UniqueIdentifier, params.sportId ?? null)
-    r.input ('Page',                sql.Int,              params.page)
-    r.input ('PageSize',            sql.Int,              params.pageSize)
-    r.output('TotalCount',          sql.Int)
-    r.input ('RequestingUserId',    sql.Int,              params.requestingUserId)
-    r.input ('RequestingUserRole',  sql.NVarChar(50),     params.requestingUserRole)
-  })
-  return {
-    posts:      (recordset as unknown as FeedPostRow[]) ?? [],
-    totalCount: (output.TotalCount as number) ?? 0,
-  }
-}
-
-export async function sp_GetFeedPost(params: {
-  postId:             string
-  viewerUserId:       number
-  requestingUserId:   number
-  requestingUserRole: string
-}): Promise<{ post: FeedPostRow | null; errorCode: string | null }> {
-  const { recordset, output } = await execFull('app', 'sp_GetFeedPost', (r) => {
-    r.input ('PostId',              sql.UniqueIdentifier, params.postId)
-    r.input ('ViewerUserId',        sql.Int,              params.viewerUserId)
-    r.output('ErrorCode',           sql.NVarChar(50))
-    r.input ('RequestingUserId',    sql.Int,              params.requestingUserId)
-    r.input ('RequestingUserRole',  sql.NVarChar(50),     params.requestingUserRole)
-  })
-  const rows = recordset as unknown as FeedPostRow[]
-  return {
-    post:      rows?.[0] ?? null,
-    errorCode: (output.ErrorCode as string | null) ?? null,
-  }
-}
-
-export async function sp_CreatePost(params: {
-  createdBy:          number
-  bodyHtml:           string
-  audience:           string
-  title?:             string | null
-  audienceJson?:      string | null
-  sportId?:           string | null
-  isPinned:           boolean
-  alsoEmail:          boolean
-  emailSubject?:      string | null
-  requestingUserId:   number
-  requestingUserRole: string
-}): Promise<{ postId: string | null; campaignId: string | null; errorCode: string | null }> {
-  const { output } = await execFull('app', 'sp_CreatePost', (r) => {
-    r.input ('CreatedBy',           sql.Int,               params.createdBy)
-    r.input ('BodyHtml',            sql.NVarChar(sql.MAX),  params.bodyHtml)
-    r.input ('Audience',            sql.NVarChar(30),       params.audience)
-    r.input ('Title',               sql.NVarChar(300),      params.title ?? null)
-    r.input ('AudienceJson',        sql.NVarChar(sql.MAX),  params.audienceJson ?? null)
-    r.input ('SportId',             sql.UniqueIdentifier,   params.sportId ?? null)
-    r.input ('IsPinned',            sql.Bit,                params.isPinned ? 1 : 0)
-    r.input ('AlsoEmail',           sql.Bit,                params.alsoEmail ? 1 : 0)
-    r.input ('EmailSubject',        sql.NVarChar(500),      params.emailSubject ?? null)
-    r.output('NewPostId',           sql.UniqueIdentifier)
-    r.output('CampaignId',          sql.UniqueIdentifier)
-    r.output('ErrorCode',           sql.NVarChar(50))
-    r.input ('RequestingUserId',    sql.Int,                params.requestingUserId)
-    r.input ('RequestingUserRole',  sql.NVarChar(50),       params.requestingUserRole)
-  })
-  return {
-    postId:     (output.NewPostId   as string | null) ?? null,
-    campaignId: (output.CampaignId  as string | null) ?? null,
-    errorCode:  (output.ErrorCode   as string | null) ?? null,
-  }
-}
-
-export async function sp_MarkPostRead(params: {
-  postId: string
-  userId: number
-}): Promise<void> {
-  await exec('app', 'sp_MarkPostRead', (r) => {
-    r.input('PostId', sql.UniqueIdentifier, params.postId)
-    r.input('UserId', sql.Int,              params.userId)
-  })
-}
-
-export interface PostReadStats {
-  totalEligible:      number
-  totalRead:          number
-  readThroughRatePct: number
-}
-
-export async function sp_GetPostReadStats(params: {
-  postId:             string
-  requestingUserId:   number
-  requestingUserRole: string
-}): Promise<{ stats: PostReadStats | null; errorCode: string | null }> {
-  const { recordset, output } = await execFull('app', 'sp_GetPostReadStats', (r) => {
-    r.input ('PostId',              sql.UniqueIdentifier, params.postId)
-    r.output('ErrorCode',           sql.NVarChar(50))
-    r.input ('RequestingUserId',    sql.Int,              params.requestingUserId)
-    r.input ('RequestingUserRole',  sql.NVarChar(50),     params.requestingUserRole)
-  })
-  const rows = recordset as unknown as PostReadStats[]
-  return {
-    stats:     rows?.[0] ?? null,
-    errorCode: (output.ErrorCode as string | null) ?? null,
-  }
-}
-
-/**
- * Dispatches an outreach campaign (queues messages for all eligible recipients).
- * Maps to dbo.sp_DispatchEmailCampaign.
- * dailyRemaining / monthlyRemaining default to high values — enforce limits
- * at the application layer if needed.
- */
-export async function sp_DispatchCampaign(params: {
-  campaignId:       string
-  dispatchedBy:     number
-  dailyRemaining?:  number
-  monthlyRemaining?: number
-}): Promise<{ queuedCount: number; errorCode: string | null }> {
-  const { output } = await execFull('app', 'sp_DispatchEmailCampaign', (r) => {
-    r.input ('CampaignId',          sql.UniqueIdentifier, params.campaignId)
-    r.input ('DailyRemaining',      sql.Int,              params.dailyRemaining  ?? 10000)
-    r.input ('MonthlyRemaining',    sql.Int,              params.monthlyRemaining ?? 100000)
-    r.output('QueuedCount',         sql.Int)
-    r.output('ErrorCode',           sql.NVarChar(50))
-    r.input ('RequestingUserId',    sql.Int,              params.dispatchedBy)
-    r.input ('RequestingUserRole',  sql.NVarChar(50),     'platform_owner')
-  })
-  return {
-    queuedCount: (output.QueuedCount as number) ?? 0,
-    errorCode:   (output.ErrorCode   as string | null) ?? null,
-  }
-}
-
-// ─── Dashboard Metrics ────────────────────────────────────────────────────────
-
-export interface AlumniDashboardMetrics {
-  totalInteractions:      number
-  monthInteractions:      number
-  totalEmailsSent:        number
-  monthEmailsSent:        number
-  alumniLoginsLast30Days: number
-  emailOpenRatePct:       number
-}
-
-export async function sp_GetDashboardMetrics_Alumni(params: {
-  tenantId:           number
-  sportId?:           string | null
-  requestingUserId:   number
-  requestingUserRole: string
-}): Promise<AlumniDashboardMetrics> {
-  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetDashboardMetrics_Alumni', (r) => {
-    r.input('TenantId',           sql.Int,              params.tenantId)
-    r.input('SportId',            sql.UniqueIdentifier, params.sportId ?? null)
-    r.input('RequestingUserId',   sql.Int,              params.requestingUserId)
-    r.input('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole)
-  })
-  const row = rows[0] ?? {}
-  return {
-    totalInteractions:      (row.totalInteractions      as number) ?? 0,
-    monthInteractions:      (row.monthInteractions       as number) ?? 0,
-    totalEmailsSent:        (row.totalEmailsSent         as number) ?? 0,
-    monthEmailsSent:        (row.monthEmailsSent         as number) ?? 0,
-    alumniLoginsLast30Days: (row.alumniLoginsLast30Days  as number) ?? 0,
-    emailOpenRatePct:       (row.emailOpenRatePct        as number) ?? 0,
-  }
-}
-
-export interface PlayerDashboardMetrics {
-  totalEmailsSent: number
-  monthEmailsSent: number
-  totalFeedPosts:  number
-  monthFeedPosts:  number
-}
-
-export async function sp_GetDashboardMetrics_Players(params: {
-  tenantId:           number
-  sportId?:           string | null
-  requestingUserId:   number
-  requestingUserRole: string
-}): Promise<PlayerDashboardMetrics> {
-  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetDashboardMetrics_Players', (r) => {
-    r.input('TenantId',           sql.Int,              params.tenantId)
-    r.input('SportId',            sql.UniqueIdentifier, params.sportId ?? null)
-    r.input('RequestingUserId',   sql.Int,              params.requestingUserId)
-    r.input('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole)
-  })
-  const row = rows[0] ?? {}
-  return {
-    totalEmailsSent: (row.totalEmailsSent as number) ?? 0,
-    monthEmailsSent: (row.monthEmailsSent as number) ?? 0,
-    totalFeedPosts:  (row.totalFeedPosts  as number) ?? 0,
-    monthFeedPosts:  (row.monthFeedPosts  as number) ?? 0,
-  }
-}
-
-// ─── Sports ───────────────────────────────────────────────────────────────────
-
-export interface SportOption {
-  id:   string
-  name: string
-  abbr: string
-}
-
-export async function sp_GetUserSports(params: {
-  tenantId: number
-  userId?:  number | null
-}): Promise<SportOption[]> {
-  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetUserSports', (r) => {
-    r.input('TenantId', sql.Int, params.tenantId)
-    r.input('UserId',   sql.Int, params.userId ?? null)
-  })
-  return rows.map(r => ({
-    id:   r.id   as string,
-    name: r.name as string,
-    abbr: r.abbr as string,
-  }))
-}
-
-// ─── All Engagement Dashboard Metrics ────────────────────────────────────────
-
-export interface AllEngagementMetrics {
-  totalInteractions:      number
-  monthInteractions:      number
-  alumniEmailsTotal:      number
-  alumniEmailsMonth:      number
-  alumniLoginsLast30Days: number
-  playerEmailsTotal:      number
-  playerEmailsMonth:      number
-  totalFeedPosts:         number
-  monthFeedPosts:         number
-}
-
-export async function sp_GetDashboardMetrics_All(params: {
-  tenantId:           number
-  sportId?:           string | null
-  requestingUserId:   number
-  requestingUserRole: string
-}): Promise<AllEngagementMetrics> {
-  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetDashboardMetrics_All', (r) => {
-    r.input('TenantId',           sql.Int,              params.tenantId)
-    r.input('SportId',            sql.UniqueIdentifier, params.sportId ?? null)
-    r.input('RequestingUserId',   sql.Int,              params.requestingUserId)
-    r.input('RequestingUserRole', sql.NVarChar(50),     params.requestingUserRole)
-  })
-  const row = rows[0] ?? {}
-  return {
-    totalInteractions:      (row.totalInteractions      as number) ?? 0,
-    monthInteractions:      (row.monthInteractions      as number) ?? 0,
-    alumniEmailsTotal:      (row.alumniEmailsTotal      as number) ?? 0,
-    alumniEmailsMonth:      (row.alumniEmailsMonth      as number) ?? 0,
-    alumniLoginsLast30Days: (row.alumniLoginsLast30Days as number) ?? 0,
-    playerEmailsTotal:      (row.playerEmailsTotal      as number) ?? 0,
-    playerEmailsMonth:      (row.playerEmailsMonth      as number) ?? 0,
-    totalFeedPosts:         (row.totalFeedPosts         as number) ?? 0,
-    monthFeedPosts:         (row.monthFeedPosts         as number) ?? 0,
-  }
 }
 
 // ─── Global DB — Profile / Account ───────────────────────────────────────────
@@ -1184,8 +1030,8 @@ export async function sp_ChangeEmail(params: {
   newEmail: string
 }): Promise<{ errorCode: string | null }> {
   const { output } = await execFull('global', 'sp_ChangeEmail', (r) => {
-    r.input ('UserId',    sql.BigInt,       params.userId)
-    r.input ('NewEmail',  sql.NVarChar(255),params.newEmail)
+    r.input ('UserId',    sql.BigInt,        params.userId)
+    r.input ('NewEmail',  sql.NVarChar(255), params.newEmail)
     r.output('ErrorCode', sql.NVarChar(50))
   })
   return { errorCode: (output.ErrorCode as string | null) ?? null }
@@ -1196,8 +1042,8 @@ export async function sp_ChangePassword(params: {
   newPasswordHash: string
 }): Promise<{ errorCode: string | null }> {
   const { output } = await execFull('global', 'sp_ChangePassword', (r) => {
-    r.input ('UserId',          sql.BigInt,       params.userId)
-    r.input ('NewPasswordHash', sql.NVarChar(255), params.newPasswordHash)
+    r.input ('UserId',          sql.BigInt,        params.userId)
+    r.input ('NewPasswordHash', sql.NVarChar(255),  params.newPasswordHash)
     r.output('ErrorCode',       sql.NVarChar(50))
   })
   return { errorCode: (output.ErrorCode as string | null) ?? null }

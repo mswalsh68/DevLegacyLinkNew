@@ -19,19 +19,18 @@ export async function GET(req: Request) {
   }
 
   const { searchParams } = new URL(req.url)
-  const page     = parseInt(searchParams.get('page')     ?? '1')
-  const pageSize = parseInt(searchParams.get('pageSize') ?? '20')
-  const sportId  = searchParams.get('sportId') || undefined
+  const page         = parseInt(searchParams.get('page')     ?? '1')
+  const pageSize     = parseInt(searchParams.get('pageSize') ?? '20')
+  const sportIdParam = searchParams.get('sportId')
+  const sportId      = sportIdParam ? parseInt(sportIdParam, 10) || null : null
 
   return appDbContext.run(session.appDb, async () => {
     try {
       const { posts, totalCount } = await sp_GetFeed({
-        viewerUserId:       session.userId,
+        viewerUserId: session.userId,
         sportId,
         page,
         pageSize,
-        requestingUserId:   session.userId,
-        requestingUserRole: session.role,
       })
       return NextResponse.json({ success: true, data: posts, total: totalCount })
     } catch (err) {
@@ -59,7 +58,7 @@ export async function POST(req: Request) {
     audience:      string
     title?:        string | null
     audienceJson?: string | null
-    sportId?:      string | null
+    sportId?:      number | string | null   // accept both INT and string "1"
     isPinned?:     boolean
     alsoEmail?:    boolean
     emailSubject?: string | null
@@ -71,26 +70,29 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { bodyHtml, audience, title, audienceJson, sportId, isPinned, alsoEmail, emailSubject } = body
+  const { bodyHtml, audience, title, audienceJson, isPinned, alsoEmail, emailSubject } = body
 
   if (!bodyHtml || !audience) {
     return NextResponse.json({ success: false, error: 'bodyHtml and audience are required' }, { status: 400 })
   }
 
+  // Normalise sportId to INT or null
+  const sportId = body.sportId != null
+    ? parseInt(String(body.sportId), 10) || null
+    : null
+
   return appDbContext.run(session.appDb, async () => {
     try {
       const { postId, campaignId, errorCode } = await sp_CreatePost({
-        createdBy:          session.userId,
+        createdBy:    session.userId,
         bodyHtml,
         audience,
-        title:              title ?? null,
-        audienceJson:       audienceJson ?? null,
-        sportId:            sportId ?? null,
-        isPinned:           isPinned ?? false,
-        alsoEmail:          alsoEmail ?? false,
-        emailSubject:       emailSubject ?? null,
-        requestingUserId:   session.userId,
-        requestingUserRole: session.role,
+        title:        title        ?? null,
+        audienceJson: audienceJson ?? null,
+        sportId,
+        isPinned:     isPinned     ?? false,
+        alsoEmail:    alsoEmail    ?? false,
+        emailSubject: emailSubject ?? null,
       })
 
       if (errorCode && errorCode !== 'OK') {

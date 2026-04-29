@@ -9,11 +9,9 @@
 import { useState, useRef, useTransition } from 'react'
 import { Modal }  from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
-import { createPlayer }     from '@/app/actions/players'
-import { createAlumni }     from '@/app/actions/alumni'
-import { createCoachStaff, generateInviteCode } from '@/app/actions/members'
-import { bulkCreatePlayers } from '@/app/actions/players'
-import { bulkCreateAlumni }  from '@/app/actions/alumni'
+import { addPlayerToRoster, bulkAddPlayersToRoster } from '@/app/actions/players'
+import { addAlumniRecord, bulkAddAlumni }           from '@/app/actions/alumni'
+import { createCoachStaff, generateInviteCode }     from '@/app/actions/members'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,23 +28,25 @@ interface WizardResult {
 }
 
 interface SportOption {
-  id:   string
+  id:   number   // INT (Football = 1) — post-migration 008
   name: string
   abbr: string
 }
 
 export interface AddMembersWizardProps {
-  isOpen:        boolean
-  onClose:       () => void
-  teamId:        number
-  teamName:      string
-  sport:         string
-  positions:     string[]
-  academicYears: string[]
-  userId:        number
-  appDb:         string         // tenant App DB name from session.appDb
-  userRoleId:    number         // creator's roleId — enforces "at or below your level"
-  sports:        SportOption[]  // active sports for this team
+  isOpen:              boolean
+  onClose:             () => void
+  teamId:              number
+  teamName:            string
+  sport:               string
+  positions:           string[]
+  academicYears:       string[]
+  userId:              number
+  appDb:               string         // tenant App DB name from session.appDb
+  userRoleId:          number         // creator's roleId — enforces "at or below your level"
+  sports:              SportOption[]  // active sports for this team
+  playerProgramRoleId?: number        // dbo.program_role.id for 'Player' role (default 1)
+  alumniProgramRoleId?: number        // dbo.program_role.id for 'Alumni' role (default 2)
 }
 
 // Roles that can be assigned to staff/coach members, ordered by roleId.
@@ -204,6 +204,8 @@ function parseCSV(text: string, type: MemberType): Record<string, string>[] {
 export function AddMembersWizard({
   isOpen, onClose,
   teamId, teamName, sport, positions, academicYears, userId, appDb, userRoleId, sports,
+  playerProgramRoleId = 1,
+  alumniProgramRoleId = 2,
 }: AddMembersWizardProps) {
   // Roles the current user is allowed to assign (must be below their own level)
   const assignableStaffRoles = STAFF_ROLES.filter(r => r.roleId > userRoleId)
@@ -224,7 +226,7 @@ export function AddMembersWizard({
   const [recruitingClass, setRecruitingClass] = useState('')
   const [graduationYear,  setGraduationYear]  = useState('')
   const [coachRole,       setCoachRole]       = useState<'app_admin' | 'head_coach' | 'position_coach' | 'alumni_director'>('head_coach')
-  const [selSportId,      setSelSportId]      = useState(() => sports[0]?.id ?? '')
+  const [selSportId,      setSelSportId]      = useState<number | null>(() => sports[0]?.id ?? null)
   const [formError,       setFormError]       = useState('')
 
   // ── Bulk upload state ─────────────────────────────────────────────────────
@@ -244,7 +246,7 @@ export function AddMembersWizard({
     setStep('type'); setMemberType(null); setAction(null); setResult(null)
     setEmail(''); setFirstName(''); setLastName(''); setPosition('')
     setAcademicYear(''); setRecruitingClass(''); setGraduationYear('')
-    setCoachRole('head_coach'); setSelSportId(sports[0]?.id ?? ''); setFormError('')
+    setCoachRole('head_coach'); setSelSportId(sports[0]?.id ?? null); setFormError('')
     setCsvRows([]); setCsvFileName('')
     setInviteRole('player'); setInviteExpiry(''); setInviteMaxUses('')
     setGeneratedUrl(''); setUrlCopied(false)
@@ -310,15 +312,16 @@ export function AddMembersWizard({
 
   async function submitCreate() {
     if (memberType === 'player') {
-      const res = await createPlayer({
+      const res = await addPlayerToRoster({
         appDb,
         email, firstName, lastName,
-        position:        position || 'ATH',
-        academicYear:    academicYear || 'Freshman',
-        recruitingClass: parseInt(recruitingClass) || new Date().getFullYear(),
         globalTeamId:    teamId,
-        createdBy:       userId,
-        sportId:         selSportId || undefined,
+        programRoleId:   playerProgramRoleId,
+        sportId:         selSportId,
+        // positionId lookup not yet wired — pass null; update via edit after creation
+        positionId:      null,
+        classYear:       recruitingClass ? parseInt(recruitingClass) : null,
+        adminUserId:     userId,
       })
       if (res.success) {
         setResult({
@@ -331,14 +334,15 @@ export function AddMembersWizard({
       }
 
     } else if (memberType === 'alumni') {
-      const res = await createAlumni({
+      const res = await addAlumniRecord({
         appDb,
         email, firstName, lastName,
-        position:       position || undefined,
-        graduationYear: graduationYear ? parseInt(graduationYear) : undefined,
-        globalTeamId:   teamId,
-        createdBy:      userId,
-        sportId:        selSportId || undefined,
+        globalTeamId:  teamId,
+        programRoleId: alumniProgramRoleId,
+        sportId:       selSportId,
+        positionId:    null,
+        classYear:     graduationYear ? parseInt(graduationYear) : null,
+        adminUserId:   userId,
       })
       if (res.success) {
         setResult({
@@ -374,14 +378,18 @@ export function AddMembersWizard({
 
     if (memberType === 'player') {
       const players = csvRows.map(r => ({
-        email:          r.email,
-        firstName:      r.firstName      || r.first_name  || '',
-        lastName:       r.lastName       || r.last_name   || '',
-        position:       r.position       || 'ATH',
-        academicYear:   r.academicYear   || r.academic_year || 'Freshman',
-        recruitingClass: parseInt(r.recruitingClass || r.recruiting_class || '') || new Date().getFullYear(),
+        email:     r.email,
+        firstName: r.firstName || r.first_name || '',
+        lastName:  r.lastName  || r.last_name  || '',
+        classYear: parseInt(r.recruitingClass || r.recruiting_class || '') || null,
       }))
-      const res = await bulkCreatePlayers({ appDb, players, createdBy: userId, globalTeamId: teamId, sportId: selSportId || undefined })
+      const res = await bulkAddPlayersToRoster({
+        appDb, players,
+        globalTeamId:  teamId,
+        programRoleId: playerProgramRoleId,
+        sportId:       selSportId,
+        adminUserId:   userId,
+      })
       setResult({
         success: res.successCount > 0,
         message: `${res.successCount} player(s) added.`,
@@ -392,14 +400,18 @@ export function AddMembersWizard({
 
     } else if (memberType === 'alumni') {
       const alumni = csvRows.map(r => ({
-        email:          r.email,
-        firstName:      r.firstName || r.first_name || '',
-        lastName:       r.lastName  || r.last_name  || '',
-        graduationYear: r.graduationYear ? parseInt(r.graduationYear) : undefined,
-        currentCity:    r.city  || undefined,
-        currentState:   r.state || undefined,
+        email:     r.email,
+        firstName: r.firstName || r.first_name || '',
+        lastName:  r.lastName  || r.last_name  || '',
+        classYear: r.graduationYear ? parseInt(r.graduationYear) : null,
       }))
-      const res = await bulkCreateAlumni({ appDb, alumni, createdBy: userId, globalTeamId: teamId, sportId: selSportId || undefined })
+      const res = await bulkAddAlumni({
+        appDb, alumni,
+        globalTeamId:  teamId,
+        programRoleId: alumniProgramRoleId,
+        sportId:       selSportId,
+        adminUserId:   userId,
+      })
       setResult({
         success: res.successCount > 0,
         message: `${res.successCount} alumni added.`,
@@ -563,8 +575,8 @@ export function AddMembersWizard({
               {showSportPicker && memberType !== 'coach' && (
                 <Field label="Sport">
                   <select
-                    value={selSportId}
-                    onChange={e => setSelSportId(e.target.value)}
+                    value={selSportId ?? ''}
+                    onChange={e => setSelSportId(parseInt(e.target.value, 10) || null)}
                     style={{ ...inputStyle, appearance: 'auto' }}
                   >
                     {sports.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -636,8 +648,8 @@ export function AddMembersWizard({
               {showSportPicker && memberType !== 'coach' && (
                 <Field label="Sport">
                   <select
-                    value={selSportId}
-                    onChange={e => setSelSportId(e.target.value)}
+                    value={selSportId ?? ''}
+                    onChange={e => setSelSportId(parseInt(e.target.value, 10) || null)}
                     style={{ ...inputStyle, appearance: 'auto' }}
                   >
                     {sports.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}

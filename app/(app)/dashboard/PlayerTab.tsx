@@ -18,7 +18,7 @@ const POST_AUDIENCES     = ['all', 'players_only', 'by_position'] as const
 
 // ─── Player Tab ───────────────────────────────────────────────────────────────
 
-export default function PlayerTab({ sportId }: { sportId?: string | null }) {
+export default function PlayerTab({ sportId }: { sportId?: number | null }) {
   return (
     <CommsDashboardTab
       campaignAudiences={CAMPAIGN_AUDIENCES}

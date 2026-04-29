@@ -1444,3 +1444,73 @@ BEGIN
     END AS readRatePct;
 END;
 GO
+
+-- ============================================================
+-- sp_GetMemberDetails
+-- Returns a user's profile (from dbo.users) + all role records
+-- (from dbo.users_roles) + recent interaction history.
+-- Used by player detail and alumni detail pages.
+-- Returns two result sets:
+--   [0] One row per users_roles entry (joined to users + sports + position)
+--   [1] Up to 20 most-recent interaction_log entries for this user
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_GetMemberDetails
+  @UserId    INT,
+  @ErrorCode NVARCHAR(50) OUTPUT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SET @ErrorCode = NULL;
+
+  IF NOT EXISTS (SELECT 1 FROM dbo.users WHERE user_id = @UserId)
+  BEGIN
+    SET @ErrorCode = 'USER_NOT_FOUND';
+    RETURN;
+  END
+
+  -- Result set 1: user base row + all role rows (one row per users_roles entry)
+  SELECT
+    u.user_id          AS userId,
+    u.email,
+    u.first_name       AS firstName,
+    u.last_name        AS lastName,
+    u.platform_role    AS platformRole,
+    u.last_team_login  AS lastTeamLogin,
+    ur.user_role_id    AS userRoleId,
+    ur.sport_id        AS sportId,
+    s.name             AS sportName,
+    s.abbr             AS sportAbbr,
+    ur.program_role_id AS programRoleId,
+    pr.display_name    AS programRoleDisplay,
+    ur.status,
+    ur.position_id     AS positionId,
+    sp.position_name   AS position,
+    ur.jersey_number   AS jerseyNumber,
+    ur.seasons_played  AS seasonsPlayed,
+    ur.class_year      AS classYear,
+    ur.created_at      AS createdAt,
+    ur.updated_at      AS updatedAt
+  FROM dbo.users u
+  LEFT JOIN dbo.users_roles     ur ON ur.user_id      = u.user_id
+  LEFT JOIN dbo.sports          s  ON s.id            = ur.sport_id
+  LEFT JOIN dbo.program_role    pr ON pr.id           = ur.program_role_id
+  LEFT JOIN dbo.sports_position sp ON sp.position_id  = ur.position_id
+  WHERE u.user_id = @UserId
+  ORDER BY ur.status, s.name;
+
+  -- Result set 2: recent interactions (latest 20)
+  SELECT TOP 20
+    il.id,
+    il.channel,
+    il.summary,
+    il.outcome,
+    il.follow_up_at           AS followUpAt,
+    il.logged_at              AS loggedAt,
+    il.logged_by_user_id      AS loggedByUserId,
+    u2.first_name + ' ' + u2.last_name AS loggedByName
+  FROM dbo.interaction_log il
+  LEFT JOIN dbo.users u2 ON u2.user_id = il.logged_by_user_id
+  WHERE il.user_id = @UserId
+  ORDER BY il.logged_at DESC;
+END;
+GO

@@ -2,286 +2,328 @@
 
 // ─── Player Server Actions ────────────────────────────────────────────────────
 //
-// Cross-database coordination lives here (Azure SQL Database does not support
-// cross-DB synonyms or linked servers):
+// Schema baseline: post-migration 008
+//   dbo.players is DROPPED. Players are users_roles records with
+//   status = 'current_player'. The primary key for a player's
+//   roster entry is users_roles.user_role_id (referred to as userRoleId).
 //
-//   createPlayer:
-//     1. Global DB → sp_GetOrCreateUser  (get or create the canonical user ID)
-//     2. App DB    → sp_CreatePlayer     (upsert player with that userId)
+// Cross-database coordination:
 //
-//   graduatePlayers:
-//     1. App DB → sp_GraduatePlayer (deactivates player, creates alumni row)
-//     NOTE: sp_TransferPlayerToAlumni (Global DB) requires a GUID — deferred until
-//           a lookup SP is available to resolve INT player_id → GUID.
+//   addPlayerToRoster:
+//     1. Global DB → sp_GetOrCreateUser  (get/create canonical user ID)
+//     2. App DB    → sp_UpsertUser       (sync user record locally)
+//     3. App DB    → sp_AddUserRole      (create users_roles row)
 //
-//   bulkCreatePlayers:
-//     1. Global DB → sp_GetOrCreateUser  per row that has an email
-//     2. App DB    → sp_BulkCreatePlayers with userId injected into each row
+//   transferToAlumni:
+//     App DB only → sp_TransferUserRole (current_player → alumni), runs
+//     per-userRoleId; Global DB permission swap handled separately if needed.
+//
+//   updatePlayerRole:
+//     App DB only → sp_UpdateUserRole (positionId, jerseyNumber, etc.)
+//
+//   removeFromRoster:
+//     App DB only → sp_TransferUserRole with status='removed'
+//
+//   bulkAddPlayersToRoster:
+//     Steps 1–3 per row, errors collected per row.
 
 import {
   sp_GetOrCreateUser,
-  sp_CreatePlayer,
-  sp_UpdatePlayer,
-  sp_RemovePlayer,
-  sp_GraduatePlayer,
-  sp_BulkCreatePlayers,
-  type BulkPlayerRow,
+  sp_UpsertUser,
+  sp_AddUserRole,
+  sp_UpdateUserRole,
+  sp_TransferUserRole,
 } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export interface CreatePlayerInput {
-  appDb:                 string   // tenant App DB name from session.appDb
-  email:                 string
-  firstName:             string
-  lastName:              string
-  position:              string
-  academicYear:          string
-  recruitingClass:       number
-  globalTeamId:          number   // team ID in LegacyLinkGlobal for user registration
-  createdBy:             number
-  sportId?:              string
-  jerseyNumber?:         number
-  heightInches?:         number
-  weightLbs?:            number
-  homeTown?:             string
-  homeState?:            string
-  highSchool?:           string
-  major?:                string
-  phone?:                string
-  instagram?:            string
-  twitter?:              string
-  snapchat?:             string
-  emergencyContactName?:  string
-  emergencyContactPhone?: string
-  parent1Name?:          string
-  parent1Phone?:         string
-  parent1Email?:         string
-  parent2Name?:          string
-  parent2Phone?:         string
-  parent2Email?:         string
-  notes?:                string
-  requestingUserId?:     number | null
-  requestingUserRole?:   string
+export interface AddPlayerInput {
+  appDb:         string   // tenant App DB name from session.appDb
+  email:         string
+  firstName:     string
+  lastName:      string
+  globalTeamId:  number   // for Global DB user registration
+  programRoleId: number   // dbo.program_role.id (e.g. "Player" role)
+  sportId?:      number | null
+  positionId?:   number | null
+  jerseyNumber?: number | null
+  classYear?:    number | null
+  seasonsPlayed?: number | null
+  adminUserId:   number   // acting staff user_id
 }
 
-export interface GraduatePlayersInput {
-  appDb:          string   // tenant App DB name from session.appDb
-  playerIds:      number[]
-  graduationYear: number
-  semester:       'spring' | 'fall' | 'summer'
-  triggeredBy:    number
+export interface TransferPlayersInput {
+  appDb:         string
+  userRoleIds:   number[]   // users_roles.user_role_id values to transfer
+  classYear?:    number | null
+  notes?:        string | null
+  adminUserId:   number
 }
 
-export interface BulkCreatePlayersInput {
-  appDb:        string   // tenant App DB name from session.appDb
-  players:      (Omit<BulkPlayerRow, 'userId'> & { email?: string })[]
-  createdBy:    number
-  globalTeamId: number   // used for Global DB user registration
-  sportId?:     string
+export interface UpdatePlayerRoleInput {
+  appDb:          string
+  userRoleId:     number
+  positionId?:    number | null
+  jerseyNumber?:  number | null
+  seasonsPlayed?: number | null
+  classYear?:     number | null
+  adminUserId:    number
+}
+
+export interface RemovePlayerInput {
+  appDb:       string
+  userRoleId:  number
+  notes?:      string | null
+  adminUserId: number
+}
+
+export interface BulkAddPlayersInput {
+  appDb:         string
+  globalTeamId:  number
+  programRoleId: number
+  sportId?:      number | null
+  adminUserId:   number
+  players: {
+    email?:        string
+    firstName:     string
+    lastName:      string
+    positionId?:   number | null
+    jerseyNumber?: number | null
+    classYear?:    number | null
+    seasonsPlayed?: number | null
+  }[]
 }
 
 // ─── Actions ─────────────────────────────────────────────────────────────────
 
 /**
- * Creates a single player.
- * Step 1: Global DB — resolve or create the canonical user account.
- * Step 2: App DB   — upsert player record with the resolved userId.
+ * Adds a single user to the current-player roster.
+ * Steps: Global user → App user sync → App role row.
  */
-export async function createPlayer(
-  input: CreatePlayerInput,
-): Promise<{ success: boolean; userId?: number; error?: string }> {
+export async function addPlayerToRoster(
+  input: AddPlayerInput,
+): Promise<{ success: boolean; userId?: number; userRoleId?: number; error?: string }> {
   return appDbContext.run(input.appDb, async () => {
-  try {
-    // 1. Global DB
-    const { userId, errorCode: globalErr } = await sp_GetOrCreateUser({
-      email:     input.email,
-      firstName: input.firstName,
-      lastName:  input.lastName,
-      teamId:    input.globalTeamId,
-    })
+    try {
+      // 1. Global DB — get or create canonical user account
+      const { userId, errorCode: globalErr } = await sp_GetOrCreateUser({
+        email:     input.email,
+        firstName: input.firstName,
+        lastName:  input.lastName,
+        teamId:    input.globalTeamId,
+      })
+      if (!userId) {
+        return { success: false, error: globalErr ?? 'GLOBAL_USER_CREATE_FAILED' }
+      }
 
-    if (!userId) {
-      return { success: false, error: globalErr ?? 'GLOBAL_USER_CREATE_FAILED' }
+      // 2. App DB — sync user record
+      await sp_UpsertUser({
+        userId,
+        email:     input.email,
+        firstName: input.firstName,
+        lastName:  input.lastName,
+      })
+
+      // 3. App DB — add users_roles entry
+      const { newUserRoleId, errorCode } = await sp_AddUserRole({
+        userId,
+        programRoleId: input.programRoleId,
+        sportId:       input.sportId       ?? null,
+        status:        'current_player',
+        positionId:    input.positionId    ?? null,
+        jerseyNumber:  input.jerseyNumber  ?? null,
+        seasonsPlayed: input.seasonsPlayed ?? null,
+        classYear:     input.classYear     ?? null,
+        adminUserId:   input.adminUserId,
+      })
+
+      if (errorCode) {
+        return { success: false, error: errorCode }
+      }
+
+      return { success: true, userId, userRoleId: newUserRoleId ?? undefined }
+    } catch (err) {
+      console.error('[addPlayerToRoster]', err)
+      return { success: false, error: 'INTERNAL_ERROR' }
     }
-
-    // 2. App DB — sp_CreatePlayer takes INT userId
-    const { errorCode } = await sp_CreatePlayer({
-      userId,
-      email:                 input.email,
-      firstName:             input.firstName,
-      lastName:              input.lastName,
-      position:              input.position,
-      academicYear:          input.academicYear,
-      recruitingClass:       input.recruitingClass,
-      createdBy:             input.createdBy,
-      sportId:               input.sportId,
-      jerseyNumber:          input.jerseyNumber,
-      heightInches:          input.heightInches,
-      weightLbs:             input.weightLbs,
-      homeTown:              input.homeTown,
-      homeState:             input.homeState,
-      highSchool:            input.highSchool,
-      major:                 input.major,
-      phone:                 input.phone,
-      instagram:             input.instagram,
-      twitter:               input.twitter,
-      snapchat:              input.snapchat,
-      emergencyContactName:  input.emergencyContactName,
-      emergencyContactPhone: input.emergencyContactPhone,
-      parent1Name:           input.parent1Name,
-      parent1Phone:          input.parent1Phone,
-      parent1Email:          input.parent1Email,
-      parent2Name:           input.parent2Name,
-      parent2Phone:          input.parent2Phone,
-      parent2Email:          input.parent2Email,
-      notes:                 input.notes,
-      requestingUserId:      input.requestingUserId,
-      requestingUserRole:    input.requestingUserRole,
-    })
-
-    if (errorCode) {
-      return { success: false, error: errorCode }
-    }
-
-    return { success: true, userId: userId ?? undefined }
-  } catch (err) {
-    console.error('[createPlayer]', err)
-    return { success: false, error: 'INTERNAL_ERROR' }
-  }
-  }) // end appDbContext.run
+  })
 }
 
 /**
- * Graduates one or more players.
- * Step 1: App DB   — flip status_id to 2 (alumni), log in graduation_log.
- *                    Returns list of userIds that succeeded.
- * Step 2: Global DB — call sp_TransferPlayerToAlumni for each succeeded userId
- *                    to swap 'roster' → 'alumni' app-permission.
- *
- * Global DB failures are logged but do NOT roll back the App DB status flip —
- * the player is already an alumni; the permission swap can be retried manually.
+ * Transfers players from current_player → alumni status.
+ * Runs each transfer individually so partial failures are captured.
  */
-export async function graduatePlayers(
-  input: GraduatePlayersInput,
+export async function transferToAlumni(
+  input: TransferPlayersInput,
 ): Promise<{
-  success:        boolean
-  transactionId:  string
-  successCount:   number
-  failureJson:    string
-  transferErrors: string[]   // userIds where Global DB permission swap failed
-  error?:         string
+  success:      boolean
+  successCount: number
+  failures:     { userRoleId: number; reason: string }[]
+  error?:       string
 }> {
   return appDbContext.run(input.appDb, async () => {
-  try {
-    // 1. App DB — flip statuses
-    const result = await sp_GraduatePlayer({
-      playerIds:      input.playerIds,
-      graduationYear: input.graduationYear,
-      semester:       input.semester,
-      triggeredBy:    input.triggeredBy,
-    })
-
-    // sp_GraduatePlayer now returns {playerId, alumniId} pairs (INT ids).
-    // sp_TransferPlayerToAlumni requires a GUID userId — cannot be derived from
-    // INT player_id without a Global DB lookup. Permission swap is deferred.
-    const transferErrors: string[] = []
-
-    return {
-      success:        true,
-      transactionId:  result.transactionId,
-      successCount:   result.successCount,
-      failureJson:    result.failureJson,
-      transferErrors,
-    }
-  } catch (err) {
-    console.error('[graduatePlayers]', err)
-    return {
-      success:        false,
-      transactionId:  '',
-      successCount:   0,
-      failureJson:    '[]',
-      transferErrors: [],
-      error:          'INTERNAL_ERROR',
-    }
-  }
-  }) // end appDbContext.run
-}
-
-/**
- * Updates a player's profile fields. Pass only the fields you want to change —
- * null / undefined fields are left unchanged by the stored procedure.
- */
-export async function updatePlayer(
-  appDb: string,
-  params: Parameters<typeof sp_UpdatePlayer>[0],
-): Promise<{ success: boolean; error?: string }> {
-  return appDbContext.run(appDb, async () => {
     try {
-      const { errorCode } = await sp_UpdatePlayer(params)
-      if (errorCode) return { success: false, error: errorCode }
-      return { success: true }
+      const results = await Promise.allSettled(
+        input.userRoleIds.map((userRoleId) =>
+          sp_TransferUserRole({
+            userRoleId,
+            newStatus:          'alumni',
+            classYear:          input.classYear ?? null,
+            adminUserId:        input.adminUserId,
+            adminAcknowledged:  true,
+            notes:              input.notes ?? null,
+          }),
+        ),
+      )
+
+      const failures: { userRoleId: number; reason: string }[] = []
+      let successCount = 0
+
+      results.forEach((r, i) => {
+        if (r.status === 'fulfilled') {
+          if (r.value.errorCode) {
+            failures.push({ userRoleId: input.userRoleIds[i], reason: r.value.errorCode })
+          } else {
+            successCount++
+          }
+        } else {
+          failures.push({ userRoleId: input.userRoleIds[i], reason: 'INTERNAL_ERROR' })
+        }
+      })
+
+      return { success: true, successCount, failures }
     } catch (err) {
-      console.error('[updatePlayer]', err)
-      return { success: false, error: 'INTERNAL_ERROR' }
+      console.error('[transferToAlumni]', err)
+      return { success: false, successCount: 0, failures: [], error: 'INTERNAL_ERROR' }
     }
   })
 }
 
 /**
- * Removes a player (sets status_id = 3).
+ * Updates role-level fields for a player (position, jersey, class year, etc.).
  */
-export async function removePlayer(
-  appDb: string,
-  params: Parameters<typeof sp_RemovePlayer>[0],
+export async function updatePlayerRole(
+  input: UpdatePlayerRoleInput,
 ): Promise<{ success: boolean; error?: string }> {
-  return appDbContext.run(appDb, async () => {
-    try {
-      const { errorCode } = await sp_RemovePlayer(params)
-      if (errorCode) return { success: false, error: errorCode }
-      return { success: true }
-    } catch (err) {
-      console.error('[removePlayer]', err)
-      return { success: false, error: 'INTERNAL_ERROR' }
-    }
-  })
-}
-
-/**
- * Bulk-creates players from a CSV/form upload.
- * For rows with an email, resolves the Global DB userId first.
- * Rows without an email get a generated userId (historical/provisional records).
- */
-export async function bulkCreatePlayers(
-  input: BulkCreatePlayersInput,
-): Promise<{ successCount: number; skippedCount: number; errorJson: string }> {
   return appDbContext.run(input.appDb, async () => {
-    // Resolve Global DB userIds for rows that have an email
-    const enriched: BulkPlayerRow[] = await Promise.all(
-      input.players.map(async (row) => {
-        if (!row.email) return row  // no email → SP will generate a userId
+    try {
+      const { errorCode } = await sp_UpdateUserRole({
+        userRoleId:    input.userRoleId,
+        positionId:    input.positionId    ?? null,
+        jerseyNumber:  input.jerseyNumber  ?? null,
+        seasonsPlayed: input.seasonsPlayed ?? null,
+        classYear:     input.classYear     ?? null,
+        adminUserId:   input.adminUserId,
+      })
+      if (errorCode) return { success: false, error: errorCode }
+      return { success: true }
+    } catch (err) {
+      console.error('[updatePlayerRole]', err)
+      return { success: false, error: 'INTERNAL_ERROR' }
+    }
+  })
+}
 
+/**
+ * Removes a player from the roster (sets status to 'removed').
+ */
+export async function removeFromRoster(
+  input: RemovePlayerInput,
+): Promise<{ success: boolean; error?: string }> {
+  return appDbContext.run(input.appDb, async () => {
+    try {
+      const { errorCode } = await sp_TransferUserRole({
+        userRoleId:        input.userRoleId,
+        newStatus:         'removed',
+        adminUserId:       input.adminUserId,
+        adminAcknowledged: true,
+        notes:             input.notes ?? null,
+      })
+      if (errorCode) return { success: false, error: errorCode }
+      return { success: true }
+    } catch (err) {
+      console.error('[removeFromRoster]', err)
+      return { success: false, error: 'INTERNAL_ERROR' }
+    }
+  })
+}
+
+/**
+ * Bulk-adds players from a roster upload.
+ * For rows with an email, resolves or creates Global DB user first.
+ * Per-row errors are collected without aborting the rest.
+ */
+export async function bulkAddPlayersToRoster(
+  input: BulkAddPlayersInput,
+): Promise<{
+  successCount: number
+  skippedCount: number
+  errors:       { index: number; reason: string }[]
+}> {
+  return appDbContext.run(input.appDb, async () => {
+    let successCount = 0
+    let skippedCount = 0
+    const errors: { index: number; reason: string }[] = []
+
+    await Promise.allSettled(
+      input.players.map(async (row, i) => {
         try {
-          const { userId: resolvedId } = await sp_GetOrCreateUser({
-            email:     row.email,
-            firstName: row.firstName,
-            lastName:  row.lastName,
-            teamId:    input.globalTeamId,
+          let userId: number | null = null
+
+          if (row.email) {
+            const globalResult = await sp_GetOrCreateUser({
+              email:     row.email,
+              firstName: row.firstName,
+              lastName:  row.lastName,
+              teamId:    input.globalTeamId,
+            })
+            if (!globalResult.userId) {
+              errors.push({ index: i, reason: globalResult.errorCode ?? 'GLOBAL_USER_CREATE_FAILED' })
+              skippedCount++
+              return
+            }
+            userId = globalResult.userId
+
+            await sp_UpsertUser({
+              userId,
+              email:     row.email,
+              firstName: row.firstName,
+              lastName:  row.lastName,
+            })
+          } else {
+            // No email — cannot create global user; skip this row
+            errors.push({ index: i, reason: 'EMAIL_REQUIRED' })
+            skippedCount++
+            return
+          }
+
+          const { errorCode } = await sp_AddUserRole({
+            userId,
+            programRoleId: input.programRoleId,
+            sportId:       input.sportId       ?? null,
+            status:        'current_player',
+            positionId:    row.positionId    ?? null,
+            jerseyNumber:  row.jerseyNumber  ?? null,
+            seasonsPlayed: row.seasonsPlayed ?? null,
+            classYear:     row.classYear     ?? null,
+            adminUserId:   input.adminUserId,
           })
-          return { ...row, userId: resolvedId ?? undefined }
-        } catch {
-          // If Global DB lookup fails for one row, pass without userId —
-          // the SP skips user_id so the player row still gets created.
-          return row
+
+          if (errorCode && errorCode !== 'ROLE_ALREADY_EXISTS') {
+            errors.push({ index: i, reason: errorCode })
+            skippedCount++
+          } else {
+            successCount++
+          }
+        } catch (err) {
+          errors.push({ index: i, reason: 'INTERNAL_ERROR' })
+          skippedCount++
+          console.error(`[bulkAddPlayersToRoster] row ${i}:`, err)
         }
       }),
     )
 
-    return sp_BulkCreatePlayers({
-      players:   enriched,
-      createdBy: input.createdBy,
-      sportId:   input.sportId,
-    })
+    return { successCount, skippedCount, errors }
   })
 }
