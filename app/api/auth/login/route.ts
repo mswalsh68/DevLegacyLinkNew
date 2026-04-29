@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid email or password.' }, { status: 401 })
     }
 
-    userId       = output.UserId       as number
+    userId       = Number(output.UserId)
     passwordHash = output.PasswordHash as string
     userJson     = JSON.parse(output.UserJson as string) as Record<string, unknown>
 
