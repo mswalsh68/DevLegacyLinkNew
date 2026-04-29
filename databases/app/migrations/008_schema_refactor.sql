@@ -120,17 +120,75 @@ CREATE INDEX IX_sports_is_active ON dbo.sports(is_active);
 PRINT 'Created dbo.sports (INT IDENTITY PK)';
 GO
 
--- ─── 1d. Re-seed sports with assigned INT IDs ────────────────────────────────
+-- ─── 1d. Re-seed sports with deterministic INT IDs ──────────────────────────
+-- NOTE: We do NOT rely on #SportsMap here because temp table visibility across
+-- GO batches is unreliable in some SSMS/SQLCMD configurations.  Instead we use
+-- a hardcoded VALUES seed (same deterministic mapping as the CASE in step 1a).
+-- is_active is preserved from the captured #SportsMap where possible;
+-- new tenant DBs default Football + Softball active (matching migration 003).
 
 SET IDENTITY_INSERT dbo.sports ON;
 
 INSERT INTO dbo.sports (id, name, abbr, is_active)
-SELECT new_int_id, name, abbr, is_active
-FROM   #SportsMap
-ORDER  BY new_int_id;
+SELECT v.id, v.name, v.abbr,
+       ISNULL((SELECT sm.is_active FROM #SportsMap sm WHERE sm.abbr = v.abbr), v.default_active)
+FROM (VALUES
+  ( 1, 'Football',                    'FB',   1),
+  ( 2, 'Men''s Basketball',           'MBB',  0),
+  ( 3, 'Women''s Basketball',         'WBB',  0),
+  ( 4, 'Basketball',                  'BB',   0),
+  ( 5, 'Baseball',                    'BA',   0),
+  ( 6, 'Softball',                    'SB',   1),
+  ( 7, 'Men''s Soccer',               'MS',   0),
+  ( 8, 'Women''s Soccer',             'WS',   0),
+  ( 9, 'Soccer',                      'SO',   0),
+  (10, 'Men''s Volleyball',           'MVB',  0),
+  (11, 'Women''s Volleyball',         'WVB',  0),
+  (12, 'Beach Volleyball',            'BVB',  0),
+  (13, 'Volleyball',                  'VB',   0),
+  (14, 'Men''s Lacrosse',             'MLAX', 0),
+  (15, 'Women''s Lacrosse',           'WLAX', 0),
+  (16, 'Men''s Tennis',               'MTEN', 0),
+  (17, 'Women''s Tennis',             'WTEN', 0),
+  (18, 'Men''s Golf',                 'MGOL', 0),
+  (19, 'Women''s Golf',               'WGOL', 0),
+  (20, 'Men''s Cross Country',        'MCC',  0),
+  (21, 'Women''s Cross Country',      'WCC',  0),
+  (22, 'Men''s Indoor Track',         'MITR', 0),
+  (23, 'Women''s Indoor Track',       'WITR', 0),
+  (24, 'Men''s Outdoor Track',        'MOTR', 0),
+  (25, 'Women''s Outdoor Track',      'WOTR', 0),
+  (26, 'Men''s Swimming & Diving',    'MSWM', 0),
+  (27, 'Women''s Swimming & Diving',  'WSWM', 0),
+  (28, 'Men''s Gymnastics',           'MGYM', 0),
+  (29, 'Women''s Gymnastics',         'WGYM', 0),
+  (30, 'Men''s Rowing',               'MROW', 0),
+  (31, 'Women''s Rowing',             'WROW', 0),
+  (32, 'Men''s Ice Hockey',           'MHKY', 0),
+  (33, 'Women''s Ice Hockey',         'WHKY', 0),
+  (34, 'Men''s Water Polo',           'MWP',  0),
+  (35, 'Women''s Water Polo',         'WWP',  0),
+  (36, 'Wrestling',                   'WRES', 0),
+  (37, 'Women''s Wrestling',          'WWRE', 0),
+  (38, 'Field Hockey',                'FH',   0),
+  (39, 'Men''s Rugby',                'MRUG', 0),
+  (40, 'Women''s Rugby',              'WRUG', 0),
+  (41, 'Men''s Bowling',              'MBWL', 0),
+  (42, 'Women''s Bowling',            'WBWL', 0),
+  (43, 'Equestrian',                  'EQ',   0),
+  (44, 'Fencing',                     'FEN',  0),
+  (45, 'Rifle',                       'RIF',  0),
+  (46, 'Skiing & Snowboarding',       'SKI',  0),
+  (47, 'Triathlon',                   'TRI',  0),
+  (48, 'Stunt',                       'STN',  0),
+  (49, 'Esports',                     'ESP',  0),
+  (50, 'Cheer & Spirit',              'CHR',  0),
+  (51, 'Dance',                       'DNC',  0)
+) v(id, name, abbr, default_active)
+WHERE NOT EXISTS (SELECT 1 FROM dbo.sports s WHERE s.id = v.id);
 
 SET IDENTITY_INSERT dbo.sports OFF;
-PRINT CONCAT('Restored ', @@ROWCOUNT, ' sports row(s) with INT IDs');
+PRINT CONCAT('Seeded ', @@ROWCOUNT, ' sports row(s) with INT IDs');
 GO
 
 -- ══════════════════════════════════════════════════════════════
@@ -168,6 +226,17 @@ FROM sys.default_constraints dc
 JOIN sys.columns c ON c.default_object_id = dc.object_id
 WHERE c.object_id = OBJECT_ID('dbo.users_sports') AND c.name = 'sport_id';
 IF @USSportDC IS NOT NULL EXEC(N'ALTER TABLE dbo.users_sports DROP CONSTRAINT [' + @USSportDC + N']');
+
+-- Drop any indexes covering sport_id (e.g. UQ_users_sports) — required before DROP COLUMN
+DECLARE @USIdxDrop NVARCHAR(MAX) = N'';
+SELECT @USIdxDrop += N'DROP INDEX ' + QUOTENAME(i.name) + N' ON dbo.users_sports; '
+FROM   sys.indexes i
+JOIN   sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+JOIN   sys.columns c        ON c.object_id  = ic.object_id AND c.column_id = ic.column_id
+WHERE  i.object_id = OBJECT_ID('dbo.users_sports')
+  AND  c.name      = 'sport_id'
+  AND  i.type      > 0;  -- exclude heap
+IF LEN(@USIdxDrop) > 0 EXEC sp_executesql @USIdxDrop;
 
 ALTER TABLE dbo.users_sports DROP COLUMN sport_id;
 EXEC sp_rename 'dbo.users_sports.sport_id_int', 'sport_id', 'COLUMN';
@@ -790,11 +859,15 @@ CREATE INDEX IX_interaction_log_logger ON dbo.interaction_log(logged_by_user_id)
 PRINT 'Created new dbo.interaction_log (user_id replaces alumni_id)';
 GO
 
--- Restore backed-up rows
+-- Restore backed-up rows (preserve original IDs)
+SET IDENTITY_INSERT dbo.interaction_log ON;
+
 INSERT INTO dbo.interaction_log (id, user_id, logged_by_user_id, channel, summary, outcome, follow_up_at, logged_at)
 SELECT id, ISNULL(user_id, logged_by_user_id), logged_by_user_id, channel, summary, outcome, follow_up_at, logged_at
 FROM   #InteractionData
 WHERE  ISNULL(user_id, logged_by_user_id) IS NOT NULL;
+
+SET IDENTITY_INSERT dbo.interaction_log OFF;
 PRINT CONCAT('Restored ', @@ROWCOUNT, ' interaction_log row(s)');
 GO
 
