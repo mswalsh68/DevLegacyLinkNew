@@ -122,7 +122,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreateTeam
   @AppDb     NVARCHAR(150),
   @DbServer  NVARCHAR(200)    = 'localhost\SQLEXPRESS',
   @ExpiresAt DATETIME2        = NULL,
-  @CreatedBy UNIQUEIDENTIFIER,
+  @CreatedBy BIGINT,
   -- Outputs
   @NewTeamId INT OUTPUT,
   @ErrorCode NVARCHAR(50)     OUTPUT
@@ -190,7 +190,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_UpdateTeam
   @DbServer  NVARCHAR(200)    = NULL,
   @IsActive  BIT              = NULL,
   @ExpiresAt DATETIME2        = NULL,
-  @ActorId   UNIQUEIDENTIFIER,
+  @ActorId   BIGINT,
   -- Output
   @ErrorCode NVARCHAR(50)     OUTPUT
 AS

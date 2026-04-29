@@ -77,8 +77,9 @@ export function TeamSwitcher() {
   }, [open])
 
   // ── Switch to a team ───────────────────────────────────────────────────────
-  const switchTeam = (team: TeamItem) => {
+  const switchTeam = async (team: TeamItem) => {
     const { teamId, ...configData } = team
+    // Optimistically apply theme so the UI responds immediately
     applyTheme(configData)
     triggerThemeRefresh(configData)
     try {
@@ -87,6 +88,21 @@ export function TeamSwitcher() {
       // Private browsing / quota — ignore
     }
     setOpen(false)
+
+    // Update the JWT so currentTeamId is persisted across page loads
+    try {
+      const res = await fetch('/api/auth/switch-team', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ teamId }),
+      })
+      if (res.ok) {
+        // Full reload so ThemeProvider re-fetches /api/config with new teamId
+        window.location.href = '/dashboard'
+      }
+    } catch {
+      // Network error — theme is already applied locally, JWT update deferred
+    }
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
