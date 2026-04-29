@@ -90,11 +90,21 @@ GO
 
 -- ─── 2. Finish users_sports GUID→INT conversion ──────────────────────────────
 
--- 2a. Drop UQ_users_sports index that was blocking the column drop
+-- 2a. Drop UQ_users_sports — drop as CONSTRAINT if it is one, else as INDEX
 IF EXISTS (
+  SELECT 1 FROM sys.key_constraints
+  WHERE  name = 'UQ_users_sports'
+    AND  parent_object_id = OBJECT_ID('dbo.users_sports')
+)
+BEGIN
+  ALTER TABLE dbo.users_sports DROP CONSTRAINT UQ_users_sports;
+  PRINT 'Dropped UQ_users_sports constraint';
+END
+ELSE IF EXISTS (
   SELECT 1 FROM sys.indexes
   WHERE  name = 'UQ_users_sports'
     AND  object_id = OBJECT_ID('dbo.users_sports')
+    AND  is_unique_constraint = 0
 )
 BEGIN
   DROP INDEX UQ_users_sports ON dbo.users_sports;
