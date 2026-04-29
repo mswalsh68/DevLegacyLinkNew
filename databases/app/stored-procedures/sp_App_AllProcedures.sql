@@ -507,16 +507,16 @@ BEGIN
   SET NOCOUNT ON;
 
   SELECT
-    sp.position_id AS positionId,
-    sp.sport_id    AS sportId,
-    s.name         AS sportName,
+    sp.position_id   AS positionId,
+    sp.sport_id      AS sportId,
+    s.name           AS sportName,
     sp.position_name AS positionName,
-    sp.position_abbr AS positionAbbr,
-    sp.sort_order  AS sortOrder
+    sp.abbreviation  AS positionAbbr,
+    sp.is_active     AS isActive
   FROM dbo.sports_position sp
   JOIN dbo.sports s ON s.id = sp.sport_id
   WHERE (@SportId IS NULL OR sp.sport_id = @SportId)
-  ORDER BY sp.sport_id, sp.sort_order;
+  ORDER BY sp.sport_id, sp.position_id;
 END;
 GO
 
