@@ -34,7 +34,7 @@ export interface CommsDashboardTabProps {
   campaignAudiences:  readonly string[]
   postAudiences:      readonly string[]
   metricsEndpoint:    string
-  sportId?:           string | null
+  sportId?:           number | null
   title:              string
   subtitle:           string
   emailAudience:      string
@@ -52,7 +52,7 @@ interface CreateEmailModalProps {
   onSent:             () => void
   emailAudience:      string
   emailAudienceLabel: string
-  sportId?:           string | null
+  sportId?:           number | null
 }
 
 function CreateEmailModal({ onClose, onSent, emailAudience, emailAudienceLabel, sportId }: CreateEmailModalProps) {

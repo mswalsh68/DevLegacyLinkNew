@@ -6,11 +6,10 @@ import { appDbContext } from '@/lib/db/connection'
 
 // ─── GET /api/campaigns ───────────────────────────────────────────────────────
 
-export async function GET() {
+export async function GET(req: Request) {
   const session = await getServerSession()
   if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
 
-  // Any staff who can see alumni or player feeds can see campaigns
   if (!can(session, 'feed:alumni') && !can(session, 'feed:players')) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
   }
@@ -19,12 +18,13 @@ export async function GET() {
     return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
   }
 
+  const { searchParams } = new URL(req.url)
+  const sportIdParam = searchParams.get('sportId')
+  const sportId      = sportIdParam ? parseInt(sportIdParam, 10) || null : null
+
   return appDbContext.run(session.appDb, async () => {
     try {
-      const rows = await sp_GetCampaigns({
-        requestingUserId:   session.userId,
-        requestingUserRole: session.role,
-      })
+      const rows = await sp_GetCampaigns({ sportId })
       return NextResponse.json({ success: true, data: rows })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -56,7 +56,7 @@ export async function POST(req: Request) {
     description?:   string | null
     fromName?:      string | null
     replyToEmail?:  string | null
-    sportId?:       string | null
+    sportId?:       number | string | null   // accept both INT and "1"
   }
 
   try {
@@ -69,18 +69,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, error: 'name and targetAudience are required' }, { status: 400 })
   }
 
+  const sportId = body.sportId != null
+    ? parseInt(String(body.sportId), 10) || null
+    : null
+
   return appDbContext.run(session.appDb, async () => {
     try {
       const { campaignId, errorCode } = await sp_CreateCampaign({
         name:           body.name,
         createdBy:      session.userId,
         targetAudience: body.targetAudience,
-        subjectLine:    body.subjectLine  ?? undefined,
-        bodyHtml:       body.bodyHtml     ?? undefined,
-        description:    body.description  ?? undefined,
-        fromName:       body.fromName     ?? undefined,
-        replyToEmail:   body.replyToEmail ?? undefined,
-        sportId:        body.sportId      ?? undefined,
+        subjectLine:    body.subjectLine  ?? null,
+        bodyHtml:       body.bodyHtml     ?? null,
+        description:    body.description  ?? null,
+        fromName:       body.fromName     ?? null,
+        replyToEmail:   body.replyToEmail ?? null,
+        sportId,
       })
 
       if (errorCode && errorCode !== 'OK') {

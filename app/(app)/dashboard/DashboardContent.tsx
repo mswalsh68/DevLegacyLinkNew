@@ -15,7 +15,7 @@ import PlayerTab from './PlayerTab'
 // ─── Sport option type (mirrors SportOption from procedures.ts) ────────────────
 
 interface SportOption {
-  id:   string
+  id:   number   // INT (Football = 1) — post-migration 008
   name: string
   abbr: string
 }
@@ -161,15 +161,15 @@ function TabBar({ active, showAlumni, showPlayers, onChange }: {
 
 function SportDropdown({ sports, value, onChange }: {
   sports:   SportOption[]
-  value:    string | null
-  onChange: (id: string | null) => void
+  value:    number | null
+  onChange: (id: number | null) => void
 }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
       <span style={{ fontSize: 13, fontWeight: 600, color: theme.gray700 }}>Viewing:</span>
       <select
         value={value ?? ''}
-        onChange={e => onChange(e.target.value || null)}
+        onChange={e => onChange(e.target.value ? parseInt(e.target.value, 10) : null)}
         style={{
           padding:         '6px 32px 6px 12px',
           borderRadius:    theme.radiusSm,
@@ -205,7 +205,7 @@ export default function DashboardContent() {
 
   const [wizardOpen, setWizardOpen] = useState(false)
   const [sports,     setSports]     = useState<SportOption[]>([])
-  const [sportId,    setSportId]    = useState<string | null>(null)
+  const [sportId,    setSportId]    = useState<number | null>(null)
 
   // ── Permission flags ──────────────────────────────────────────────────────
   const canViewRoster = can(user, 'roster:view')

@@ -6,7 +6,7 @@ import { appDbContext } from '@/lib/db/connection'
 import { featuresForTier, normalizeTier } from '@/lib/features'
 
 // ─── GET /api/dashboard/alumni-metrics ───────────────────────────────────────
-// Optional query param: ?sportId=<uuid>
+// Optional query param: ?sportId=<int>
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession()
@@ -24,18 +24,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'No active team. Please switch teams and try again.' }, { status: 400 })
   }
 
-  const sportId = req.nextUrl.searchParams.get('sportId') || null
+  const sportIdParam = req.nextUrl.searchParams.get('sportId')
+  const sportId      = sportIdParam ? parseInt(sportIdParam, 10) || null : null
 
   return appDbContext.run(session.appDb, async () => {
     try {
       const metrics = await sp_GetDashboardMetrics_Alumni({
-        tenantId:           session.currentTeamId!,
+        tenantId: session.currentTeamId!,
         sportId,
-        requestingUserId:   session.userId,
-        requestingUserRole: session.role,
       })
-      // features_available drives which MetricCards the AlumniTab renders
-      const tier = normalizeTier(null) // will be overridden by ThemeProvider at client
+      const tier = normalizeTier(null)
       return NextResponse.json({
         success:            true,
         data:               metrics,

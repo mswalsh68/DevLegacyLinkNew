@@ -23,7 +23,7 @@ const POST_AUDIENCES     = ['all', 'alumni_only', 'players_only', 'by_position']
 
 // ─── All Engagement Tab ───────────────────────────────────────────────────────
 
-export default function AllEngagementTab({ sportId }: { sportId?: string | null }) {
+export default function AllEngagementTab({ sportId }: { sportId?: number | null }) {
   return (
     <CommsDashboardTab
       campaignAudiences={CAMPAIGN_AUDIENCES}

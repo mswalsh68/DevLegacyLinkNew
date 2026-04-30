@@ -24,10 +24,8 @@ export async function GET(
   return appDbContext.run(session.appDb, async () => {
     try {
       const { post, errorCode } = await sp_GetFeedPost({
-        postId:             id,
-        viewerUserId:       session.userId,
-        requestingUserId:   session.userId,
-        requestingUserRole: session.role,
+        postId:       id,
+        viewerUserId: session.userId,
       })
 
       if (errorCode === 'NOT_FOUND' || !post) {
