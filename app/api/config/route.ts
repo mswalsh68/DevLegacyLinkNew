@@ -142,10 +142,11 @@ function normalizeConfigRow(row: Record<string, unknown>, defaults: TeamConfig):
     colorAccentLight,
 
     // ── Roster / alumni ──────────────────────────────────────────────────────────
-    positions:    tryArray(row,  'Positions',        'positions',
-                                 'PositionsJson',    'positionsJson')     ?? defaults.positions,
-    academicYears: tryArray(row, 'AcademicYears',    'academicYears',
-                                 'AcademicYearsJson','academicYearsJson') ?? defaults.academicYears,
+    positions:    tryArray(row,  'Positions',           'positions',
+                                 'PositionsJson',       'positionsJson')        ?? defaults.positions,
+    academicYears: tryArray(row, 'eligibilityYearsJson',
+                                 'AcademicYears',       'academicYears',
+                                 'AcademicYearsJson',   'academicYearsJson')    ?? defaults.academicYears,
     customLabels:  tryObject(row,'CustomLabels',     'customLabels')      ?? defaults.customLabels,
 
     // ── Terminology labels ────────────────────────────────────────────────────────
@@ -235,7 +236,6 @@ export async function PATCH(req: NextRequest) {
       colorAccentDark:   str('colorAccentDark'),
       colorAccentLight:  str('colorAccentLight'),
       positionsJson:     arr('positions'),
-      academicYearsJson: arr('academicYears'),
       alumniLabel:       str('alumniLabel'),
       rosterLabel:       str('rosterLabel'),
       classLabel:        str('classLabel'),

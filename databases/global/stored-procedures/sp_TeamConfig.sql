@@ -40,7 +40,14 @@ BEGIN
       tc.color_accent_dark        AS colorAccentDark,
       tc.color_accent_light       AS colorAccentLight,
       tc.positions_json           AS positionsJson,
-      tc.academic_years_json      AS academicYearsJson,
+      (SELECT ey.year_name AS [value]
+       FROM dbo.eligibility_years ey
+       WHERE ey.level_id = CASE tc.level
+         WHEN 'college'     THEN 2
+         WHEN 'high_school' THEN 1
+         ELSE NULL END
+       ORDER BY ey.id
+       FOR JSON PATH)             AS eligibilityYearsJson,
       tc.alumni_label             AS alumniLabel,
       tc.roster_label             AS rosterLabel,
       tc.class_label              AS classLabel,
@@ -74,7 +81,14 @@ BEGIN
       tc.color_accent_dark        AS colorAccentDark,
       tc.color_accent_light       AS colorAccentLight,
       tc.positions_json           AS positionsJson,
-      tc.academic_years_json      AS academicYearsJson,
+      (SELECT ey.year_name AS [value]
+       FROM dbo.eligibility_years ey
+       WHERE ey.level_id = CASE tc.level
+         WHEN 'college'     THEN 2
+         WHEN 'high_school' THEN 1
+         ELSE NULL END
+       ORDER BY ey.id
+       FOR JSON PATH)             AS eligibilityYearsJson,
       tc.alumni_label             AS alumniLabel,
       tc.roster_label             AS rosterLabel,
       tc.class_label              AS classLabel,

@@ -34,88 +34,17 @@ const LEVEL_OPTIONS = [
   { value: 'club',        label: 'Club / Amateur'       },
 ]
 
-const DEFAULT_ACADEMIC_YEARS: Record<string, string[]> = {
-  college:     ['Freshman', 'Sophomore', 'Junior', 'Senior', 'Graduate'],
-  high_school: ['9th Grade', '10th Grade', '11th Grade', '12th Grade'],
-  club:        ['Year 1', 'Year 2', 'Year 3', 'Year 4'],
+const DEFAULT_POSITIONS: Record<string, string[]> = {
+  football:   ['QB','RB','WR','TE','OL','DL','LB','DB','K','P','LS','ATH'],
+  basketball: ['PG','SG','SF','PF','C'],
+  baseball:   ['P','C','1B','2B','3B','SS','LF','CF','RF','DH'],
+  soccer:     ['GK','DEF','MID','FWD'],
+  softball:   ['P','C','1B','2B','3B','SS','LF','CF','RF','DP'],
+  volleyball: ['S','OH','MB','RS','L','DS'],
+  other:      [],
 }
 
-// ─── Shared sub-components ────────────────────────────────────────────────────
-
-function CollapsibleCard({
-  title, subtitle, defaultOpen = true, children, headerRight,
-}: {
-  title: string; subtitle?: string; defaultOpen?: boolean
-  children: React.ReactNode; headerRight?: React.ReactNode
-}) {
-  const [open, setOpen] = useState(defaultOpen)
-
-  return (
-    <div style={{
-      backgroundColor: 'var(--color-card-bg)',
-      border:          '1px solid var(--color-card-border)',
-      borderRadius:    'var(--radius-lg)',
-      boxShadow:       'var(--shadow-sm)',
-      overflow:        'hidden',
-    }}>
-      {/* Clickable header row */}
-      <div
-        onClick={() => setOpen(v => !v)}
-        style={{
-          display:        'flex',
-          alignItems:     'center',
-          justifyContent: 'space-between',
-          padding:        '16px 24px',
-          cursor:         'pointer',
-          userSelect:     'none',
-          borderBottom:   open ? '1px solid var(--color-card-border)' : 'none',
-        }}
-      >
-        <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{
-              fontSize: 12, fontWeight: 700, color: 'var(--color-primary)',
-              textTransform: 'uppercase', letterSpacing: '0.8px',
-            }}>
-              {title}
-            </span>
-            <span style={{
-              fontSize: 11, color: 'var(--color-gray-400)',
-              transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
-              transition: 'transform 0.2s',
-              display: 'inline-block',
-            }}>
-              ▾
-            </span>
-          </div>
-          {subtitle && !open && (
-            <p style={{ fontSize: 12, color: 'var(--color-gray-400)', margin: '2px 0 0', fontStyle: 'italic' }}>
-              {subtitle}
-            </p>
-          )}
-        </div>
-        {/* Stop propagation so buttons in headerRight don't toggle collapse */}
-        {headerRight && open && (
-          <div onClick={e => e.stopPropagation()}>
-            {headerRight}
-          </div>
-        )}
-      </div>
-
-      {/* Collapsible body */}
-      {open && (
-        <div style={{ padding: 24 }}>
-          {subtitle && (
-            <p style={{ fontSize: 13, color: 'var(--color-gray-500)', marginTop: 0, marginBottom: 16 }}>
-              {subtitle}
-            </p>
-          )}
-          {children}
-        </div>
-      )}
-    </div>
-  )
-}
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
 function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
@@ -705,7 +634,7 @@ export default function SettingsContent() {
     colorAccent:       '#CFC493',
     colorAccentDark:   '#A89C6A',
     colorAccentLight:  '#EDEBD1',
-    academicYearsText: '',
+    positionsText:     '',
     alumniLabel:       'Alumni',
     rosterLabel:       'Roster',
     classLabel:        'Recruiting Class',
@@ -730,7 +659,7 @@ export default function SettingsContent() {
         colorAccent:       c.colorAccent       ?? c.accentColor   ?? '#CFC493',
         colorAccentDark:   c.colorAccentDark   ?? '#A89C6A',
         colorAccentLight:  c.colorAccentLight  ?? '#EDEBD1',
-        academicYearsText: Array.isArray(c.academicYears) ? c.academicYears.join(', ') : '',
+        positionsText:     Array.isArray(c.positions) ? c.positions.join(', ') : '',
         alumniLabel:       c.alumniLabel       ?? 'Alumni',
         rosterLabel:       c.rosterLabel       ?? 'Roster',
         classLabel:        c.classLabel        ?? 'Recruiting Class',
@@ -743,9 +672,9 @@ export default function SettingsContent() {
     }
   }
 
-  const applyDefaultAcademicYears = () => {
-    const defaults = DEFAULT_ACADEMIC_YEARS[form.level] ?? []
-    setForm(p => ({ ...p, academicYearsText: defaults.join(', ') }))
+  const applyDefaultPositions = () => {
+    const defaults = DEFAULT_POSITIONS[form.sport] ?? []
+    setForm(p => ({ ...p, positionsText: defaults.join(', ') }))
   }
 
   const handleSave = async (e: FormEvent) => {
@@ -753,9 +682,10 @@ export default function SettingsContent() {
     setError('')
     setSuccess('')
 
-    const academicYears = form.academicYearsText.split(',').map(y => y.trim()).filter(Boolean)
-    if (academicYears.length === 0) {
-      setError('At least one academic year is required.')
+    const positions = form.positionsText.split(',').map(p => p.trim().toUpperCase()).filter(Boolean)
+
+    if (positions.length === 0) {
+      setError('At least one position is required.')
       return
     }
 
@@ -772,7 +702,7 @@ export default function SettingsContent() {
         colorAccent:       form.colorAccent,
         colorAccentDark:   form.colorAccentDark,
         colorAccentLight:  form.colorAccentLight,
-        academicYears,
+        positions,
         alumniLabel:       form.alumniLabel,
         rosterLabel:       form.rosterLabel,
         classLabel:        form.classLabel,
@@ -881,41 +811,13 @@ export default function SettingsContent() {
               </div>
             </CollapsibleCard>
 
-            <CollapsibleCard
-              title="Academic Years"
-              subtitle="Comma-separated list (e.g. Freshman, Sophomore, Junior, Senior, Graduate)."
-              defaultOpen={false}
-              headerRight={
-                <button
-                  type="button"
-                  onClick={applyDefaultAcademicYears}
-                  style={{ background: 'transparent', border: `1px solid var(--color-card-border)`, borderRadius: 'var(--radius-sm)', padding: '5px 12px', fontSize: 12, fontWeight: 500, color: 'var(--color-gray-600)', cursor: 'pointer' }}
-                >
-                  Load defaults for level
-                </button>
-              }
-            >
-              <TextInput
-                value={form.academicYearsText}
-                onChange={v => setForm(p => ({ ...p, academicYearsText: v }))}
-                placeholder="Freshman, Sophomore, Junior, Senior, Graduate"
-              />
-              {form.academicYearsText && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-                  {form.academicYearsText.split(',').map(y => y.trim()).filter(Boolean).map(y => (
-                    <span key={y} style={{ padding: '3px 10px', backgroundColor: 'var(--color-primary-light)', color: 'var(--color-primary-dark)', borderRadius: 'var(--radius-full)', fontSize: 12, fontWeight: 700 }}>
-                      {y}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </CollapsibleCard>
-
-            <CollapsibleCard title="Terminology Labels" subtitle="Customize the labels used throughout the portal." defaultOpen={false}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
-                <TextInput label="Alumni Label" value={form.alumniLabel} onChange={set('alumniLabel')} placeholder="Alumni"           helper='e.g. "Alumni", "Former Players"' />
-                <TextInput label="Roster Label" value={form.rosterLabel} onChange={set('rosterLabel')} placeholder="Roster"           helper='e.g. "Roster", "Team Roster"'   />
-                <TextInput label="Class Label"  value={form.classLabel}  onChange={set('classLabel')}  placeholder="Recruiting Class" helper='e.g. "Recruiting Class", "Year"' />
+            {/* ── Terminology Labels ── */}
+            <div style={card}>
+              <SectionHeader title="Terminology Labels" subtitle="Customize the labels used throughout the portal." />
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+                <TextInput label="Alumni Label"  value={form.alumniLabel} onChange={set('alumniLabel')} placeholder="Alumni"            helper='e.g. "Alumni", "Former Players"' />
+                <TextInput label="Roster Label"  value={form.rosterLabel} onChange={set('rosterLabel')} placeholder="Roster"            helper='e.g. "Roster", "Team Roster"'   />
+                <TextInput label="Class Label"   value={form.classLabel}  onChange={set('classLabel')}  placeholder="Recruiting Class"  helper='e.g. "Recruiting Class", "Year"' />
               </div>
             </CollapsibleCard>
 
