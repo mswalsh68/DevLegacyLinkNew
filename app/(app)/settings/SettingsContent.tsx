@@ -42,6 +42,81 @@ const DEFAULT_ACADEMIC_YEARS: Record<string, string[]> = {
 
 // ─── Shared sub-components ────────────────────────────────────────────────────
 
+function CollapsibleCard({
+  title, subtitle, defaultOpen = true, children, headerRight,
+}: {
+  title: string; subtitle?: string; defaultOpen?: boolean
+  children: React.ReactNode; headerRight?: React.ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+
+  return (
+    <div style={{
+      backgroundColor: 'var(--color-card-bg)',
+      border:          '1px solid var(--color-card-border)',
+      borderRadius:    'var(--radius-lg)',
+      boxShadow:       'var(--shadow-sm)',
+      overflow:        'hidden',
+    }}>
+      {/* Clickable header row */}
+      <div
+        onClick={() => setOpen(v => !v)}
+        style={{
+          display:        'flex',
+          alignItems:     'center',
+          justifyContent: 'space-between',
+          padding:        '16px 24px',
+          cursor:         'pointer',
+          userSelect:     'none',
+          borderBottom:   open ? '1px solid var(--color-card-border)' : 'none',
+        }}
+      >
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{
+              fontSize: 12, fontWeight: 700, color: 'var(--color-primary)',
+              textTransform: 'uppercase', letterSpacing: '0.8px',
+            }}>
+              {title}
+            </span>
+            <span style={{
+              fontSize: 11, color: 'var(--color-gray-400)',
+              transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+              transition: 'transform 0.2s',
+              display: 'inline-block',
+            }}>
+              ▾
+            </span>
+          </div>
+          {subtitle && !open && (
+            <p style={{ fontSize: 12, color: 'var(--color-gray-400)', margin: '2px 0 0', fontStyle: 'italic' }}>
+              {subtitle}
+            </p>
+          )}
+        </div>
+        {/* Stop propagation so buttons in headerRight don't toggle collapse */}
+        {headerRight && open && (
+          <div onClick={e => e.stopPropagation()}>
+            {headerRight}
+          </div>
+        )}
+      </div>
+
+      {/* Collapsible body */}
+      {open && (
+        <div style={{ padding: 24 }}>
+          {subtitle && (
+            <p style={{ fontSize: 13, color: 'var(--color-gray-500)', marginTop: 0, marginBottom: 16 }}>
+              {subtitle}
+            </p>
+          )}
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
     <div style={{ marginBottom: 16 }}>
@@ -219,21 +294,11 @@ function SportsSetupSection() {
     }
   }
 
-  const card = {
-    backgroundColor: 'var(--color-card-bg)',
-    border:          '1px solid var(--color-card-border)',
-    borderRadius:    'var(--radius-lg)',
-    padding:         24,
-    boxShadow:       'var(--shadow-sm)',
-  }
-
   return (
-    <div style={card}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
-        <SectionHeader
-          title="Sports Setup"
-          subtitle="Toggle sports active to include them in roster and alumni tracking. Add a sport if yours isn't listed."
-        />
+    <CollapsibleCard
+      title="Sports Setup"
+      subtitle="Toggle sports active to include them in roster and alumni tracking. Add a sport if yours isn't listed."
+      headerRight={
         <button
           type="button"
           onClick={() => { setShowAdd(v => !v); setAddError('') }}
@@ -243,12 +308,13 @@ function SportsSetupSection() {
             borderRadius: 'var(--radius-sm)', padding: '5px 12px',
             fontSize: 12, fontWeight: 500,
             color: showAdd ? '#fff' : 'var(--color-gray-600)',
-            cursor: 'pointer', flexShrink: 0, marginLeft: 16,
+            cursor: 'pointer',
           }}
         >
           {showAdd ? '✕ Cancel' : '+ Add Sport'}
         </button>
-      </div>
+      }
+    >
 
       {showAdd && (
         <div style={{
@@ -316,7 +382,7 @@ function SportsSetupSection() {
           ))}
         </div>
       )}
-    </div>
+    </CollapsibleCard>
   )
 }
 
@@ -443,14 +509,6 @@ function PositionsSection() {
     }
   }
 
-  const card = {
-    backgroundColor: 'var(--color-card-bg)',
-    border:          '1px solid var(--color-card-border)',
-    borderRadius:    'var(--radius-lg)',
-    padding:         24,
-    boxShadow:       'var(--shadow-sm)',
-  }
-
   const tabBtn = (sport: SportRow) => ({
     padding:      '5px 14px',
     borderRadius: 'var(--radius-full)',
@@ -464,29 +522,26 @@ function PositionsSection() {
   } as React.CSSProperties)
 
   return (
-    <div style={card}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
-        <SectionHeader
-          title="Positions"
-          subtitle="Configure positions per sport. Pulled from the sports_position table — edits apply immediately."
-        />
-        {activeSportId && (
-          <button
-            type="button"
-            onClick={() => { setShowAdd(v => !v); setAddError('') }}
-            style={{
-              background: showAdd ? theme.primary : 'transparent',
-              border: `1px solid ${showAdd ? theme.primary : 'var(--color-card-border)'}`,
-              borderRadius: 'var(--radius-sm)', padding: '5px 12px',
-              fontSize: 12, fontWeight: 500,
-              color: showAdd ? '#fff' : 'var(--color-gray-600)',
-              cursor: 'pointer', flexShrink: 0, marginLeft: 16,
-            }}
-          >
-            {showAdd ? '✕ Cancel' : '+ Add Position'}
-          </button>
-        )}
-      </div>
+    <CollapsibleCard
+      title="Positions"
+      subtitle="Configure positions per sport. Edits apply immediately."
+      headerRight={activeSportId ? (
+        <button
+          type="button"
+          onClick={() => { setShowAdd(v => !v); setAddError('') }}
+          style={{
+            background: showAdd ? theme.primary : 'transparent',
+            border: `1px solid ${showAdd ? theme.primary : 'var(--color-card-border)'}`,
+            borderRadius: 'var(--radius-sm)', padding: '5px 12px',
+            fontSize: 12, fontWeight: 500,
+            color: showAdd ? '#fff' : 'var(--color-gray-600)',
+            cursor: 'pointer',
+          }}
+        >
+          {showAdd ? '✕ Cancel' : '+ Add Position'}
+        </button>
+      ) : undefined}
+    >
 
       {loading ? (
         <p style={{ color: 'var(--color-gray-400)', fontSize: 13 }}>Loading positions…</p>
@@ -623,7 +678,7 @@ function PositionsSection() {
           )}
         </>
       )}
-    </div>
+    </CollapsibleCard>
   )
 }
 
@@ -745,14 +800,6 @@ export default function SettingsContent() {
   const set = (key: keyof typeof form) => (val: string) =>
     setForm(p => ({ ...p, [key]: val }))
 
-  const card = {
-    backgroundColor: 'var(--color-card-bg)',
-    border:          '1px solid var(--color-card-border)',
-    borderRadius:    'var(--radius-lg)',
-    padding:         24,
-    boxShadow:       'var(--shadow-sm)',
-  }
-
   return (
     <>
       {/* Page header */}
@@ -796,109 +843,81 @@ export default function SettingsContent() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-          {/* ── Team Identity (no Sport dropdown) ── */}
-          <form onSubmit={handleSave}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {/* ── Main form sections (id lets the Save button live outside) ── */}
+          <form id="settings-form" onSubmit={handleSave} style={{ display: 'contents' }}>
 
-              <div style={card}>
-                <SectionHeader title="Team Identity" subtitle="Your program's name and branding." />
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 16 }}>
-                  <TextInput label="Team / Program Name" value={form.teamName} onChange={set('teamName')} placeholder="USF Bulls" required />
-                  <TextInput label="Abbreviation"        value={form.teamAbbr} onChange={set('teamAbbr')} placeholder="USF"      required />
-                  <SelectInput label="Level" value={form.level} onChange={v => setForm(p => ({ ...p, level: v }))} options={LEVEL_OPTIONS} />
-                </div>
-                <div style={{ marginTop: 16 }}>
-                  <TextInput
-                    label="Logo URL (optional)"
-                    value={form.logoUrl}
-                    onChange={set('logoUrl')}
-                    placeholder="https://example.com/logo.png"
-                    helper="Leave blank to show abbreviation badge instead"
-                  />
-                </div>
+            <CollapsibleCard title="Team Identity" subtitle="Your program's name and branding.">
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 16 }}>
+                <TextInput label="Team / Program Name" value={form.teamName} onChange={set('teamName')} placeholder="USF Bulls" required />
+                <TextInput label="Abbreviation"        value={form.teamAbbr} onChange={set('teamAbbr')} placeholder="USF"      required />
+                <SelectInput label="Level" value={form.level} onChange={v => setForm(p => ({ ...p, level: v }))} options={LEVEL_OPTIONS} />
               </div>
-
-              {/* ── Brand Colors ── */}
-              <div style={card}>
-                <SectionHeader title="Brand Colors" subtitle="Six hex values control the full portal color theme." />
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 16 }}>
-                  <ColorInput label="Primary"       value={form.colorPrimary}      onChange={set('colorPrimary')}      />
-                  <ColorInput label="Primary Dark"  value={form.colorPrimaryDark}  onChange={set('colorPrimaryDark')}  />
-                  <ColorInput label="Primary Light" value={form.colorPrimaryLight} onChange={set('colorPrimaryLight')} />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-                  <ColorInput label="Accent"        value={form.colorAccent}       onChange={set('colorAccent')}       />
-                  <ColorInput label="Accent Dark"   value={form.colorAccentDark}   onChange={set('colorAccentDark')}   />
-                  <ColorInput label="Accent Light"  value={form.colorAccentLight}  onChange={set('colorAccentLight')}  />
-                </div>
-                <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-                  {[form.colorPrimary, form.colorPrimaryDark, form.colorPrimaryLight, form.colorAccent, form.colorAccentDark, form.colorAccentLight].map((c, i) => (
-                    <div key={i} style={{ flex: 1, height: 32, backgroundColor: c, borderRadius: 6, border: `1px solid ${theme.gray200}` }} title={c} />
-                  ))}
-                </div>
-              </div>
-
-              {/* ── Academic Years ── */}
-              <div style={card}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
-                  <SectionHeader title="Academic Years" subtitle="Comma-separated list (e.g. Freshman, Sophomore, Junior, Senior, Graduate)." />
-                  <button
-                    type="button"
-                    onClick={applyDefaultAcademicYears}
-                    style={{ background: 'transparent', border: `1px solid var(--color-card-border)`, borderRadius: 'var(--radius-sm)', padding: '5px 12px', fontSize: 12, fontWeight: 500, color: 'var(--color-gray-600)', cursor: 'pointer', flexShrink: 0, marginLeft: 16 }}
-                  >
-                    Load defaults for level
-                  </button>
-                </div>
+              <div style={{ marginTop: 16 }}>
                 <TextInput
-                  value={form.academicYearsText}
-                  onChange={v => setForm(p => ({ ...p, academicYearsText: v }))}
-                  placeholder="Freshman, Sophomore, Junior, Senior, Graduate"
+                  label="Logo URL (optional)"
+                  value={form.logoUrl}
+                  onChange={set('logoUrl')}
+                  placeholder="https://example.com/logo.png"
+                  helper="Leave blank to show abbreviation badge instead"
                 />
-                {form.academicYearsText && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-                    {form.academicYearsText.split(',').map(y => y.trim()).filter(Boolean).map(y => (
-                      <span key={y} style={{ padding: '3px 10px', backgroundColor: 'var(--color-primary-light)', color: 'var(--color-primary-dark)', borderRadius: 'var(--radius-full)', fontSize: 12, fontWeight: 700 }}>
-                        {y}
-                      </span>
-                    ))}
-                  </div>
-                )}
               </div>
+            </CollapsibleCard>
 
-              {/* ── Terminology Labels ── */}
-              <div style={card}>
-                <SectionHeader title="Terminology Labels" subtitle="Customize the labels used throughout the portal." />
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-                  <TextInput label="Alumni Label" value={form.alumniLabel} onChange={set('alumniLabel')} placeholder="Alumni"           helper='e.g. "Alumni", "Former Players"' />
-                  <TextInput label="Roster Label" value={form.rosterLabel} onChange={set('rosterLabel')} placeholder="Roster"           helper='e.g. "Roster", "Team Roster"'   />
-                  <TextInput label="Class Label"  value={form.classLabel}  onChange={set('classLabel')}  placeholder="Recruiting Class" helper='e.g. "Recruiting Class", "Year"' />
-                </div>
+            <CollapsibleCard title="Brand Colors" subtitle="Six hex values control the full portal color theme.">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 16 }}>
+                <ColorInput label="Primary"       value={form.colorPrimary}      onChange={set('colorPrimary')}      />
+                <ColorInput label="Primary Dark"  value={form.colorPrimaryDark}  onChange={set('colorPrimaryDark')}  />
+                <ColorInput label="Primary Light" value={form.colorPrimaryLight} onChange={set('colorPrimaryLight')} />
               </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+                <ColorInput label="Accent"        value={form.colorAccent}       onChange={set('colorAccent')}       />
+                <ColorInput label="Accent Dark"   value={form.colorAccentDark}   onChange={set('colorAccentDark')}   />
+                <ColorInput label="Accent Light"  value={form.colorAccentLight}  onChange={set('colorAccentLight')}  />
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+                {[form.colorPrimary, form.colorPrimaryDark, form.colorPrimaryLight, form.colorAccent, form.colorAccentDark, form.colorAccentLight].map((c, i) => (
+                  <div key={i} style={{ flex: 1, height: 32, backgroundColor: c, borderRadius: 6, border: `1px solid ${theme.gray200}` }} title={c} />
+                ))}
+              </div>
+            </CollapsibleCard>
 
-              {/* Actions */}
-              <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+            <CollapsibleCard
+              title="Academic Years"
+              subtitle="Comma-separated list (e.g. Freshman, Sophomore, Junior, Senior, Graduate)."
+              headerRight={
                 <button
                   type="button"
-                  onClick={() => router.push('/dashboard')}
-                  style={{ background: 'transparent', border: 'none', padding: '9px 18px', fontSize: 14, color: 'var(--color-gray-500)', cursor: 'pointer' }}
+                  onClick={applyDefaultAcademicYears}
+                  style={{ background: 'transparent', border: `1px solid var(--color-card-border)`, borderRadius: 'var(--radius-sm)', padding: '5px 12px', fontSize: 12, fontWeight: 500, color: 'var(--color-gray-600)', cursor: 'pointer' }}
                 >
-                  Cancel
+                  Load defaults for level
                 </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  style={{
-                    backgroundColor: saving ? 'var(--color-primary-dark)' : 'var(--color-primary)',
-                    color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)',
-                    padding: '9px 24px', fontSize: 14, fontWeight: 600,
-                    cursor: saving ? 'wait' : 'pointer', transition: 'background 0.15s',
-                  }}
-                >
-                  {saving ? 'Saving…' : 'Save Settings'}
-                </button>
+              }
+            >
+              <TextInput
+                value={form.academicYearsText}
+                onChange={v => setForm(p => ({ ...p, academicYearsText: v }))}
+                placeholder="Freshman, Sophomore, Junior, Senior, Graduate"
+              />
+              {form.academicYearsText && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                  {form.academicYearsText.split(',').map(y => y.trim()).filter(Boolean).map(y => (
+                    <span key={y} style={{ padding: '3px 10px', backgroundColor: 'var(--color-primary-light)', color: 'var(--color-primary-dark)', borderRadius: 'var(--radius-full)', fontSize: 12, fontWeight: 700 }}>
+                      {y}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </CollapsibleCard>
+
+            <CollapsibleCard title="Terminology Labels" subtitle="Customize the labels used throughout the portal.">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+                <TextInput label="Alumni Label" value={form.alumniLabel} onChange={set('alumniLabel')} placeholder="Alumni"           helper='e.g. "Alumni", "Former Players"' />
+                <TextInput label="Roster Label" value={form.rosterLabel} onChange={set('rosterLabel')} placeholder="Roster"           helper='e.g. "Roster", "Team Roster"'   />
+                <TextInput label="Class Label"  value={form.classLabel}  onChange={set('classLabel')}  placeholder="Recruiting Class" helper='e.g. "Recruiting Class", "Year"' />
               </div>
-            </div>
+            </CollapsibleCard>
+
           </form>
 
           {/* ── Sports Setup (live-save, outside main form) ── */}
@@ -906,6 +925,30 @@ export default function SettingsContent() {
 
           {/* ── Positions (live-save, outside main form) ── */}
           <PositionsSection />
+
+          {/* ── Save Settings — always at the bottom ── */}
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', paddingBottom: 24 }}>
+            <button
+              type="button"
+              onClick={() => router.push('/dashboard')}
+              style={{ background: 'transparent', border: 'none', padding: '9px 18px', fontSize: 14, color: 'var(--color-gray-500)', cursor: 'pointer' }}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="settings-form"
+              disabled={saving}
+              style={{
+                backgroundColor: saving ? 'var(--color-primary-dark)' : 'var(--color-primary)',
+                color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)',
+                padding: '9px 24px', fontSize: 14, fontWeight: 600,
+                cursor: saving ? 'wait' : 'pointer', transition: 'background 0.15s',
+              }}
+            >
+              {saving ? 'Saving…' : 'Save Settings'}
+            </button>
+          </div>
 
         </div>
       )}
