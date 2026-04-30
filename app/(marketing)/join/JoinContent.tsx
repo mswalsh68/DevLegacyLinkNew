@@ -108,7 +108,8 @@ export function JoinContent({ initialCode }: { initialCode: string }) {
         localStorage.setItem('cfb_user', JSON.stringify(data.data.user))
       }
 
-      router.push('/pending')
+      // Full reload so AuthProvider re-mounts and picks up the new session
+      window.location.href = '/pending'
     } catch {
       setError('Network error. Please try again.')
       setStep('form')
