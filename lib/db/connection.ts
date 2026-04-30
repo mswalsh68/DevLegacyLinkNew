@@ -141,3 +141,34 @@ export async function dbRequest(db: DbKey): Promise<sql.Request> {
   const pool = await getPool(db)
   return pool.request()
 }
+
+// ─── Enumerate all tenant App DB names (from Global DB) ──────────────────────
+// Used by background jobs and webhooks that process events without tenant context.
+// Cached for 60 s to avoid hammering the Global DB on every webhook hit.
+
+let _appDbCache:     string[]   = []
+let _appDbCacheTime: number     = 0
+const APP_DB_CACHE_TTL_MS       = 60_000
+
+export async function getAllAppDbs(): Promise<string[]> {
+  const now = Date.now()
+  if (_appDbCache.length > 0 && now - _appDbCacheTime < APP_DB_CACHE_TTL_MS) {
+    return _appDbCache
+  }
+
+  try {
+    const pool = await getPool('global')
+    const result = await pool.request().query(
+      `SELECT DISTINCT app_db FROM dbo.teams WHERE app_db IS NOT NULL AND app_db <> '' ORDER BY app_db`,
+    )
+    const rows: string[] = (result.recordset ?? []).map(
+      (r: Record<string, unknown>) => String(r.app_db),
+    )
+    _appDbCache     = rows
+    _appDbCacheTime = now
+    return rows
+  } catch (err) {
+    console.error('[db/connection] getAllAppDbs failed:', err)
+    return _appDbCache   // return stale cache on error rather than throwing
+  }
+}

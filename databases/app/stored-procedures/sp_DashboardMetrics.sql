@@ -42,14 +42,17 @@ BEGIN
       AND (@SportId IS NULL OR ur.sport_id = @SportId)
   );
 
-  -- ── Email counts for alumni recipients ────────────────────────────────────
-  DECLARE @TotalEmailsSent INT = 0;
-  DECLARE @MonthEmailsSent INT = 0;
+  -- ── Email counts + open rate for alumni recipients ───────────────────────
+  DECLARE @TotalEmailsSent INT   = 0;
+  DECLARE @MonthEmailsSent INT   = 0;
+  DECLARE @TotalOpened     INT   = 0;
+  DECLARE @EmailOpenRatePct DECIMAL(5,1) = 0;
 
   SELECT
     @TotalEmailsSent = SUM(CASE WHEN om.status IN ('sent','responded') THEN 1 ELSE 0 END),
     @MonthEmailsSent = SUM(CASE WHEN om.status IN ('sent','responded')
-                                 AND om.sent_at >= DATEADD(DAY, -30, SYSUTCDATETIME()) THEN 1 ELSE 0 END)
+                                 AND om.sent_at >= DATEADD(DAY, -30, SYSUTCDATETIME()) THEN 1 ELSE 0 END),
+    @TotalOpened     = SUM(CASE WHEN om.opened_at IS NOT NULL THEN 1 ELSE 0 END)
   FROM dbo.outreach_messages om
   WHERE EXISTS (
     SELECT 1 FROM dbo.users_roles ur
@@ -57,6 +60,11 @@ BEGIN
       AND ur.status  = 'alumni'
       AND (@SportId IS NULL OR ur.sport_id = @SportId)
   );
+
+  SET @EmailOpenRatePct = CASE
+    WHEN @TotalEmailsSent = 0 THEN 0
+    ELSE CAST(100.0 * @TotalOpened / @TotalEmailsSent AS DECIMAL(5,1))
+  END;
 
   -- ── Alumni logins last 30 days ─────────────────────────────────────────────
   DECLARE @AlumniLogins INT = 0;
@@ -89,7 +97,8 @@ BEGIN
     ISNULL(@MonthEmailsSent, 0)   AS monthEmailsSent,
     ISNULL(@AlumniLogins, 0)      AS alumniLoginsLast30Days,
     ISNULL(@TotalFeedPosts, 0)    AS totalFeedPosts,
-    ISNULL(@MonthFeedPosts, 0)    AS monthFeedPosts;
+    ISNULL(@MonthFeedPosts, 0)    AS monthFeedPosts,
+    ISNULL(@EmailOpenRatePct, 0)  AS emailOpenRatePct;
 END;
 GO
 
