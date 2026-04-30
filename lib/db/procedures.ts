@@ -224,7 +224,7 @@ export interface RosterRow {
  * Replaces the old sp_GetPlayers function.
  */
 export async function sp_GetRoster(params: {
-  sportId:     number
+  sportId?:    number | null
   search?:     string
   positionId?: number
   classYear?:  number
@@ -232,7 +232,7 @@ export async function sp_GetRoster(params: {
   pageSize?:   number
 }): Promise<{ roster: RosterRow[]; totalCount: number }> {
   const { recordset, output } = await execFull('app', 'sp_GetRosterBySport', (r) => {
-    r.input ('SportId',    sql.Int,           params.sportId)
+    r.input ('SportId',    sql.Int,           params.sportId ?? null)
     r.input ('Search',     sql.NVarChar(255),  params.search      ?? null)
     r.input ('PositionId', sql.Int,           params.positionId  ?? null)
     r.input ('ClassYear',  sql.SmallInt,      params.classYear   ?? null)
@@ -251,7 +251,7 @@ export async function sp_GetRoster(params: {
  * Replaces the old sp_GetAlumni function.
  */
 export async function sp_GetAlumniRoster(params: {
-  sportId:     number
+  sportId?:    number | null
   search?:     string
   positionId?: number
   classYear?:  number
@@ -259,7 +259,7 @@ export async function sp_GetAlumniRoster(params: {
   pageSize?:   number
 }): Promise<{ alumni: RosterRow[]; totalCount: number }> {
   const { recordset, output } = await execFull('app', 'sp_GetAlumniBySport', (r) => {
-    r.input ('SportId',    sql.Int,           params.sportId)
+    r.input ('SportId',    sql.Int,           params.sportId ?? null)
     r.input ('Search',     sql.NVarChar(255),  params.search      ?? null)
     r.input ('PositionId', sql.Int,           params.positionId  ?? null)
     r.input ('ClassYear',  sql.SmallInt,      params.classYear   ?? null)
