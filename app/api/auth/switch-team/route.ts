@@ -8,7 +8,7 @@
 // Copied from the original project's switch-team pattern.
 import { NextRequest, NextResponse } from 'next/server'
 import { SignJWT } from 'jose'
-import { getServerSession } from '@/lib/auth'
+import { getServerSession, isGlobalAdmin } from '@/lib/auth'
 import { sp_SwitchTeam, sp_UpsertUser } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 
@@ -38,6 +38,13 @@ export async function POST(req: NextRequest) {
 
   if (!teamId || isNaN(teamId)) {
     return NextResponse.json({ error: 'teamId required.' }, { status: 400 })
+  }
+
+  // Non-platform-owners are scoped to a single team. They may only switch to
+  // the team already embedded in their JWT (e.g. refreshing after a team setup),
+  // not to arbitrary other clients.
+  if (!isGlobalAdmin(session) && session.currentTeamId && session.currentTeamId !== teamId) {
+    return NextResponse.json({ success: false, error: 'ACCESS_DENIED' }, { status: 403 })
   }
 
   let cfg: ReturnType<typeof getConfig>
