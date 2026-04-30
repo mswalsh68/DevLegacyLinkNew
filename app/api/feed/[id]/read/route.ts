@@ -24,11 +24,13 @@ export async function POST(
   return appDbContext.run(session.appDb, async () => {
     try {
       await sp_MarkPostRead({ postId: id, userId: session.userId })
-      return NextResponse.json({ success: true }, { status: 202 })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      console.error('[POST /api/feed/[id]/read]', msg)
-      return NextResponse.json({ success: false, error: 'Failed to mark post as read' }, { status: 500 })
+      // FK_feed_post_reads_users fires when the staff user hasn't been synced
+      // to this App DB's dbo.users table yet (e.g. first visit after schema migration).
+      // Read tracking is best-effort — log and continue rather than surfacing a 500.
+      console.warn('[POST /api/feed/[id]/read] read tracking skipped:', msg)
     }
+    return NextResponse.json({ success: true }, { status: 202 })
   })
 }

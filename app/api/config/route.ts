@@ -28,12 +28,28 @@ function tryArray(row: Record<string, unknown>, ...keys: string[]): string[] | n
   for (const k of keys) {
     const v = row[k]
     if (v == null) continue
-    if (Array.isArray(v)) return v as string[]
-    if (typeof v === 'string' && v.trim().startsWith('[')) {
+    let arr: unknown[] | null = null
+    if (Array.isArray(v)) {
+      arr = v
+    } else if (typeof v === 'string' && v.trim().startsWith('[')) {
       try {
         const p = JSON.parse(v)
-        if (Array.isArray(p)) return p as string[]
+        if (Array.isArray(p)) arr = p
       } catch { /* ignore malformed JSON */ }
+    }
+    if (arr) {
+      // Normalize: if items are {value, label} objects (from old settings saves),
+      // extract the label string so positions/years are always plain strings.
+      return arr.map((item) => {
+        if (typeof item === 'string') return item
+        if (item && typeof item === 'object') {
+          const obj = item as Record<string, unknown>
+          if (typeof obj.label  === 'string') return obj.label
+          if (typeof obj.value  === 'string') return obj.value
+          if (typeof obj.name   === 'string') return obj.name
+        }
+        return String(item)
+      })
     }
   }
   return null

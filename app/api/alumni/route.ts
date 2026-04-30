@@ -5,7 +5,7 @@ import { appDbContext } from '@/lib/db/connection'
 
 // ─── GET /api/alumni ──────────────────────────────────────────────────────────
 // Query params:
-//   sportId    INT (required — Football = 1)
+//   sportId    INT (optional — omit or null = all sports)
 //   search     string
 //   positionId INT
 //   classYear  INT
@@ -23,11 +23,7 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
 
   const sportIdParam = searchParams.get('sportId')
-  const sportId      = sportIdParam ? parseInt(sportIdParam, 10) : NaN
-
-  if (isNaN(sportId)) {
-    return NextResponse.json({ success: false, error: 'sportId (INT) is required' }, { status: 400 })
-  }
+  const sportId      = sportIdParam ? (parseInt(sportIdParam, 10) || null) : null
 
   const page        = parseInt(searchParams.get('page')     ?? '1')
   const pageSize    = parseInt(searchParams.get('pageSize') ?? '50')
