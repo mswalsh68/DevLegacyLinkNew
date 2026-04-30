@@ -188,7 +188,7 @@ export default function TransferPage() {
                 placeholder="Search players..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                style={{ border: `1.5px solid ${theme.gray200}`, borderRadius: 8, padding: '7px 12px', fontSize: 13, outline: 'none', width: 200 }}
+                style={{ border: `1.5px solid ${theme.gray200}`, borderRadius: 8, padding: '7px 12px', fontSize: 13, outline: 'none', flex: '1 1 auto', minWidth: 0, maxWidth: 200 }}
               />
               <span style={{ fontSize: 13, color: theme.gray500 }}>
                 {selectedIds.size} of {filteredPlayers.length} selected
