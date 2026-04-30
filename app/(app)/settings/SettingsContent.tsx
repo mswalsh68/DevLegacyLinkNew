@@ -811,9 +811,7 @@ export default function SettingsContent() {
               </div>
             </CollapsibleCard>
 
-            {/* ── Terminology Labels ── */}
-            <div style={card}>
-              <SectionHeader title="Terminology Labels" subtitle="Customize the labels used throughout the portal." />
+            <CollapsibleCard title="Terminology Labels" subtitle="Customize the labels used throughout the portal." defaultOpen={false}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
                 <TextInput label="Alumni Label"  value={form.alumniLabel} onChange={set('alumniLabel')} placeholder="Alumni"            helper='e.g. "Alumni", "Former Players"' />
                 <TextInput label="Roster Label"  value={form.rosterLabel} onChange={set('rosterLabel')} placeholder="Roster"            helper='e.g. "Roster", "Team Roster"'   />
