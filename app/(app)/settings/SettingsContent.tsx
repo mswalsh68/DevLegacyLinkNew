@@ -159,7 +159,7 @@ function ColorInput({ label, value, onChange }: { label: string; value: string; 
 
 // ─── Sports Setup section ─────────────────────────────────────────────────────
 
-function SportsSetupSection({ appDb }: { appDb: boolean }) {
+function SportsSetupSection() {
   const [sports,     setSports]     = useState<SportRow[]>([])
   const [loading,    setLoading]    = useState(true)
   const [toggling,   setToggling]   = useState<number | null>(null)
@@ -218,8 +218,6 @@ function SportsSetupSection({ appDb }: { appDb: boolean }) {
       setAdding(false)
     }
   }
-
-  if (!appDb) return null
 
   const card = {
     backgroundColor: 'var(--color-card-bg)',
@@ -324,7 +322,7 @@ function SportsSetupSection({ appDb }: { appDb: boolean }) {
 
 // ─── Positions section ────────────────────────────────────────────────────────
 
-function PositionsSection({ appDb }: { appDb: boolean }) {
+function PositionsSection() {
   const [allPositions,  setAllPositions]  = useState<PositionRow[]>([])
   const [allSports,     setAllSports]     = useState<SportRow[]>([])
   const [loading,       setLoading]       = useState(true)
@@ -366,7 +364,7 @@ function PositionsSection({ appDb }: { appDb: boolean }) {
     }
   }, [activeSportId])
 
-  useEffect(() => { if (appDb) loadAll() }, [appDb, loadAll])
+  useEffect(() => { loadAll() }, [loadAll])
 
   const activeSports    = allSports.filter(s => s.isActive)
   const visiblePositions = allPositions.filter(p => p.sportId === activeSportId)
@@ -444,8 +442,6 @@ function PositionsSection({ appDb }: { appDb: boolean }) {
       setAdding(false)
     }
   }
-
-  if (!appDb) return null
 
   const card = {
     backgroundColor: 'var(--color-card-bg)',
@@ -640,7 +636,6 @@ export default function SettingsContent() {
   const [saving,   setSaving]   = useState(false)
   const [error,    setError]    = useState('')
   const [success,  setSuccess]  = useState('')
-  const [hasAppDb, setHasAppDb] = useState(false)
 
   const [form, setForm] = useState({
     teamName:          '',
@@ -684,10 +679,6 @@ export default function SettingsContent() {
         classLabel:        c.classLabel        ?? 'Recruiting Class',
       }))
 
-      // Check if we have appDb access (sports/positions sections need it)
-      const meRes  = await fetch('/api/auth/me', { credentials: 'include' })
-      const meJson = await meRes.json()
-      setHasAppDb(Boolean(meJson.data?.appDb))
     } catch {
       setError('Failed to load team settings.')
     } finally {
@@ -911,10 +902,10 @@ export default function SettingsContent() {
           </form>
 
           {/* ── Sports Setup (live-save, outside main form) ── */}
-          <SportsSetupSection appDb={hasAppDb} />
+          <SportsSetupSection />
 
           {/* ── Positions (live-save, outside main form) ── */}
-          <PositionsSection appDb={hasAppDb} />
+          <PositionsSection />
 
         </div>
       )}
