@@ -45,13 +45,11 @@ BEGIN
   -- ── Email counts for alumni recipients ────────────────────────────────────
   DECLARE @TotalEmailsSent INT = 0;
   DECLARE @MonthEmailsSent INT = 0;
-  DECLARE @TotalOpened     INT = 0;
 
   SELECT
     @TotalEmailsSent = SUM(CASE WHEN om.status IN ('sent','responded') THEN 1 ELSE 0 END),
     @MonthEmailsSent = SUM(CASE WHEN om.status IN ('sent','responded')
-                                 AND om.sent_at >= DATEADD(DAY, -30, SYSUTCDATETIME()) THEN 1 ELSE 0 END),
-    @TotalOpened     = SUM(CASE WHEN om.opened_at IS NOT NULL THEN 1 ELSE 0 END)
+                                 AND om.sent_at >= DATEADD(DAY, -30, SYSUTCDATETIME()) THEN 1 ELSE 0 END)
   FROM dbo.outreach_messages om
   WHERE EXISTS (
     SELECT 1 FROM dbo.users_roles ur
@@ -73,17 +71,25 @@ BEGIN
         AND (@SportId IS NULL OR ur.sport_id = @SportId)
     );
 
+  -- ── Feed post counts (alumni-visible: all + alumni_only) ──────────────────
+  DECLARE @TotalFeedPosts INT = 0;
+  DECLARE @MonthFeedPosts INT = 0;
+
+  SELECT
+    @TotalFeedPosts = COUNT(*),
+    @MonthFeedPosts = SUM(CASE WHEN fp.created_at >= DATEADD(DAY, -30, SYSUTCDATETIME()) THEN 1 ELSE 0 END)
+  FROM dbo.feed_posts fp
+  WHERE fp.audience IN ('all', 'alumni_only')
+    AND (@SportId IS NULL OR fp.sport_id = @SportId);
+
   SELECT
     ISNULL(@TotalInteractions, 0) AS totalInteractions,
     ISNULL(@MonthInteractions, 0) AS monthInteractions,
     ISNULL(@TotalEmailsSent, 0)   AS totalEmailsSent,
     ISNULL(@MonthEmailsSent, 0)   AS monthEmailsSent,
     ISNULL(@AlumniLogins, 0)      AS alumniLoginsLast30Days,
-    CASE
-      WHEN ISNULL(@TotalEmailsSent, 0) = 0 THEN 0
-      ELSE CAST(ISNULL(@TotalOpened, 0) * 100.0
-                / NULLIF(@TotalEmailsSent, 0) AS DECIMAL(5,1))
-    END AS emailOpenRatePct;
+    ISNULL(@TotalFeedPosts, 0)    AS totalFeedPosts,
+    ISNULL(@MonthFeedPosts, 0)    AS monthFeedPosts;
 END;
 GO
 
@@ -114,7 +120,7 @@ BEGIN
       AND (@SportId IS NULL OR ur.sport_id = @SportId)
   );
 
-  -- ── Feed post counts ──────────────────────────────────────────────────────
+  -- ── Feed post counts (player-visible: all + players_only + by_position) ────
   DECLARE @TotalFeedPosts INT = 0;
   DECLARE @MonthFeedPosts INT = 0;
 
@@ -122,7 +128,8 @@ BEGIN
     @TotalFeedPosts = COUNT(*),
     @MonthFeedPosts = SUM(CASE WHEN fp.created_at >= DATEADD(DAY, -30, SYSUTCDATETIME()) THEN 1 ELSE 0 END)
   FROM dbo.feed_posts fp
-  WHERE (@SportId IS NULL OR fp.sport_id = @SportId);
+  WHERE fp.audience IN ('all', 'players_only', 'by_position')
+    AND (@SportId IS NULL OR fp.sport_id = @SportId);
 
   SELECT
     ISNULL(@TotalEmailsSent, 0) AS totalEmailsSent,

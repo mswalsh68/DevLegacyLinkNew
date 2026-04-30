@@ -822,7 +822,9 @@ export interface AlumniDashboardMetrics {
   totalEmailsSent:        number
   monthEmailsSent:        number
   alumniLoginsLast30Days: number
-  emailOpenRatePct:       number
+  totalFeedPosts:         number
+  monthFeedPosts:         number
+  // emailOpenRatePct removed — needs Resend webhook to populate outreach_messages.opened_at first
 }
 
 export async function sp_GetDashboardMetrics_Alumni(params: {
@@ -840,7 +842,8 @@ export async function sp_GetDashboardMetrics_Alumni(params: {
     totalEmailsSent:        (row.totalEmailsSent        as number) ?? 0,
     monthEmailsSent:        (row.monthEmailsSent        as number) ?? 0,
     alumniLoginsLast30Days: (row.alumniLoginsLast30Days as number) ?? 0,
-    emailOpenRatePct:       (row.emailOpenRatePct       as number) ?? 0,
+    totalFeedPosts:         (row.totalFeedPosts         as number) ?? 0,
+    monthFeedPosts:         (row.monthFeedPosts         as number) ?? 0,
   }
 }
 
