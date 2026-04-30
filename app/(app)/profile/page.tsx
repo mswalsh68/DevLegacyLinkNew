@@ -314,7 +314,7 @@ export default function ProfilePage() {
 
       {/* ── Profile Info ──────────────────────────────────── */}
       <Section title="Profile" description="Update your display name.">
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, maxWidth: 560 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16, maxWidth: 560 }}>
           <Field label="First name">
             <TextInput value={firstName} onChange={setFirstName} />
           </Field>
@@ -337,7 +337,7 @@ export default function ProfilePage() {
         <p style={{ fontSize: 13, color: 'var(--color-gray-500)', margin: '0 0 16px' }}>
           Current email: <strong style={{ color: 'var(--color-gray-800)' }}>{email || '…'}</strong>
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, maxWidth: 560 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16, maxWidth: 560 }}>
           <Field label="New email address">
             <TextInput
               type="email"

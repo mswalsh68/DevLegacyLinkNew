@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
 import { can } from '@/lib/permissions'
-import { sp_DispatchCampaign } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
+import { sendCampaignEmails } from '@/lib/email'
 
 // ─── POST /api/campaigns/[id]/dispatch ───────────────────────────────────────
 
@@ -25,7 +25,7 @@ export async function POST(
 
   return appDbContext.run(session.appDb, async () => {
     try {
-      const { queuedCount, errorCode } = await sp_DispatchCampaign({
+      const { queuedCount, sentCount, errorCode } = await sendCampaignEmails({
         campaignId:   id,
         dispatchedBy: session.userId,
       })
@@ -34,7 +34,7 @@ export async function POST(
         return NextResponse.json({ success: false, error: errorCode }, { status: 400 })
       }
 
-      return NextResponse.json({ success: true, data: { queuedCount } })
+      return NextResponse.json({ success: true, data: { queuedCount, sentCount } })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error('[POST /api/campaigns/[id]/dispatch]', msg)

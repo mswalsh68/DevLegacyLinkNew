@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
 import { can } from '@/lib/permissions'
-import { sp_GetFeed, sp_CreatePost, sp_DispatchCampaign } from '@/lib/db/procedures'
+import { sp_GetFeed, sp_CreatePost } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
+import { sendCampaignEmailsBackground } from '@/lib/email'
 
 const CAN_POST_ROLES = ['platform_owner', 'app_admin', 'head_coach', 'position_coach', 'alumni_director']
 
@@ -99,10 +100,12 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: false, error: errorCode }, { status: 400 })
       }
 
-      // Fire-and-forget email dispatch
-      if (alsoEmail && campaignId) {
-        sp_DispatchCampaign({ campaignId, dispatchedBy: session.userId }).catch((err) => {
-          console.error('[POST /api/feed] dispatchCampaign failed:', err)
+      // Fire-and-forget email dispatch (queue + send in background)
+      if (alsoEmail && campaignId && session.appDb) {
+        sendCampaignEmailsBackground({
+          campaignId,
+          dispatchedBy: session.userId,
+          appDb:        session.appDb,
         })
       }
 

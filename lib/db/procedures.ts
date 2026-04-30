@@ -541,6 +541,96 @@ export async function sp_GetUserSports(params: {
   }))
 }
 
+export interface SportAdminOption {
+  id:       number
+  name:     string
+  abbr:     string
+  isActive: boolean
+}
+
+/** Returns ALL sports (active and inactive) for the admin settings panel. */
+export async function sp_GetAllSports(): Promise<SportAdminOption[]> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetAllSports')
+  return rows.map(r => ({
+    id:       r.id       as number,
+    name:     r.name     as string,
+    abbr:     r.abbr     as string,
+    isActive: Boolean(r.isActive),
+  }))
+}
+
+/** Toggles is_active on a sport. Returns rowsAffected. */
+export async function sp_SetSportActive(params: {
+  sportId:  number
+  isActive: boolean
+}): Promise<number> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_SetSportActive', (r) => {
+    r.input('SportId',  sql.Int, params.sportId)
+    r.input('IsActive', sql.Bit, params.isActive ? 1 : 0)
+  })
+  return (rows[0]?.rowsAffected as number) ?? 0
+}
+
+/** Inserts a new sport. Returns { newId, errorCode }. */
+export async function sp_AddSport(params: {
+  name:     string
+  abbr:     string
+  isActive?: boolean
+}): Promise<{ newId: number; errorCode: string | null }> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_AddSport', (r) => {
+    r.input('Name',     sql.NVarChar(100), params.name)
+    r.input('Abbr',     sql.NVarChar(10),  params.abbr)
+    r.input('IsActive', sql.Bit,           params.isActive !== false ? 1 : 0)
+  })
+  return {
+    newId:     rows[0]?.newId     as number,
+    errorCode: rows[0]?.errorCode as string | null,
+  }
+}
+
+/** Inserts a new position for a sport. Returns { newId, errorCode }. */
+export async function sp_AddSportsPosition(params: {
+  sportId:      number
+  positionName: string
+  abbreviation: string
+}): Promise<{ newId: number; errorCode: string | null }> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_AddSportsPosition', (r) => {
+    r.input('SportId',      sql.Int,          params.sportId)
+    r.input('PositionName', sql.NVarChar(100), params.positionName)
+    r.input('Abbreviation', sql.NVarChar(10),  params.abbreviation)
+  })
+  return {
+    newId:     rows[0]?.newId     as number,
+    errorCode: rows[0]?.errorCode as string | null,
+  }
+}
+
+/** Updates an existing position. NULL params = keep existing value. */
+export async function sp_UpdateSportsPosition(params: {
+  positionId:    number
+  positionName?: string | null
+  abbreviation?: string | null
+  isActive?:     boolean | null
+}): Promise<number> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_UpdateSportsPosition', (r) => {
+    r.input('PositionId',   sql.Int,          params.positionId)
+    r.input('PositionName', sql.NVarChar(100), params.positionName ?? null)
+    r.input('Abbreviation', sql.NVarChar(10),  params.abbreviation ?? null)
+    r.input('IsActive',     sql.Bit,           params.isActive != null ? (params.isActive ? 1 : 0) : null)
+  })
+  return (rows[0]?.rowsAffected as number) ?? 0
+}
+
+/** Hard-deletes a position by positionId. Returns rowsAffected. */
+export async function sp_DeleteSportsPosition(params: {
+  positionId: number
+}): Promise<number> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_DeleteSportsPosition', (r) => {
+    r.input('PositionId', sql.Int, params.positionId)
+  })
+  return (rows[0]?.rowsAffected as number) ?? 0
+}
+
 // ─── App DB — Campaigns ───────────────────────────────────────────────────────
 
 export async function sp_CreateCampaign(params: {
@@ -590,23 +680,94 @@ export async function sp_GetCampaigns(params: {
 /**
  * Dispatches an outreach campaign (queues messages for all eligible recipients).
  */
+export interface CampaignHeader {
+  subjectLine:     string | null
+  bodyHtml:        string | null
+  fromName:        string | null
+  replyToEmail:    string | null
+  physicalAddress: string | null
+  campaignName:    string | null
+}
+
+export interface CampaignRecipient {
+  messageId:        string   // DB UUID — pass to sp_MarkEmailSent
+  userId:           number
+  firstName:        string | null
+  emailAddress:     string
+  unsubscribeToken: string   // UUID
+}
+
 export async function sp_DispatchCampaign(params: {
   campaignId:        string
   dispatchedBy:      number
   dailyRemaining?:   number
   monthlyRemaining?: number
-}): Promise<{ queuedCount: number; errorCode: string | null }> {
-  const { output } = await execFull('app', 'sp_DispatchEmailCampaign', (r) => {
+}): Promise<{
+  queuedCount:  number
+  errorCode:    string | null
+  header:       CampaignHeader | null
+  recipients:   CampaignRecipient[]
+}> {
+  const { recordsets, output } = await execFull('app', 'sp_DispatchEmailCampaign', (r) => {
     r.input ('CampaignId',       sql.UniqueIdentifier, params.campaignId)
     r.input ('DailyRemaining',   sql.Int,              params.dailyRemaining   ?? 10000)
     r.input ('MonthlyRemaining', sql.Int,              params.monthlyRemaining ?? 100000)
     r.output('QueuedCount',      sql.Int)
     r.output('ErrorCode',        sql.NVarChar(50))
   })
+
+  // recordsets[0] = campaign header (1 row); recordsets[1] = recipients
+  const headerRows  = (recordsets?.[0] ?? []) as Record<string, unknown>[]
+  const recipientRows = (recordsets?.[1] ?? []) as Record<string, unknown>[]
+
+  const h = headerRows[0] ?? null
+  const header: CampaignHeader | null = h ? {
+    subjectLine:     (h.subjectLine     as string | null) ?? null,
+    bodyHtml:        (h.bodyHtml        as string | null) ?? null,
+    fromName:        (h.fromName        as string | null) ?? null,
+    replyToEmail:    (h.replyToEmail    as string | null) ?? null,
+    physicalAddress: (h.physicalAddress as string | null) ?? null,
+    campaignName:    (h.campaignName    as string | null) ?? null,
+  } : null
+
+  const recipients: CampaignRecipient[] = recipientRows.map(r => ({
+    messageId:        String(r.messageId ?? ''),
+    userId:           (r.userId as number) ?? 0,
+    firstName:        (r.firstName as string | null) ?? null,
+    emailAddress:     String(r.emailAddress ?? ''),
+    unsubscribeToken: String(r.unsubscribeToken ?? ''),
+  }))
+
   return {
     queuedCount: (output.QueuedCount as number) ?? 0,
     errorCode:   (output.ErrorCode   as string | null) ?? null,
+    header,
+    recipients,
   }
+}
+
+// ─── sp_MarkEmailSent ─────────────────────────────────────────────────────────
+
+export async function sp_MarkEmailSent(params: {
+  messages: Array<{ messageId: string; resendId: string }>
+}): Promise<{ errorCode: string | null }> {
+  const { output } = await execFull('app', 'sp_MarkEmailSent', (r) => {
+    r.input ('MessagesJson', sql.NVarChar(sql.MAX), JSON.stringify(params.messages))
+    r.output('ErrorCode',    sql.NVarChar(50))
+  })
+  return { errorCode: (output.ErrorCode as string | null) ?? null }
+}
+
+// ─── sp_MarkEmailOpened ───────────────────────────────────────────────────────
+
+export async function sp_MarkEmailOpened(params: {
+  resendId: string   // Resend message ID from webhook event data.email_id
+}): Promise<{ errorCode: string | null }> {
+  const { output } = await execFull('app', 'sp_MarkEmailOpened', (r) => {
+    r.input ('ResendId',  sql.NVarChar(100), params.resendId)
+    r.output('ErrorCode', sql.NVarChar(50))
+  })
+  return { errorCode: (output.ErrorCode as string | null) ?? null }
 }
 
 // ─── App DB — Feed ────────────────────────────────────────────────────────────
@@ -732,7 +893,9 @@ export interface AlumniDashboardMetrics {
   totalEmailsSent:        number
   monthEmailsSent:        number
   alumniLoginsLast30Days: number
-  emailOpenRatePct:       number
+  totalFeedPosts:         number
+  monthFeedPosts:         number
+  emailOpenRatePct:       number   // populated via Resend open-tracking webhook
 }
 
 export async function sp_GetDashboardMetrics_Alumni(params: {
@@ -750,6 +913,8 @@ export async function sp_GetDashboardMetrics_Alumni(params: {
     totalEmailsSent:        (row.totalEmailsSent        as number) ?? 0,
     monthEmailsSent:        (row.monthEmailsSent        as number) ?? 0,
     alumniLoginsLast30Days: (row.alumniLoginsLast30Days as number) ?? 0,
+    totalFeedPosts:         (row.totalFeedPosts         as number) ?? 0,
+    monthFeedPosts:         (row.monthFeedPosts         as number) ?? 0,
     emailOpenRatePct:       (row.emailOpenRatePct       as number) ?? 0,
   }
 }

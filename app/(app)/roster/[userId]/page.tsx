@@ -269,7 +269,7 @@ export default function PlayerDetailPage() {
   return (
     <>
       {/* ── Header ── */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
           {/* Jersey bubble */}
           <div style={{
