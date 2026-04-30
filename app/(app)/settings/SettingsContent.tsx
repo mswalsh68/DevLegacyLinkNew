@@ -298,6 +298,7 @@ function SportsSetupSection() {
     <CollapsibleCard
       title="Sports Setup"
       subtitle="Toggle sports active to include them in roster and alumni tracking. Add a sport if yours isn't listed."
+      defaultOpen={false}
       headerRight={
         <button
           type="button"
@@ -525,6 +526,7 @@ function PositionsSection() {
     <CollapsibleCard
       title="Positions"
       subtitle="Configure positions per sport. Edits apply immediately."
+      defaultOpen={false}
       headerRight={activeSportId ? (
         <button
           type="button"
@@ -863,7 +865,7 @@ export default function SettingsContent() {
               </div>
             </CollapsibleCard>
 
-            <CollapsibleCard title="Brand Colors" subtitle="Six hex values control the full portal color theme.">
+            <CollapsibleCard title="Brand Colors" subtitle="Six hex values control the full portal color theme." defaultOpen={false}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 16 }}>
                 <ColorInput label="Primary"       value={form.colorPrimary}      onChange={set('colorPrimary')}      />
                 <ColorInput label="Primary Dark"  value={form.colorPrimaryDark}  onChange={set('colorPrimaryDark')}  />
@@ -884,6 +886,7 @@ export default function SettingsContent() {
             <CollapsibleCard
               title="Academic Years"
               subtitle="Comma-separated list (e.g. Freshman, Sophomore, Junior, Senior, Graduate)."
+              defaultOpen={false}
               headerRight={
                 <button
                   type="button"
@@ -910,7 +913,7 @@ export default function SettingsContent() {
               )}
             </CollapsibleCard>
 
-            <CollapsibleCard title="Terminology Labels" subtitle="Customize the labels used throughout the portal.">
+            <CollapsibleCard title="Terminology Labels" subtitle="Customize the labels used throughout the portal." defaultOpen={false}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
                 <TextInput label="Alumni Label" value={form.alumniLabel} onChange={set('alumniLabel')} placeholder="Alumni"           helper='e.g. "Alumni", "Former Players"' />
                 <TextInput label="Roster Label" value={form.rosterLabel} onChange={set('rosterLabel')} placeholder="Roster"           helper='e.g. "Roster", "Team Roster"'   />
