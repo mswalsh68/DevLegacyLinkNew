@@ -1514,3 +1514,134 @@ BEGIN
   ORDER BY il.logged_at DESC;
 END;
 GO
+
+-- ============================================================
+-- sp_GetAllSports
+-- Returns ALL sports (active and inactive) for the admin
+-- settings panel.  Ordered by id so seeded sports stay stable.
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_GetAllSports
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SELECT
+    id,
+    name,
+    abbr,
+    is_active AS isActive
+  FROM dbo.sports
+  ORDER BY id;
+END;
+GO
+
+-- ============================================================
+-- sp_SetSportActive
+-- Toggles the is_active flag on a single sport row.
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_SetSportActive
+  @SportId  INT,
+  @IsActive BIT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  UPDATE dbo.sports
+     SET is_active = @IsActive
+   WHERE id = @SportId;
+
+  SELECT @@ROWCOUNT AS rowsAffected;
+END;
+GO
+
+-- ============================================================
+-- sp_AddSport
+-- Inserts a new sport.  Returns newId + errorCode.
+-- errorCode = 'DUPLICATE_ABBR' if abbr already exists.
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_AddSport
+  @Name     NVARCHAR(100),
+  @Abbr     NVARCHAR(10),
+  @IsActive BIT = 1
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  IF EXISTS (SELECT 1 FROM dbo.sports WHERE abbr = @Abbr)
+  BEGIN
+    SELECT -1 AS newId, 'DUPLICATE_ABBR' AS errorCode;
+    RETURN;
+  END
+
+  INSERT INTO dbo.sports (name, abbr, is_active)
+  VALUES (@Name, @Abbr, @IsActive);
+
+  SELECT SCOPE_IDENTITY() AS newId, NULL AS errorCode;
+END;
+GO
+
+-- ============================================================
+-- sp_AddSportsPosition
+-- Inserts a new position for a sport.
+-- errorCode = 'DUPLICATE_ABBR' if abbreviation already exists
+-- for that sport.
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_AddSportsPosition
+  @SportId      INT,
+  @PositionName NVARCHAR(100),
+  @Abbreviation NVARCHAR(10)
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  IF EXISTS (
+    SELECT 1 FROM dbo.sports_position
+    WHERE sport_id = @SportId AND abbreviation = @Abbreviation
+  )
+  BEGIN
+    SELECT -1 AS newId, 'DUPLICATE_ABBR' AS errorCode;
+    RETURN;
+  END
+
+  INSERT INTO dbo.sports_position (sport_id, position_name, abbreviation)
+  VALUES (@SportId, @PositionName, @Abbreviation);
+
+  SELECT SCOPE_IDENTITY() AS newId, NULL AS errorCode;
+END;
+GO
+
+-- ============================================================
+-- sp_UpdateSportsPosition
+-- Patches a position row.  NULL params = keep existing value.
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_UpdateSportsPosition
+  @PositionId   INT,
+  @PositionName NVARCHAR(100) = NULL,
+  @Abbreviation NVARCHAR(10)  = NULL,
+  @IsActive     BIT           = NULL
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  UPDATE dbo.sports_position
+     SET position_name = ISNULL(@PositionName, position_name),
+         abbreviation  = ISNULL(@Abbreviation, abbreviation),
+         is_active     = ISNULL(@IsActive,     is_active)
+   WHERE position_id = @PositionId;
+
+  SELECT @@ROWCOUNT AS rowsAffected;
+END;
+GO
+
+-- ============================================================
+-- sp_DeleteSportsPosition
+-- Hard-deletes a position.  Positions referenced by users_roles
+-- will be NULLed by the FK cascade (ON DELETE SET NULL).
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_DeleteSportsPosition
+  @PositionId INT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  DELETE FROM dbo.sports_position WHERE position_id = @PositionId;
+  SELECT @@ROWCOUNT AS rowsAffected;
+END;
+GO

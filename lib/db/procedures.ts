@@ -541,6 +541,96 @@ export async function sp_GetUserSports(params: {
   }))
 }
 
+export interface SportAdminOption {
+  id:       number
+  name:     string
+  abbr:     string
+  isActive: boolean
+}
+
+/** Returns ALL sports (active and inactive) for the admin settings panel. */
+export async function sp_GetAllSports(): Promise<SportAdminOption[]> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetAllSports')
+  return rows.map(r => ({
+    id:       r.id       as number,
+    name:     r.name     as string,
+    abbr:     r.abbr     as string,
+    isActive: Boolean(r.isActive),
+  }))
+}
+
+/** Toggles is_active on a sport. Returns rowsAffected. */
+export async function sp_SetSportActive(params: {
+  sportId:  number
+  isActive: boolean
+}): Promise<number> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_SetSportActive', (r) => {
+    r.input('SportId',  sql.Int, params.sportId)
+    r.input('IsActive', sql.Bit, params.isActive ? 1 : 0)
+  })
+  return (rows[0]?.rowsAffected as number) ?? 0
+}
+
+/** Inserts a new sport. Returns { newId, errorCode }. */
+export async function sp_AddSport(params: {
+  name:     string
+  abbr:     string
+  isActive?: boolean
+}): Promise<{ newId: number; errorCode: string | null }> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_AddSport', (r) => {
+    r.input('Name',     sql.NVarChar(100), params.name)
+    r.input('Abbr',     sql.NVarChar(10),  params.abbr)
+    r.input('IsActive', sql.Bit,           params.isActive !== false ? 1 : 0)
+  })
+  return {
+    newId:     rows[0]?.newId     as number,
+    errorCode: rows[0]?.errorCode as string | null,
+  }
+}
+
+/** Inserts a new position for a sport. Returns { newId, errorCode }. */
+export async function sp_AddSportsPosition(params: {
+  sportId:      number
+  positionName: string
+  abbreviation: string
+}): Promise<{ newId: number; errorCode: string | null }> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_AddSportsPosition', (r) => {
+    r.input('SportId',      sql.Int,          params.sportId)
+    r.input('PositionName', sql.NVarChar(100), params.positionName)
+    r.input('Abbreviation', sql.NVarChar(10),  params.abbreviation)
+  })
+  return {
+    newId:     rows[0]?.newId     as number,
+    errorCode: rows[0]?.errorCode as string | null,
+  }
+}
+
+/** Updates an existing position. NULL params = keep existing value. */
+export async function sp_UpdateSportsPosition(params: {
+  positionId:    number
+  positionName?: string | null
+  abbreviation?: string | null
+  isActive?:     boolean | null
+}): Promise<number> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_UpdateSportsPosition', (r) => {
+    r.input('PositionId',   sql.Int,          params.positionId)
+    r.input('PositionName', sql.NVarChar(100), params.positionName ?? null)
+    r.input('Abbreviation', sql.NVarChar(10),  params.abbreviation ?? null)
+    r.input('IsActive',     sql.Bit,           params.isActive != null ? (params.isActive ? 1 : 0) : null)
+  })
+  return (rows[0]?.rowsAffected as number) ?? 0
+}
+
+/** Hard-deletes a position by positionId. Returns rowsAffected. */
+export async function sp_DeleteSportsPosition(params: {
+  positionId: number
+}): Promise<number> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_DeleteSportsPosition', (r) => {
+    r.input('PositionId', sql.Int, params.positionId)
+  })
+  return (rows[0]?.rowsAffected as number) ?? 0
+}
+
 // ─── App DB — Campaigns ───────────────────────────────────────────────────────
 
 export async function sp_CreateCampaign(params: {
