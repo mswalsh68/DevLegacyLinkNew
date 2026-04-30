@@ -27,7 +27,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     async function loadSession() {
-      // Try localStorage first (fast path)
+      // Fast path: render immediately from localStorage so there's no flash.
+      // We still always fetch from the server below to keep the cache in sync
+      // with the JWT cookie — stale localStorage is the #1 cause of blank
+      // dashboards after deployments or team switches.
+      let hasLocalUser = false
       try {
         const raw = localStorage.getItem('cfb_user')
         if (raw) {
@@ -37,27 +41,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
           setUser(parsed)
           setIsLoading(false)
-          return
+          hasLocalUser = true
         }
       } catch {
-        // Corrupt — fall through to server fetch
+        // Corrupt localStorage — fall through
       }
 
-      // Fallback: localStorage empty but cookie may still be valid
-      // (e.g., storage was cleared, new tab, stale session)
+      // Always sync with the server. The JWT cookie is the source of truth;
+      // localStorage is only a render-speed optimisation.
       try {
         const res = await fetch('/api/auth/me', { credentials: 'include' })
         if (res.ok) {
           const body = await res.json() as { success: boolean; data?: { user: UserSession } }
           if (body.success && body.data?.user) {
-            localStorage.setItem('cfb_user', JSON.stringify(body.data.user))
-            setUser(body.data.user)
+            const fresh = body.data.user as UserSession & { globalRole?: string }
+            if (fresh.globalRole && !fresh.role) {
+              fresh.role = fresh.globalRole as UserSession['role']
+            }
+            localStorage.setItem('cfb_user', JSON.stringify(fresh))
+            setUser(fresh)
           }
+        } else {
+          // Cookie invalid/expired — clear stale cache and treat as logged out
+          localStorage.removeItem('cfb_user')
+          setUser(null)
         }
       } catch {
-        // Network error — treat as logged out
+        // Network error — keep whatever we got from localStorage
       } finally {
-        setIsLoading(false)
+        if (!hasLocalUser) setIsLoading(false)
       }
     }
 

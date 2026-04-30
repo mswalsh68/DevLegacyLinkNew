@@ -57,7 +57,9 @@ export function LoginForm() {
         localStorage.setItem('cfb_user', JSON.stringify(body.data.user))
       }
 
-      router.push('/dashboard')
+      // Full reload instead of router.push — AuthProvider useEffect only runs on
+      // mount, so a client-side navigation leaves user=null and blanks the dashboard.
+      window.location.href = '/dashboard'
     } catch {
       setError('Network error. Please check your connection and try again.')
       setStatus('idle')
