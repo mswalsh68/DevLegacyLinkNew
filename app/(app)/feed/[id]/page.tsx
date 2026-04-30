@@ -204,7 +204,7 @@ export default function FeedPostPage() {
           >
             Read Stats
           </h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))', gap: 16 }}>
             {[
               { label: 'Eligible',     value: stats.totalEligible },
               { label: 'Read',         value: stats.totalRead },

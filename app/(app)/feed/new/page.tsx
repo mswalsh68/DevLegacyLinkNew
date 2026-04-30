@@ -303,7 +303,7 @@ export default function NewPostPage() {
 
           {/* Custom audience filters */}
           {audience === 'custom' && (
-            <div style={{ marginBottom: 18, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={{ marginBottom: 18, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
               <div>
                 <label style={{ fontSize: 12, color: theme.gray500, display: 'block', marginBottom: 4 }}>
                   Position (optional)
