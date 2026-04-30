@@ -6,7 +6,7 @@
 // Used by TeamSwitcher to populate the dropdown with real data.
 // Handles both PascalCase (TeamId, PrimaryColor…) and camelCase column names.
 import { NextResponse } from 'next/server'
-import { getServerSession } from '@/lib/auth'
+import { getServerSession, isGlobalAdmin } from '@/lib/auth'
 import { sp_GetTeams, sp_GetUserTeams } from '@/lib/db/procedures'
 import type { TeamConfig } from '@/types'
 
@@ -98,11 +98,12 @@ export interface TeamListItem extends TeamConfig {
 // ─── Route ────────────────────────────────────────────────────────────────────
 
 export async function GET() {
-  // Try to get the logged-in user's team list first
-  try {
-    const session = await getServerSession()
+  const session = await getServerSession()
+  const globalAdmin = session ? isGlobalAdmin(session) : false
 
-    if (session?.userId) {
+  // ── Authenticated: return per-user team list ───────────────────────────────
+  if (session?.userId) {
+    try {
       const rows = await sp_GetUserTeams({ userId: session.userId })
       if (rows.length > 0) {
         return NextResponse.json(
@@ -110,12 +111,24 @@ export async function GET() {
           { status: 200 },
         )
       }
+    } catch {
+      // sp_GetUserTeams failed — fall through
     }
-  } catch {
-    // Session invalid or sp_GetUserTeams failed — fall through to sp_GetTeams
+
+    // Non-platform-owners must be tied to a team via the Global DB.
+    // If sp_GetUserTeams returned 0 rows for them, return empty — never
+    // show all teams. The TeamSwitcher will show only their current team
+    // (already embedded in the JWT / session).
+    if (!globalAdmin) {
+      return NextResponse.json({ success: true, data: [] }, { status: 200 })
+    }
   }
 
-  // Fallback: all active teams
+  // ── Platform owner only: fallback to all active teams ─────────────────────
+  if (!globalAdmin) {
+    return NextResponse.json({ success: false, error: 'Unauthorized.' }, { status: 401 })
+  }
+
   try {
     const rows = await sp_GetTeams()
     return NextResponse.json(
