@@ -46,6 +46,77 @@ const DEFAULT_POSITIONS: Record<string, string[]> = {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
+function CollapsibleCard({
+  title, subtitle, defaultOpen = true, children, headerRight,
+}: {
+  title: string; subtitle?: string; defaultOpen?: boolean
+  children: React.ReactNode; headerRight?: React.ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+
+  return (
+    <div style={{
+      backgroundColor: 'var(--color-card-bg)',
+      border:          '1px solid var(--color-card-border)',
+      borderRadius:    'var(--radius-lg)',
+      boxShadow:       'var(--shadow-sm)',
+      overflow:        'hidden',
+    }}>
+      <div
+        onClick={() => setOpen(v => !v)}
+        style={{
+          display:        'flex',
+          alignItems:     'center',
+          justifyContent: 'space-between',
+          padding:        '16px 24px',
+          cursor:         'pointer',
+          userSelect:     'none',
+          borderBottom:   open ? '1px solid var(--color-card-border)' : 'none',
+        }}
+      >
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{
+              fontSize: 12, fontWeight: 700, color: 'var(--color-primary)',
+              textTransform: 'uppercase', letterSpacing: '0.8px',
+            }}>
+              {title}
+            </span>
+            <span style={{
+              fontSize: 11, color: 'var(--color-gray-400)',
+              transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+              transition: 'transform 0.2s',
+              display: 'inline-block',
+            }}>
+              ▾
+            </span>
+          </div>
+          {subtitle && !open && (
+            <p style={{ fontSize: 12, color: 'var(--color-gray-400)', margin: '2px 0 0', fontStyle: 'italic' }}>
+              {subtitle}
+            </p>
+          )}
+        </div>
+        {headerRight && open && (
+          <div onClick={e => e.stopPropagation()}>
+            {headerRight}
+          </div>
+        )}
+      </div>
+      {open && (
+        <div style={{ padding: 24 }}>
+          {subtitle && (
+            <p style={{ fontSize: 13, color: 'var(--color-gray-500)', marginTop: 0, marginBottom: 16 }}>
+              {subtitle}
+            </p>
+          )}
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
     <div style={{ marginBottom: 16 }}>
@@ -634,7 +705,6 @@ export default function SettingsContent() {
     colorAccent:       '#CFC493',
     colorAccentDark:   '#A89C6A',
     colorAccentLight:  '#EDEBD1',
-    positionsText:     '',
     alumniLabel:       'Alumni',
     rosterLabel:       'Roster',
     classLabel:        'Recruiting Class',
@@ -659,7 +729,6 @@ export default function SettingsContent() {
         colorAccent:       c.colorAccent       ?? c.accentColor   ?? '#CFC493',
         colorAccentDark:   c.colorAccentDark   ?? '#A89C6A',
         colorAccentLight:  c.colorAccentLight  ?? '#EDEBD1',
-        positionsText:     Array.isArray(c.positions) ? c.positions.join(', ') : '',
         alumniLabel:       c.alumniLabel       ?? 'Alumni',
         rosterLabel:       c.rosterLabel       ?? 'Roster',
         classLabel:        c.classLabel        ?? 'Recruiting Class',
@@ -672,22 +741,10 @@ export default function SettingsContent() {
     }
   }
 
-  const applyDefaultPositions = () => {
-    const defaults = DEFAULT_POSITIONS[form.sport] ?? []
-    setForm(p => ({ ...p, positionsText: defaults.join(', ') }))
-  }
-
   const handleSave = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
     setSuccess('')
-
-    const positions = form.positionsText.split(',').map(p => p.trim().toUpperCase()).filter(Boolean)
-
-    if (positions.length === 0) {
-      setError('At least one position is required.')
-      return
-    }
 
     setSaving(true)
     try {
@@ -702,7 +759,6 @@ export default function SettingsContent() {
         colorAccent:       form.colorAccent,
         colorAccentDark:   form.colorAccentDark,
         colorAccentLight:  form.colorAccentLight,
-        positions,
         alumniLabel:       form.alumniLabel,
         rosterLabel:       form.rosterLabel,
         classLabel:        form.classLabel,
