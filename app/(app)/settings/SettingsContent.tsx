@@ -38,12 +38,6 @@ const DEFAULT_POSITIONS: Record<string, string[]> = {
   other:      [],
 }
 
-const DEFAULT_ACADEMIC_YEARS: Record<string, string[]> = {
-  college:     ['Freshman','Sophomore','Junior','Senior','Graduate'],
-  high_school: ['9th Grade','10th Grade','11th Grade','12th Grade'],
-  club:        ['Year 1','Year 2','Year 3','Year 4'],
-}
-
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
@@ -207,7 +201,6 @@ export default function SettingsContent() {
     colorAccentDark:   '#A89C6A',
     colorAccentLight:  '#EDEBD1',
     positionsText:     '',
-    academicYearsText: '',
     alumniLabel:       'Alumni',
     rosterLabel:       'Roster',
     classLabel:        'Recruiting Class',
@@ -236,7 +229,6 @@ export default function SettingsContent() {
         colorAccentDark:   c.colorAccentDark   ?? '#A89C6A',
         colorAccentLight:  c.colorAccentLight  ?? '#EDEBD1',
         positionsText:     Array.isArray(c.positions) ? c.positions.join(', ') : '',
-        academicYearsText: Array.isArray(c.academicYears) ? c.academicYears.join(', ') : '',
         alumniLabel:       c.alumniLabel       ?? 'Alumni',
         rosterLabel:       c.rosterLabel       ?? 'Roster',
         classLabel:        c.classLabel        ?? 'Recruiting Class',
@@ -253,25 +245,15 @@ export default function SettingsContent() {
     setForm(p => ({ ...p, positionsText: defaults.join(', ') }))
   }
 
-  const applyDefaultAcademicYears = () => {
-    const defaults = DEFAULT_ACADEMIC_YEARS[form.level] ?? []
-    setForm(p => ({ ...p, academicYearsText: defaults.join(', ') }))
-  }
-
   const handleSave = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
     setSuccess('')
 
-    const positions     = form.positionsText.split(',').map(p => p.trim().toUpperCase()).filter(Boolean)
-    const academicYears = form.academicYearsText.split(',').map(y => y.trim()).filter(Boolean)
+    const positions = form.positionsText.split(',').map(p => p.trim().toUpperCase()).filter(Boolean)
 
     if (positions.length === 0) {
       setError('At least one position is required.')
-      return
-    }
-    if (academicYears.length === 0) {
-      setError('At least one academic year is required.')
       return
     }
 
@@ -290,7 +272,6 @@ export default function SettingsContent() {
         colorAccentDark:   form.colorAccentDark,
         colorAccentLight:  form.colorAccentLight,
         positions,
-        academicYears,
         alumniLabel:       form.alumniLabel,
         rosterLabel:       form.rosterLabel,
         classLabel:        form.classLabel,
@@ -449,34 +430,6 @@ export default function SettingsContent() {
                   {form.positionsText.split(',').map(p => p.trim().toUpperCase()).filter(Boolean).map(p => (
                     <span key={p} style={{ padding: '3px 10px', backgroundColor: 'var(--color-primary-light)', color: 'var(--color-primary-dark)', borderRadius: 'var(--radius-full)', fontSize: 12, fontWeight: 700 }}>
                       {p}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* ── Academic Years ── */}
-            <div style={card}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
-                <SectionHeader title="Academic Years" subtitle="Comma-separated list (e.g. Freshman, Sophomore, Junior, Senior, Graduate)." />
-                <button
-                  type="button"
-                  onClick={applyDefaultAcademicYears}
-                  style={{ background: 'transparent', border: `1px solid var(--color-card-border)`, borderRadius: 'var(--radius-sm)', padding: '5px 12px', fontSize: 12, fontWeight: 500, color: 'var(--color-gray-600)', cursor: 'pointer', flexShrink: 0, marginLeft: 16 }}
-                >
-                  Load defaults for level
-                </button>
-              </div>
-              <TextInput
-                value={form.academicYearsText}
-                onChange={v => setForm(p => ({ ...p, academicYearsText: v }))}
-                placeholder="Freshman, Sophomore, Junior, Senior, Graduate"
-              />
-              {form.academicYearsText && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-                  {form.academicYearsText.split(',').map(y => y.trim()).filter(Boolean).map(y => (
-                    <span key={y} style={{ padding: '3px 10px', backgroundColor: 'var(--color-primary-light)', color: 'var(--color-primary-dark)', borderRadius: 'var(--radius-full)', fontSize: 12, fontWeight: 700 }}>
-                      {y}
                     </span>
                   ))}
                 </div>
