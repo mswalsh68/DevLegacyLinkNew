@@ -13,7 +13,8 @@ interface AlumniMetrics {
   totalEmailsSent:        number
   monthEmailsSent:        number
   alumniLoginsLast30Days: number
-  emailOpenRatePct:       number
+  totalFeedPosts:         number
+  monthFeedPosts:         number
 }
 
 // Module-level constants so useCallback deps stay stable
@@ -52,6 +53,7 @@ export default function AlumniTab({ sportId }: { sportId?: number | null }) {
             {(features.includes('login_frequency') || hasFeature(tier, 'login_frequency')) && (
               <MetricCard label="Alumni Logins" total={m.alumniLoginsLast30Days} monthLabel="in last 30 days" />
             )}
+            <MetricCard label="Feed Posts" total={m.totalFeedPosts} monthValue={m.monthFeedPosts} />
           </div>
         )
       }}
