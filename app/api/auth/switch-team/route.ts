@@ -9,7 +9,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { SignJWT } from 'jose'
 import { getServerSession } from '@/lib/auth'
-import { sp_SwitchTeam } from '@/lib/db/procedures'
+import { sp_SwitchTeam, sp_UpsertUser } from '@/lib/db/procedures'
+import { appDbContext } from '@/lib/db/connection'
 
 function getConfig() {
   const jwtSecret = process.env.JWT_ACCESS_SECRET
@@ -59,6 +60,35 @@ export async function POST(req: NextRequest) {
     }
 
     const teamData = teamJson ? (JSON.parse(teamJson) as Record<string, unknown>) : {}
+
+    // ── Sync this staff user into the App DB ──────────────────────────────────
+    // Players/alumni are synced via addPlayerToRoster/addAlumniRecord, but staff
+    // users (coaches, admins, etc.) only pass through login + switch-team and are
+    // never otherwise inserted into the App DB's dbo.users. Without a row there,
+    // any FK to dbo.users (e.g. feed_post_reads) fails for staff.
+    // The appDb name lives on teamData (returned by sp_SwitchTeam) or falls back
+    // to the current session's appDb.
+    const appDb = (teamData.appDb as string | undefined) ?? session.appDb
+    if (appDb) {
+      const sess = session as unknown as Record<string, unknown>
+      const firstName = String(sess.firstName ?? sess.username ?? session.email.split('@')[0])
+      const lastName  = String(sess.lastName  ?? '')
+      try {
+        await appDbContext.run(appDb, () =>
+          sp_UpsertUser({
+            userId:       session.userId,
+            email:        session.email,
+            firstName,
+            lastName,
+            platformRole: session.role,
+          })
+        )
+      } catch (upsertErr) {
+        // Non-fatal — log and continue. The switch will succeed; read tracking
+        // may still warn until the DB is reachable.
+        console.warn('[switch-team] sp_UpsertUser skipped:', (upsertErr as Error).message)
+      }
+    }
 
     // Re-issue the access token with currentTeamId updated.
     // Spread the existing session claims so username, role, apps etc. are preserved.
