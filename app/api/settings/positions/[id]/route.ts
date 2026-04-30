@@ -8,14 +8,15 @@ import { appDbContext } from '@/lib/db/connection'
 
 export async function PATCH(
   req: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await getServerSession()
   if (!session)                return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   if (!isGlobalAdmin(session)) return NextResponse.json({ error: 'Forbidden' },   { status: 403 })
   if (!session.appDb)          return NextResponse.json({ error: 'App DB not configured.' }, { status: 503 })
 
-  const positionId = parseInt(params.id, 10)
+  const { id } = await params
+  const positionId = parseInt(id, 10)
   if (isNaN(positionId)) return NextResponse.json({ error: 'Invalid position id.' }, { status: 400 })
 
   let body: { positionName?: string; abbreviation?: string; isActive?: boolean }
@@ -44,14 +45,15 @@ export async function PATCH(
 
 export async function DELETE(
   _req: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await getServerSession()
   if (!session)                return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   if (!isGlobalAdmin(session)) return NextResponse.json({ error: 'Forbidden' },   { status: 403 })
   if (!session.appDb)          return NextResponse.json({ error: 'App DB not configured.' }, { status: 503 })
 
-  const positionId = parseInt(params.id, 10)
+  const { id } = await params
+  const positionId = parseInt(id, 10)
   if (isNaN(positionId)) return NextResponse.json({ error: 'Invalid position id.' }, { status: 400 })
 
   return appDbContext.run(session.appDb, async () => {
