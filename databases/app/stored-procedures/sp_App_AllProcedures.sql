@@ -882,13 +882,28 @@ BEGIN
   SET @ErrorCode   = NULL;
   SET @QueuedCount = 0;
 
-  DECLARE @CampaignStatus NVARCHAR(20), @Audience NVARCHAR(30), @FiltersJson NVARCHAR(MAX), @SportId INT;
+  DECLARE @CampaignStatus  NVARCHAR(20),
+          @Audience        NVARCHAR(30),
+          @FiltersJson     NVARCHAR(MAX),
+          @SportId         INT,
+          @SubjectLine     NVARCHAR(255),
+          @BodyHtml        NVARCHAR(MAX),
+          @FromName        NVARCHAR(100),
+          @ReplyToEmail    NVARCHAR(255),
+          @PhysicalAddress NVARCHAR(500),
+          @CampaignName    NVARCHAR(100);
 
   SELECT
-    @CampaignStatus = status,
-    @Audience       = target_audience,
-    @FiltersJson    = audience_filters,
-    @SportId        = sport_id
+    @CampaignStatus  = status,
+    @Audience        = target_audience,
+    @FiltersJson     = audience_filters,
+    @SportId         = sport_id,
+    @SubjectLine     = subject_line,
+    @BodyHtml        = body_html,
+    @FromName        = from_name,
+    @ReplyToEmail    = reply_to_email,
+    @PhysicalAddress = physical_address,
+    @CampaignName    = name
   FROM dbo.outreach_campaigns
   WHERE id = @CampaignId;
 
@@ -961,6 +976,16 @@ BEGIN
   SET status = 'active', started_at = SYSUTCDATETIME(), updated_at = SYSUTCDATETIME()
   WHERE id = @CampaignId;
 
+  -- Resultset 1 — campaign header (single row; caller uses this to build each email)
+  SELECT
+    @SubjectLine     AS subjectLine,
+    @BodyHtml        AS bodyHtml,
+    @FromName        AS fromName,
+    @ReplyToEmail    AS replyToEmail,
+    @PhysicalAddress AS physicalAddress,
+    @CampaignName    AS campaignName;
+
+  -- Resultset 2 — queued recipients
   SELECT
     om.id                AS messageId,
     om.user_id           AS userId,
@@ -979,20 +1004,28 @@ GO
 -- sp_MarkEmailSent
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_MarkEmailSent
-  @MessageIdsJson NVARCHAR(MAX),
-  @ErrorCode      NVARCHAR(50) OUTPUT
+  -- JSON array of objects: [{"messageId":"<uuid>","resendId":"re_xxx"},...]
+  @MessagesJson NVARCHAR(MAX),
+  @ErrorCode    NVARCHAR(50) OUTPUT
 AS
 BEGIN
   SET NOCOUNT ON;
   SET @ErrorCode = NULL;
 
+  -- Mark each message as sent and store the Resend ID for webhook correlation
   UPDATE om
-  SET    om.status  = 'sent',
-         om.sent_at = SYSUTCDATETIME()
+  SET    om.status    = 'sent',
+         om.sent_at   = SYSUTCDATETIME(),
+         om.resend_id = j.resendId
   FROM   dbo.outreach_messages om
-  JOIN   OPENJSON(@MessageIdsJson) j ON CAST(j.[value] AS UNIQUEIDENTIFIER) = om.id
+  JOIN   OPENJSON(@MessagesJson)
+         WITH (
+           messageId UNIQUEIDENTIFIER '$.messageId',
+           resendId  NVARCHAR(100)    '$.resendId'
+         ) j ON j.messageId = om.id
   WHERE  om.status = 'queued';
 
+  -- Auto-complete campaigns that have no queued messages left
   UPDATE oc
   SET    oc.status       = 'completed',
          oc.completed_at = SYSUTCDATETIME(),
@@ -1010,23 +1043,21 @@ GO
 -- sp_MarkEmailOpened
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_MarkEmailOpened
-  @MessageId UNIQUEIDENTIFIER,
+  -- resend_id is the Resend message ID from the webhook event (data.email_id)
+  @ResendId  NVARCHAR(100),
   @ErrorCode NVARCHAR(50) OUTPUT
 AS
 BEGIN
   SET NOCOUNT ON;
   SET @ErrorCode = NULL;
 
-  IF NOT EXISTS (SELECT 1 FROM dbo.outreach_messages WHERE id = @MessageId)
-  BEGIN
-    SET @ErrorCode = 'MESSAGE_NOT_FOUND';
-    RETURN;
-  END
-
   UPDATE dbo.outreach_messages
   SET opened_at = ISNULL(opened_at, SYSUTCDATETIME()),
       status    = CASE WHEN status = 'sent' THEN 'responded' ELSE status END
-  WHERE id = @MessageId;
+  WHERE resend_id = @ResendId;
+
+  IF @@ROWCOUNT = 0
+    SET @ErrorCode = 'MESSAGE_NOT_FOUND';
 END;
 GO
 
