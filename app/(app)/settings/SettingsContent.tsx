@@ -849,7 +849,7 @@ export default function SettingsContent() {
           <form id="settings-form" onSubmit={handleSave} style={{ display: 'contents' }}>
 
             <CollapsibleCard title="Team Identity" subtitle="Your program's name and branding.">
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
                 <TextInput label="Team / Program Name" value={form.teamName} onChange={set('teamName')} placeholder="USF Bulls" required />
                 <TextInput label="Abbreviation"        value={form.teamAbbr} onChange={set('teamAbbr')} placeholder="USF"      required />
                 <SelectInput label="Level" value={form.level} onChange={v => setForm(p => ({ ...p, level: v }))} options={LEVEL_OPTIONS} />
@@ -866,19 +866,17 @@ export default function SettingsContent() {
             </CollapsibleCard>
 
             <CollapsibleCard title="Brand Colors" subtitle="Six hex values control the full portal color theme." defaultOpen={false}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16, marginBottom: 16 }}>
                 <ColorInput label="Primary"       value={form.colorPrimary}      onChange={set('colorPrimary')}      />
                 <ColorInput label="Primary Dark"  value={form.colorPrimaryDark}  onChange={set('colorPrimaryDark')}  />
                 <ColorInput label="Primary Light" value={form.colorPrimaryLight} onChange={set('colorPrimaryLight')} />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
                 <ColorInput label="Accent"        value={form.colorAccent}       onChange={set('colorAccent')}       />
                 <ColorInput label="Accent Dark"   value={form.colorAccentDark}   onChange={set('colorAccentDark')}   />
                 <ColorInput label="Accent Light"  value={form.colorAccentLight}  onChange={set('colorAccentLight')}  />
               </div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
                 {[form.colorPrimary, form.colorPrimaryDark, form.colorPrimaryLight, form.colorAccent, form.colorAccentDark, form.colorAccentLight].map((c, i) => (
-                  <div key={i} style={{ flex: 1, height: 32, backgroundColor: c, borderRadius: 6, border: `1px solid ${theme.gray200}` }} title={c} />
+                  <div key={i} style={{ flex: '1 1 60px', minWidth: 40, height: 32, backgroundColor: c, borderRadius: 6, border: `1px solid ${theme.gray200}` }} title={c} />
                 ))}
               </div>
             </CollapsibleCard>
@@ -914,7 +912,7 @@ export default function SettingsContent() {
             </CollapsibleCard>
 
             <CollapsibleCard title="Terminology Labels" subtitle="Customize the labels used throughout the portal." defaultOpen={false}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
                 <TextInput label="Alumni Label" value={form.alumniLabel} onChange={set('alumniLabel')} placeholder="Alumni"           helper='e.g. "Alumni", "Former Players"' />
                 <TextInput label="Roster Label" value={form.rosterLabel} onChange={set('rosterLabel')} placeholder="Roster"           helper='e.g. "Roster", "Team Roster"'   />
                 <TextInput label="Class Label"  value={form.classLabel}  onChange={set('classLabel')}  placeholder="Recruiting Class" helper='e.g. "Recruiting Class", "Year"' />
