@@ -272,6 +272,15 @@ export default function ProfilePage() {
       })
       if (res.ok) {
         setPreferredId(teamId)
+        // Keep localStorage in sync so the next login switch-team uses the new value
+        try {
+          const raw = localStorage.getItem('cfb_user')
+          if (raw) {
+            const u = JSON.parse(raw) as Record<string, unknown>
+            u.preferredTeamId = teamId
+            localStorage.setItem('cfb_user', JSON.stringify(u))
+          }
+        } catch { /* ignore */ }
         const t = teams.find((t) => t.teamId === teamId)
         setTeamMsg(`Default team set to ${t?.teamName ?? String(teamId)}`)
         setTimeout(() => setTeamMsg(''), 3000)

@@ -26,6 +26,7 @@ interface FeedPost {
   sportName:     string | null
   isPinned:      boolean
   isWelcomePost: boolean
+  imageUrl:      string | null
   createdBy:     number
   createdByName: string
   publishedAt:   string
@@ -127,6 +128,10 @@ function FeedCard({
     ? post.sportName
     : (AUDIENCE_LABEL[post.audience] ?? post.audience)
 
+  const resolvedImageUrl = post.isWelcomePost && post.imageUrl
+    ? resolvePostTokens(post.imageUrl, config)
+    : null
+
   async function handleSaveEdit() {
     if (!editBody.trim()) return
     setSaving(true)
@@ -156,12 +161,33 @@ function FeedCard({
         backgroundColor: 'var(--color-card-bg)',
         border:          `1px solid ${post.isRead ? 'var(--color-card-border)' : 'var(--color-primary)'}`,
         borderRadius:    'var(--radius-lg)',
-        padding:         '20px 24px',
+        overflow:        'hidden',
         position:        'relative',
         boxShadow:       post.isRead ? 'var(--shadow-sm)' : '0 0 0 1px var(--color-primary)',
         transition:      'border-color 0.2s, box-shadow 0.2s',
       }}
     >
+      {/* Logo banner for welcome posts */}
+      {resolvedImageUrl && (
+        <div style={{
+          backgroundColor: 'var(--color-primary)',
+          display:         'flex',
+          alignItems:      'center',
+          justifyContent:  'center',
+          padding:         '24px 32px',
+          minHeight:       120,
+        }}>
+          <img
+            src={resolvedImageUrl}
+            alt={config.teamName}
+            style={{ maxHeight: 80, maxWidth: '100%', objectFit: 'contain' }}
+            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+          />
+        </div>
+      )}
+      {/* Card body */}
+      <div style={{ padding: '20px 24px', position: 'relative' }}>
+
       {/* Unread dot */}
       {!post.isRead && (
         <div
@@ -312,6 +338,8 @@ function FeedCard({
           View stats →
         </button>
       </div>
+
+      </div> {/* end card body */}
     </div>
   )
 }

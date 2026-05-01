@@ -782,6 +782,7 @@ export interface FeedPostRow {
   sportName:     string | null
   isPinned:      boolean
   isWelcomePost: boolean
+  imageUrl:      string | null
   campaignId:    string | null
   createdBy:     number
   createdByName: string
@@ -798,6 +799,8 @@ export async function sp_GetFeed(params: {
   mySport?:     boolean
   page:         number
   pageSize:     number
+  tierGroup?:   string | null
+  roleGroup?:   string | null
 }): Promise<{ posts: FeedPostRow[]; totalCount: number }> {
   const { recordset, output } = await execFull('app', 'sp_GetFeed', (r) => {
     r.input ('ViewerUserId', sql.Int, params.viewerUserId)

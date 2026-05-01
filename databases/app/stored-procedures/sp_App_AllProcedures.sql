@@ -1231,6 +1231,14 @@ BEGIN
           )
         )
       )
+      -- Welcome posts are filtered to only the matching tier + role group
+      AND (
+        fp.is_welcome_post = 0
+        OR (
+          (fp.tier_group  IS NULL OR fp.tier_group  = @TierGroup)
+          AND (fp.role_group IS NULL OR fp.role_group = @RoleGroup)
+        )
+      )
   )
   SELECT @TotalCount = COUNT(*) FROM visible_posts;
 
@@ -1251,6 +1259,14 @@ BEGIN
           )
         )
       )
+      -- Welcome posts filtered to matching tier + role group only
+      AND (
+        fp.is_welcome_post = 0
+        OR (
+          (fp.tier_group  IS NULL OR fp.tier_group  = @TierGroup)
+          AND (fp.role_group IS NULL OR fp.role_group = @RoleGroup)
+        )
+      )
   )
   SELECT
     vp.id,
@@ -1262,6 +1278,7 @@ BEGIN
     s.name             AS sportName,
     vp.is_pinned       AS isPinned,
     vp.is_welcome_post AS isWelcomePost,
+    vp.image_url       AS imageUrl,
     vp.campaign_id     AS campaignId,
     vp.created_by      AS createdBy,
     CONCAT(u.first_name, ' ', u.last_name) AS createdByName,
