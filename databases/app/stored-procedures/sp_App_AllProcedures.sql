@@ -1301,6 +1301,14 @@ BEGIN
             AND (JSON_VALUE(fp.audience_json, '$.gradYear') IS NULL
                  OR CAST(JSON_VALUE(fp.audience_json, '$.gradYear') AS SMALLINT) = @ViewerClassYear))
       )
+      -- Welcome posts filtered to matching tier + role group only
+      AND (
+        fp.is_welcome_post = 0
+        OR (
+          (fp.tier_group  IS NULL OR fp.tier_group  = @TierGroup)
+          AND (fp.role_group IS NULL OR fp.role_group = @RoleGroup)
+        )
+      )
   )
   SELECT
     vp.id,
