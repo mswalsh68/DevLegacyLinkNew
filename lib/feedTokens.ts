@@ -8,6 +8,7 @@
  *
  * Tokens:
  *   {{TEAM_NAME}}     → config.teamName
+ *   {{TEAM_LOGO_URL}} → config.logoUrl (blank if not set)
  *   {{PRIMARY_COLOR}} → config.primaryColor
  *   {{ACCENT_COLOR}}  → config.accentColor
  *   {{SPORT_EMOJI}}   → emoji derived from config.sport
@@ -31,6 +32,7 @@ export function resolvePostTokens(html: string, config: TeamConfig): string {
   const sportEmoji = SPORT_EMOJI[config.sport?.toLowerCase()] ?? '🏆'
   return html
     .replaceAll('{{TEAM_NAME}}',     config.teamName)
+    .replaceAll('{{TEAM_LOGO_URL}}', config.logoUrl ?? '')
     .replaceAll('{{PRIMARY_COLOR}}', config.primaryColor)
     .replaceAll('{{ACCENT_COLOR}}',  config.accentColor)
     .replaceAll('{{SPORT_EMOJI}}',   sportEmoji)

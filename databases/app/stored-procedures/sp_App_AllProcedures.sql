@@ -1175,10 +1175,12 @@ GO
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetFeed
   @ViewerUserId INT,
-  @SportId      INT  = NULL,
-  @Page         INT  = 1,
-  @PageSize     INT  = 20,
-  @TotalCount   INT  OUTPUT
+  @SportId      INT           = NULL,
+  @Page         INT           = 1,
+  @PageSize     INT           = 20,
+  @TierGroup    NVARCHAR(20)  = NULL,
+  @RoleGroup    NVARCHAR(20)  = NULL,
+  @TotalCount   INT           OUTPUT
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -1258,6 +1260,14 @@ BEGIN
             AND (JSON_VALUE(fp.audience_json, '$.gradYear') IS NULL
                  OR CAST(JSON_VALUE(fp.audience_json, '$.gradYear') AS SMALLINT) = @ViewerClassYear))
       )
+      -- Welcome posts are filtered to only the matching tier + role group
+      AND (
+        fp.is_welcome_post = 0
+        OR (
+          (fp.tier_group  IS NULL OR fp.tier_group  = @TierGroup)
+          AND (fp.role_group IS NULL OR fp.role_group = @RoleGroup)
+        )
+      )
   )
   SELECT @TotalCount = COUNT(*) FROM visible_posts;
 
@@ -1301,6 +1311,7 @@ BEGIN
     vp.sport_id        AS sportId,
     vp.is_pinned       AS isPinned,
     vp.is_welcome_post AS isWelcomePost,
+    vp.image_url       AS imageUrl,
     vp.campaign_id     AS campaignId,
     vp.created_by      AS createdBy,
     vp.published_at    AS publishedAt,
