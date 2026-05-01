@@ -1097,7 +1097,8 @@ GO
 
 -- ============================================================
 -- sp_CreatePost
--- sport_id is now INT (after migration 009).
+-- V2: audience = 'all_sports' | 'sport_specific' only.
+-- Alumni posters are validated against their sport in users_roles.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_CreatePost
   @CreatedBy    INT,
@@ -1109,6 +1110,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreatePost
   @IsPinned     BIT              = 0,
   @AlsoEmail    BIT              = 0,
   @EmailSubject NVARCHAR(500)    = NULL,
+  @PosterRole   NVARCHAR(50)     = NULL,   -- JWT global role, used for alumni sport check
   @NewPostId    UNIQUEIDENTIFIER OUTPUT,
   @CampaignId   UNIQUEIDENTIFIER OUTPUT,
   @ErrorCode    NVARCHAR(50)     OUTPUT
@@ -1119,10 +1121,31 @@ BEGIN
   SET @NewPostId  = NULL;
   SET @CampaignId = NULL;
 
-  IF @Audience NOT IN ('all','players_only','alumni_only','by_position','by_grad_year','custom')
+  IF @Audience NOT IN ('all_sports', 'sport_specific')
   BEGIN
     SET @ErrorCode = 'INVALID_AUDIENCE';
     RETURN;
+  END
+
+  IF @Audience = 'sport_specific' AND @SportId IS NULL
+  BEGIN
+    SET @ErrorCode = 'SPORT_REQUIRED_FOR_SPORT_SPECIFIC';
+    RETURN;
+  END
+
+  -- Alumni may only post to all_sports or their OWN sport
+  IF @PosterRole = 'alumni' AND @Audience = 'sport_specific'
+  BEGIN
+    IF NOT EXISTS (
+      SELECT 1 FROM dbo.users_roles
+      WHERE user_id  = @CreatedBy
+        AND sport_id = @SportId
+        AND status  <> 'removed'
+    )
+    BEGIN
+      SET @ErrorCode = 'SPORT_NOT_ALLOWED';
+      RETURN;
+    END
   END
 
   IF @AlsoEmail = 1 AND @EmailSubject IS NULL
@@ -1130,6 +1153,10 @@ BEGIN
     SET @ErrorCode = 'EMAIL_SUBJECT_REQUIRED';
     RETURN;
   END
+
+  -- When pinning, unpin all other posts first (only one pinned at a time)
+  IF @IsPinned = 1
+    UPDATE dbo.feed_posts SET is_pinned = 0 WHERE is_pinned = 1;
 
   SET @NewPostId = NEWID();
 
@@ -1142,12 +1169,7 @@ BEGIN
     @SportId, ISNULL(@IsPinned, 0), SYSUTCDATETIME()
   );
 
-  DECLARE @CampaignAudience NVARCHAR(30) = CASE @Audience
-    WHEN 'by_position'  THEN 'byPosition'
-    WHEN 'by_grad_year' THEN 'byGradYear'
-    ELSE @Audience
-  END;
-
+  -- Campaign audience: 'all' for all_sports; sport_id restricts recipients for sport_specific
   IF @AlsoEmail = 1
   BEGIN
     SET @CampaignId = NEWID();
@@ -1159,9 +1181,11 @@ BEGIN
       @CampaignId,
       ISNULL(@Title, LEFT(@BodyHtml, 100)),
       N'Auto-created from feed post',
-      @CampaignAudience, @AudienceJson,
+      'all', NULL,
       'draft', 'post_notification',
-      @EmailSubject, @BodyHtml, @SportId, @CreatedBy
+      @EmailSubject, @BodyHtml,
+      CASE @Audience WHEN 'sport_specific' THEN @SportId ELSE NULL END,
+      @CreatedBy
     );
     UPDATE dbo.feed_posts SET campaign_id = @CampaignId WHERE id = @NewPostId;
   END
@@ -1169,13 +1193,16 @@ END;
 GO
 
 -- ============================================================
--- sp_GetFeed
--- Viewer role/position determined from dbo.users_roles.
--- sport_id is now INT.
+-- sp_GetFeed  (V2)
+-- Audience model: all_sports (everyone) | sport_specific (sport only).
+-- @MySport = 1 → filter to viewer's own sport(s) + all_sports.
+-- @MySport = 0 → all posts regardless of sport.
+-- Includes like count, user_has_liked, updated_at, poster name,
+-- sport name. Excludes soft-deleted posts.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetFeed
   @ViewerUserId INT,
-  @SportId      INT  = NULL,
+  @MySport      BIT  = 0,
   @Page         INT  = 1,
   @PageSize     INT  = 20,
   @TotalCount   INT  OUTPUT
@@ -1184,79 +1211,25 @@ BEGIN
   SET NOCOUNT ON;
   SET @TotalCount = 0;
 
-  DECLARE @ViewerIsPlayer  BIT          = 0;
-  DECLARE @ViewerIsAlumni  BIT          = 0;
-  DECLARE @ViewerPositionId INT         = NULL;
-  DECLARE @ViewerClassYear  SMALLINT    = NULL;
-
-  -- Determine viewer's role (prefer active sport-specific role)
-  IF EXISTS (
-    SELECT 1 FROM dbo.users_roles
-    WHERE user_id = @ViewerUserId AND status = 'current_player'
-      AND (@SportId IS NULL OR sport_id = @SportId)
-  )
-  BEGIN
-    SET @ViewerIsPlayer = 1;
-    SELECT TOP 1
-      @ViewerPositionId = position_id,
-      @ViewerClassYear  = class_year
-    FROM dbo.users_roles
-    WHERE user_id = @ViewerUserId AND status = 'current_player'
-      AND (@SportId IS NULL OR sport_id = @SportId)
-    ORDER BY updated_at DESC;
-  END
-  ELSE IF EXISTS (
-    SELECT 1 FROM dbo.users_roles
-    WHERE user_id = @ViewerUserId AND status = 'alumni'
-      AND (@SportId IS NULL OR sport_id = @SportId)
-  )
-  BEGIN
-    SET @ViewerIsAlumni = 1;
-    SELECT TOP 1
-      @ViewerPositionId = position_id,
-      @ViewerClassYear  = class_year
-    FROM dbo.users_roles
-    WHERE user_id = @ViewerUserId AND status = 'alumni'
-      AND (@SportId IS NULL OR sport_id = @SportId)
-    ORDER BY updated_at DESC;
-  END
-
-  DECLARE @ViewerPosition NVARCHAR(20) = NULL;
-  SELECT @ViewerPosition = position_name
-  FROM   dbo.sports_position WHERE position_id = @ViewerPositionId;
-
   DECLARE @Offset INT = (@Page - 1) * @PageSize;
   IF @Offset < 0 SET @Offset = 0;
 
   ;WITH visible_posts AS (
     SELECT fp.*
     FROM dbo.feed_posts fp
-    WHERE (fp.sport_id IS NULL OR fp.sport_id = @SportId OR @SportId IS NULL)
+    WHERE fp.is_deleted = 0
       AND (
-        fp.audience = 'all'
-        OR (fp.audience = 'players_only'  AND @ViewerIsPlayer = 1)
-        OR (fp.audience = 'alumni_only'   AND @ViewerIsAlumni = 1)
-        OR (fp.audience = 'by_position'
-            AND @ViewerPosition IS NOT NULL
-            AND fp.audience_json IS NOT NULL
-            AND EXISTS (
-              SELECT 1 FROM OPENJSON(fp.audience_json, '$.positions')
-              WHERE CAST([value] AS NVARCHAR(20)) = @ViewerPosition
-            ))
-        OR (fp.audience = 'by_grad_year'
-            AND @ViewerIsAlumni = 1
-            AND @ViewerClassYear IS NOT NULL
-            AND fp.audience_json IS NOT NULL
-            AND EXISTS (
-              SELECT 1 FROM OPENJSON(fp.audience_json, '$.gradYears')
-              WHERE CAST([value] AS SMALLINT) = @ViewerClassYear
-            ))
-        OR (fp.audience = 'custom'
-            AND fp.audience_json IS NOT NULL
-            AND (JSON_VALUE(fp.audience_json, '$.position') IS NULL
-                 OR JSON_VALUE(fp.audience_json, '$.position') = @ViewerPosition)
-            AND (JSON_VALUE(fp.audience_json, '$.gradYear') IS NULL
-                 OR CAST(JSON_VALUE(fp.audience_json, '$.gradYear') AS SMALLINT) = @ViewerClassYear))
+        fp.audience = 'all_sports'
+        OR (
+          fp.audience = 'sport_specific'
+          AND (
+            @MySport = 0
+            OR fp.sport_id IN (
+              SELECT sport_id FROM dbo.users_roles
+              WHERE user_id = @ViewerUserId AND status <> 'removed'
+            )
+          )
+        )
       )
   )
   SELECT @TotalCount = COUNT(*) FROM visible_posts;
@@ -1264,32 +1237,19 @@ BEGIN
   ;WITH visible_posts AS (
     SELECT fp.*
     FROM dbo.feed_posts fp
-    WHERE (fp.sport_id IS NULL OR fp.sport_id = @SportId OR @SportId IS NULL)
+    WHERE fp.is_deleted = 0
       AND (
-        fp.audience = 'all'
-        OR (fp.audience = 'players_only'  AND @ViewerIsPlayer = 1)
-        OR (fp.audience = 'alumni_only'   AND @ViewerIsAlumni = 1)
-        OR (fp.audience = 'by_position'
-            AND @ViewerPosition IS NOT NULL
-            AND fp.audience_json IS NOT NULL
-            AND EXISTS (
-              SELECT 1 FROM OPENJSON(fp.audience_json, '$.positions')
-              WHERE CAST([value] AS NVARCHAR(20)) = @ViewerPosition
-            ))
-        OR (fp.audience = 'by_grad_year'
-            AND @ViewerIsAlumni = 1
-            AND @ViewerClassYear IS NOT NULL
-            AND fp.audience_json IS NOT NULL
-            AND EXISTS (
-              SELECT 1 FROM OPENJSON(fp.audience_json, '$.gradYears')
-              WHERE CAST([value] AS SMALLINT) = @ViewerClassYear
-            ))
-        OR (fp.audience = 'custom'
-            AND fp.audience_json IS NOT NULL
-            AND (JSON_VALUE(fp.audience_json, '$.position') IS NULL
-                 OR JSON_VALUE(fp.audience_json, '$.position') = @ViewerPosition)
-            AND (JSON_VALUE(fp.audience_json, '$.gradYear') IS NULL
-                 OR CAST(JSON_VALUE(fp.audience_json, '$.gradYear') AS SMALLINT) = @ViewerClassYear))
+        fp.audience = 'all_sports'
+        OR (
+          fp.audience = 'sport_specific'
+          AND (
+            @MySport = 0
+            OR fp.sport_id IN (
+              SELECT sport_id FROM dbo.users_roles
+              WHERE user_id = @ViewerUserId AND status <> 'removed'
+            )
+          )
+        )
       )
   )
   SELECT
@@ -1299,22 +1259,36 @@ BEGIN
     vp.audience,
     vp.audience_json   AS audienceJson,
     vp.sport_id        AS sportId,
+    s.name             AS sportName,
     vp.is_pinned       AS isPinned,
     vp.is_welcome_post AS isWelcomePost,
     vp.campaign_id     AS campaignId,
     vp.created_by      AS createdBy,
+    CONCAT(u.first_name, ' ', u.last_name) AS createdByName,
     vp.published_at    AS publishedAt,
     vp.created_at      AS createdAt,
-    CASE WHEN fpr.id IS NOT NULL THEN 1 ELSE 0 END AS isRead
+    vp.updated_at      AS updatedAt,
+    CASE WHEN fpr.id IS NOT NULL THEN 1 ELSE 0 END AS isRead,
+    (
+      SELECT COUNT(*) FROM dbo.feed_post_likes l WHERE l.post_id = vp.id
+    ) AS likeCount,
+    CASE WHEN EXISTS (
+      SELECT 1 FROM dbo.feed_post_likes l2
+      WHERE l2.post_id = vp.id AND l2.user_id = @ViewerUserId
+    ) THEN 1 ELSE 0 END AS userHasLiked
   FROM visible_posts vp
-  LEFT JOIN dbo.feed_post_reads fpr ON fpr.post_id = vp.id AND fpr.user_id = @ViewerUserId
+  LEFT JOIN dbo.users            u   ON u.user_id  = vp.created_by
+  LEFT JOIN dbo.sports           s   ON s.id       = vp.sport_id
+  LEFT JOIN dbo.feed_post_reads  fpr ON fpr.post_id = vp.id AND fpr.user_id = @ViewerUserId
   ORDER BY vp.is_pinned DESC, vp.published_at DESC
   OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;
 END;
 GO
 
 -- ============================================================
--- sp_GetFeedPost
+-- sp_GetFeedPost  (V2)
+-- Returns a single post with like count, user_has_liked, updated_at.
+-- Audience check uses the new all_sports / sport_specific model.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetFeedPost
   @PostId       UNIQUEIDENTIFIER,
@@ -1325,65 +1299,44 @@ BEGIN
   SET NOCOUNT ON;
   SET @ErrorCode = NULL;
 
-  DECLARE @ViewerIsPlayer  BIT       = 0;
-  DECLARE @ViewerIsAlumni  BIT       = 0;
-  DECLARE @ViewerPosition  NVARCHAR(20) = NULL;
-  DECLARE @ViewerClassYear SMALLINT  = NULL;
-  DECLARE @ViewerPositionId INT      = NULL;
-
-  SELECT TOP 1
-    @ViewerIsPlayer  = CASE WHEN status = 'current_player' THEN 1 ELSE 0 END,
-    @ViewerIsAlumni  = CASE WHEN status = 'alumni'         THEN 1 ELSE 0 END,
-    @ViewerPositionId= position_id,
-    @ViewerClassYear = class_year
-  FROM dbo.users_roles
-  WHERE user_id = @ViewerUserId AND status IN ('current_player','alumni')
-  ORDER BY updated_at DESC;
-
-  SELECT @ViewerPosition = position_name
-  FROM   dbo.sports_position WHERE position_id = @ViewerPositionId;
-
   SELECT
     fp.id, fp.title,
     fp.body_html       AS bodyHtml,
     fp.audience,
     fp.audience_json   AS audienceJson,
     fp.sport_id        AS sportId,
+    s.name             AS sportName,
     fp.is_pinned       AS isPinned,
     fp.is_welcome_post AS isWelcomePost,
     fp.campaign_id     AS campaignId,
     fp.created_by      AS createdBy,
+    CONCAT(u.first_name, ' ', u.last_name) AS createdByName,
     fp.published_at    AS publishedAt,
     fp.created_at      AS createdAt,
-    CASE WHEN fpr.id IS NOT NULL THEN 1 ELSE 0 END AS isRead
+    fp.updated_at      AS updatedAt,
+    CASE WHEN fpr.id IS NOT NULL THEN 1 ELSE 0 END AS isRead,
+    (
+      SELECT COUNT(*) FROM dbo.feed_post_likes l WHERE l.post_id = fp.id
+    ) AS likeCount,
+    CASE WHEN EXISTS (
+      SELECT 1 FROM dbo.feed_post_likes l2
+      WHERE l2.post_id = fp.id AND l2.user_id = @ViewerUserId
+    ) THEN 1 ELSE 0 END AS userHasLiked
   FROM dbo.feed_posts fp
+  LEFT JOIN dbo.users           u   ON u.user_id  = fp.created_by
+  LEFT JOIN dbo.sports          s   ON s.id       = fp.sport_id
   LEFT JOIN dbo.feed_post_reads fpr ON fpr.post_id = fp.id AND fpr.user_id = @ViewerUserId
-  WHERE fp.id = @PostId
+  WHERE fp.id        = @PostId
+    AND fp.is_deleted = 0
     AND (
-      fp.audience = 'all'
-      OR (fp.audience = 'players_only' AND @ViewerIsPlayer = 1)
-      OR (fp.audience = 'alumni_only'  AND @ViewerIsAlumni = 1)
-      OR (fp.audience = 'by_position'
-          AND @ViewerPosition IS NOT NULL
-          AND fp.audience_json IS NOT NULL
-          AND EXISTS (
-            SELECT 1 FROM OPENJSON(fp.audience_json, '$.positions')
-            WHERE CAST([value] AS NVARCHAR(20)) = @ViewerPosition
-          ))
-      OR (fp.audience = 'by_grad_year'
-          AND @ViewerIsAlumni = 1
-          AND @ViewerClassYear IS NOT NULL
-          AND fp.audience_json IS NOT NULL
-          AND EXISTS (
-            SELECT 1 FROM OPENJSON(fp.audience_json, '$.gradYears')
-            WHERE CAST([value] AS SMALLINT) = @ViewerClassYear
-          ))
-      OR (fp.audience = 'custom'
-          AND fp.audience_json IS NOT NULL
-          AND (JSON_VALUE(fp.audience_json, '$.position') IS NULL
-               OR JSON_VALUE(fp.audience_json, '$.position') = @ViewerPosition)
-          AND (JSON_VALUE(fp.audience_json, '$.gradYear') IS NULL
-               OR CAST(JSON_VALUE(fp.audience_json, '$.gradYear') AS SMALLINT) = @ViewerClassYear))
+      fp.audience = 'all_sports'
+      OR (
+        fp.audience = 'sport_specific'
+        AND fp.sport_id IN (
+          SELECT sport_id FROM dbo.users_roles
+          WHERE user_id = @ViewerUserId AND status <> 'removed'
+        )
+      )
     );
 
   IF @@ROWCOUNT = 0
@@ -1413,9 +1366,9 @@ END;
 GO
 
 -- ============================================================
--- sp_GetPostReadStats
--- Counts eligible recipients and reads for a feed post.
--- Uses users_roles instead of players/alumni.
+-- sp_GetPostReadStats  (V2)
+-- Audience model: all_sports counts all active members;
+-- sport_specific counts members of that sport only.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetPostReadStats
   @PostId    UNIQUEIDENTIFIER,
@@ -1425,44 +1378,29 @@ BEGIN
   SET NOCOUNT ON;
   SET @ErrorCode = NULL;
 
-  DECLARE @Audience     NVARCHAR(30);
-  DECLARE @AudienceJson NVARCHAR(MAX);
-  DECLARE @SportId      INT;
+  DECLARE @Audience NVARCHAR(30);
+  DECLARE @SportId  INT;
 
-  SELECT @Audience = audience, @AudienceJson = audience_json, @SportId = sport_id
-  FROM   dbo.feed_posts WHERE id = @PostId;
+  SELECT @Audience = audience, @SportId = sport_id
+  FROM   dbo.feed_posts WHERE id = @PostId AND is_deleted = 0;
 
   IF @Audience IS NULL BEGIN SET @ErrorCode = 'POST_NOT_FOUND'; RETURN; END
 
-  DECLARE @FilterClassYear  SMALLINT     = TRY_CAST(JSON_VALUE(@AudienceJson, '$.gradYear')    AS SMALLINT);
-  DECLARE @FilterPositionId INT          = TRY_CAST(JSON_VALUE(@AudienceJson, '$.positionId')  AS INT);
-  DECLARE @FilterGradYears  NVARCHAR(MAX)= JSON_QUERY(@AudienceJson, '$.gradYears');
-  DECLARE @FilterPositionIds NVARCHAR(MAX)= JSON_QUERY(@AudienceJson, '$.positionIds');
-
   DECLARE @TotalEligible INT = 0;
 
-  SELECT @TotalEligible = COUNT(DISTINCT ur.user_id)
-  FROM dbo.users_roles ur
-  WHERE (@SportId IS NULL OR ur.sport_id = @SportId)
-    AND (
-      (@Audience = 'all'         AND ur.status IN ('current_player','alumni'))
-      OR (@Audience = 'players_only' AND ur.status = 'current_player')
-      OR (@Audience = 'alumni_only'  AND ur.status = 'alumni')
-      OR (@Audience = 'by_position'
-          AND @FilterPositionId IS NOT NULL
-          AND ur.position_id = @FilterPositionId)
-      OR (@Audience = 'by_grad_year'
-          AND ur.status = 'alumni'
-          AND (
-            (@FilterClassYear IS NOT NULL AND ur.class_year = @FilterClassYear)
-            OR (@FilterGradYears IS NOT NULL AND EXISTS (
-              SELECT 1 FROM OPENJSON(@FilterGradYears) WHERE CAST([value] AS SMALLINT) = ur.class_year
-            ))
-          ))
-      OR (@Audience = 'custom'
-          AND (@FilterPositionId IS NULL OR ur.position_id = @FilterPositionId)
-          AND (@FilterClassYear  IS NULL OR ur.class_year  = @FilterClassYear))
-    );
+  IF @Audience = 'all_sports'
+  BEGIN
+    SELECT @TotalEligible = COUNT(DISTINCT ur.user_id)
+    FROM   dbo.users_roles ur
+    WHERE  ur.status IN ('current_player','alumni');
+  END
+  ELSE
+  BEGIN
+    SELECT @TotalEligible = COUNT(DISTINCT ur.user_id)
+    FROM   dbo.users_roles ur
+    WHERE  ur.sport_id = @SportId
+      AND  ur.status IN ('current_player','alumni');
+  END
 
   DECLARE @TotalRead INT;
   SELECT @TotalRead = COUNT(*) FROM dbo.feed_post_reads WHERE post_id = @PostId;
@@ -1674,5 +1612,195 @@ BEGIN
   SET NOCOUNT ON;
   DELETE FROM dbo.sports_position WHERE position_id = @PositionId;
   SELECT @@ROWCOUNT AS rowsAffected;
+END;
+GO
+
+-- ============================================================
+-- sp_TogglePostLike
+-- Toggles a like for a user on a post. Idempotent — second call
+-- removes the like.  Returns new like count and liked status.
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_TogglePostLike
+  @PostId    UNIQUEIDENTIFIER,
+  @UserId    INT,
+  @Liked     BIT          OUTPUT,
+  @LikeCount INT          OUTPUT,
+  @ErrorCode NVARCHAR(50) OUTPUT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SET @ErrorCode = NULL;
+  SET @Liked     = 0;
+  SET @LikeCount = 0;
+
+  IF NOT EXISTS (SELECT 1 FROM dbo.feed_posts WHERE id = @PostId AND is_deleted = 0)
+  BEGIN
+    SET @ErrorCode = 'POST_NOT_FOUND';
+    RETURN;
+  END
+
+  IF EXISTS (
+    SELECT 1 FROM dbo.feed_post_likes
+    WHERE post_id = @PostId AND user_id = @UserId
+  )
+  BEGIN
+    DELETE FROM dbo.feed_post_likes
+    WHERE post_id = @PostId AND user_id = @UserId;
+    SET @Liked = 0;
+  END
+  ELSE
+  BEGIN
+    INSERT INTO dbo.feed_post_likes (post_id, user_id)
+    VALUES (@PostId, @UserId);
+    SET @Liked = 1;
+  END
+
+  SELECT @LikeCount = COUNT(*) FROM dbo.feed_post_likes WHERE post_id = @PostId;
+END;
+GO
+
+-- ============================================================
+-- sp_SoftDeletePost
+-- Soft-deletes a feed post (is_deleted = 1).
+-- @CanDeleteAny = 1 → admin/AD can delete any post.
+-- @CanDeleteAny = 0 → only the post owner can delete.
+-- Welcome posts cannot be deleted by their owner.
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_SoftDeletePost
+  @PostId       UNIQUEIDENTIFIER,
+  @UserId       INT,
+  @CanDeleteAny BIT          = 0,
+  @ErrorCode    NVARCHAR(50) OUTPUT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SET @ErrorCode = NULL;
+
+  DECLARE @CreatedBy      INT;
+  DECLARE @IsWelcomePost  BIT;
+
+  SELECT @CreatedBy = created_by, @IsWelcomePost = is_welcome_post
+  FROM   dbo.feed_posts
+  WHERE  id = @PostId AND is_deleted = 0;
+
+  IF @CreatedBy IS NULL
+  BEGIN
+    SET @ErrorCode = 'POST_NOT_FOUND';
+    RETURN;
+  END
+
+  -- Welcome posts can only be deleted by admin (CanDeleteAny)
+  IF @IsWelcomePost = 1 AND @CanDeleteAny = 0
+  BEGIN
+    SET @ErrorCode = 'FORBIDDEN';
+    RETURN;
+  END
+
+  IF @CanDeleteAny = 0 AND @CreatedBy <> @UserId
+  BEGIN
+    SET @ErrorCode = 'FORBIDDEN';
+    RETURN;
+  END
+
+  UPDATE dbo.feed_posts
+  SET is_deleted = 1,
+      deleted_at = SYSUTCDATETIME(),
+      is_pinned  = 0
+  WHERE id = @PostId;
+END;
+GO
+
+-- ============================================================
+-- sp_EditPost
+-- Updates a post's body and sets updated_at.
+-- Only the post owner can edit. Welcome posts are not editable.
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_EditPost
+  @PostId    UNIQUEIDENTIFIER,
+  @UserId    INT,
+  @BodyHtml  NVARCHAR(MAX),
+  @ErrorCode NVARCHAR(50) OUTPUT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SET @ErrorCode = NULL;
+
+  DECLARE @CreatedBy     INT;
+  DECLARE @IsWelcomePost BIT;
+
+  SELECT @CreatedBy = created_by, @IsWelcomePost = is_welcome_post
+  FROM   dbo.feed_posts
+  WHERE  id = @PostId AND is_deleted = 0;
+
+  IF @CreatedBy IS NULL
+  BEGIN
+    SET @ErrorCode = 'POST_NOT_FOUND';
+    RETURN;
+  END
+
+  IF @IsWelcomePost = 1
+  BEGIN
+    SET @ErrorCode = 'WELCOME_POST_NOT_EDITABLE';
+    RETURN;
+  END
+
+  IF @CreatedBy <> @UserId
+  BEGIN
+    SET @ErrorCode = 'FORBIDDEN';
+    RETURN;
+  END
+
+  UPDATE dbo.feed_posts
+  SET body_html  = @BodyHtml,
+      updated_at = SYSUTCDATETIME()
+  WHERE id = @PostId;
+END;
+GO
+
+-- ============================================================
+-- sp_PinPost
+-- Pins a post (admin-only action; caller must gate on role).
+-- Unpins all other posts first — only one pinned post at a time.
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_PinPost
+  @PostId    UNIQUEIDENTIFIER,
+  @ErrorCode NVARCHAR(50) OUTPUT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SET @ErrorCode = NULL;
+
+  IF NOT EXISTS (SELECT 1 FROM dbo.feed_posts WHERE id = @PostId AND is_deleted = 0)
+  BEGIN
+    SET @ErrorCode = 'POST_NOT_FOUND';
+    RETURN;
+  END
+
+  UPDATE dbo.feed_posts SET is_pinned = 0 WHERE is_pinned = 1;
+  UPDATE dbo.feed_posts SET is_pinned = 1 WHERE id = @PostId AND is_deleted = 0;
+END;
+GO
+
+-- ============================================================
+-- sp_GetUserSportAssociations
+-- Returns the sports a user is associated with via users_roles.
+-- Used by the new-post page to restrict alumni sport selection.
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_GetUserSportAssociations
+  @UserId INT
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  SELECT DISTINCT
+    s.id   AS sportId,
+    s.name AS sportName,
+    s.abbr AS sportAbbr
+  FROM dbo.users_roles ur
+  JOIN dbo.sports s ON s.id = ur.sport_id
+  WHERE ur.user_id  = @UserId
+    AND ur.status  <> 'removed'
+    AND s.is_active  = 1
+  ORDER BY s.name;
 END;
 GO

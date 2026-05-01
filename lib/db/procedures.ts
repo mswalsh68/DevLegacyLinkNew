@@ -779,24 +779,29 @@ export interface FeedPostRow {
   audience:      string
   audienceJson:  string | null
   sportId:       number | null   // INT — was UNIQUEIDENTIFIER before migration 009
+  sportName:     string | null
   isPinned:      boolean
   isWelcomePost: boolean
   campaignId:    string | null
   createdBy:     number
+  createdByName: string
   publishedAt:   string
   createdAt:     string
+  updatedAt:     string | null
   isRead:        boolean
+  likeCount:     number
+  userHasLiked:  boolean
 }
 
 export async function sp_GetFeed(params: {
   viewerUserId: number
-  sportId?:     number | null   // INT
+  mySport?:     boolean
   page:         number
   pageSize:     number
 }): Promise<{ posts: FeedPostRow[]; totalCount: number }> {
   const { recordset, output } = await execFull('app', 'sp_GetFeed', (r) => {
     r.input ('ViewerUserId', sql.Int, params.viewerUserId)
-    r.input ('SportId',      sql.Int, params.sportId ?? null)
+    r.input ('MySport',      sql.Bit, params.mySport ? 1 : 0)
     r.input ('Page',         sql.Int, params.page)
     r.input ('PageSize',     sql.Int, params.pageSize)
     r.output('TotalCount',   sql.Int)
@@ -833,6 +838,7 @@ export async function sp_CreatePost(params: {
   isPinned:      boolean
   alsoEmail:     boolean
   emailSubject?: string | null
+  posterRole?:   string | null   // JWT global role — used for alumni sport validation
 }): Promise<{ postId: string | null; campaignId: string | null; errorCode: string | null }> {
   const { output } = await execFull('app', 'sp_CreatePost', (r) => {
     r.input ('CreatedBy',   sql.Int,               params.createdBy)
@@ -844,6 +850,7 @@ export async function sp_CreatePost(params: {
     r.input ('IsPinned',    sql.Bit,                params.isPinned ? 1 : 0)
     r.input ('AlsoEmail',   sql.Bit,                params.alsoEmail ? 1 : 0)
     r.input ('EmailSubject',sql.NVarChar(500),      params.emailSubject ?? null)
+    r.input ('PosterRole',  sql.NVarChar(50),       params.posterRole   ?? null)
     r.output('NewPostId',   sql.UniqueIdentifier)
     r.output('CampaignId',  sql.UniqueIdentifier)
     r.output('ErrorCode',   sql.NVarChar(50))
@@ -883,6 +890,77 @@ export async function sp_GetPostReadStats(params: {
     stats:     rows?.[0] ?? null,
     errorCode: (output.ErrorCode as string | null) ?? null,
   }
+}
+
+export async function sp_TogglePostLike(params: {
+  postId: string
+  userId: number
+}): Promise<{ liked: boolean; likeCount: number; errorCode: string | null }> {
+  const { output } = await execFull('app', 'sp_TogglePostLike', (r) => {
+    r.input ('PostId',    sql.UniqueIdentifier, params.postId)
+    r.input ('UserId',    sql.Int,              params.userId)
+    r.output('Liked',     sql.Bit)
+    r.output('LikeCount', sql.Int)
+    r.output('ErrorCode', sql.NVarChar(50))
+  })
+  return {
+    liked:     Boolean(output.Liked),
+    likeCount: (output.LikeCount as number) ?? 0,
+    errorCode: (output.ErrorCode as string | null) ?? null,
+  }
+}
+
+export async function sp_SoftDeletePost(params: {
+  postId:       string
+  userId:       number
+  canDeleteAny: boolean
+}): Promise<{ errorCode: string | null }> {
+  const { output } = await execFull('app', 'sp_SoftDeletePost', (r) => {
+    r.input ('PostId',       sql.UniqueIdentifier, params.postId)
+    r.input ('UserId',       sql.Int,              params.userId)
+    r.input ('CanDeleteAny', sql.Bit,              params.canDeleteAny ? 1 : 0)
+    r.output('ErrorCode',    sql.NVarChar(50))
+  })
+  return { errorCode: (output.ErrorCode as string | null) ?? null }
+}
+
+export async function sp_EditPost(params: {
+  postId:   string
+  userId:   number
+  bodyHtml: string
+}): Promise<{ errorCode: string | null }> {
+  const { output } = await execFull('app', 'sp_EditPost', (r) => {
+    r.input ('PostId',    sql.UniqueIdentifier,  params.postId)
+    r.input ('UserId',    sql.Int,               params.userId)
+    r.input ('BodyHtml',  sql.NVarChar(sql.MAX), params.bodyHtml)
+    r.output('ErrorCode', sql.NVarChar(50))
+  })
+  return { errorCode: (output.ErrorCode as string | null) ?? null }
+}
+
+export async function sp_PinPost(params: {
+  postId: string
+}): Promise<{ errorCode: string | null }> {
+  const { output } = await execFull('app', 'sp_PinPost', (r) => {
+    r.input ('PostId',    sql.UniqueIdentifier, params.postId)
+    r.output('ErrorCode', sql.NVarChar(50))
+  })
+  return { errorCode: (output.ErrorCode as string | null) ?? null }
+}
+
+export interface UserSportAssociation {
+  sportId:   number
+  sportName: string
+  sportAbbr: string
+}
+
+export async function sp_GetUserSportAssociations(params: {
+  userId: number
+}): Promise<UserSportAssociation[]> {
+  const { recordset } = await execFull('app', 'sp_GetUserSportAssociations', (r) => {
+    r.input('UserId', sql.Int, params.userId)
+  })
+  return (recordset as unknown as UserSportAssociation[]) ?? []
 }
 
 // ─── Dashboard Metrics ────────────────────────────────────────────────────────

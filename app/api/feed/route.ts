@@ -5,7 +5,7 @@ import { sp_GetFeed, sp_CreatePost } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 import { sendCampaignEmailsBackground } from '@/lib/email'
 
-const CAN_POST_ROLES = ['platform_owner', 'app_admin', 'head_coach', 'position_coach', 'alumni_director']
+const CAN_POST_ROLES = ['platform_owner', 'app_admin', 'head_coach', 'position_coach', 'alumni_director', 'alumni']
 
 export async function GET(req: Request) {
   const session = await getServerSession()
@@ -20,16 +20,15 @@ export async function GET(req: Request) {
   }
 
   const { searchParams } = new URL(req.url)
-  const page         = parseInt(searchParams.get('page')     ?? '1')
-  const pageSize     = parseInt(searchParams.get('pageSize') ?? '20')
-  const sportIdParam = searchParams.get('sportId')
-  const sportId      = sportIdParam ? parseInt(sportIdParam, 10) || null : null
+  const page     = parseInt(searchParams.get('page')     ?? '1')
+  const pageSize = parseInt(searchParams.get('pageSize') ?? '20')
+  const mySport  = searchParams.get('mySport') === 'true'
 
   return appDbContext.run(session.appDb, async () => {
     try {
       const { posts, totalCount } = await sp_GetFeed({
         viewerUserId: session.userId,
-        sportId,
+        mySport,
         page,
         pageSize,
       })
@@ -50,6 +49,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
   }
 
+  // Alumni can only post at Tier 2+
+  if (session.role === 'alumni' && (session.tierId ?? 1) < 2) {
+    return NextResponse.json({ success: false, error: 'Alumni posting requires Tier 2 or higher.' }, { status: 403 })
+  }
+
   if (!session.appDb) {
     return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
   }
@@ -59,7 +63,7 @@ export async function POST(req: Request) {
     audience:      string
     title?:        string | null
     audienceJson?: string | null
-    sportId?:      number | string | null   // accept both INT and string "1"
+    sportId?:      number | string | null
     isPinned?:     boolean
     alsoEmail?:    boolean
     emailSubject?: string | null
@@ -77,7 +81,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, error: 'bodyHtml and audience are required' }, { status: 400 })
   }
 
-  // Normalise sportId to INT or null
+  if (!['all_sports', 'sport_specific'].includes(audience)) {
+    return NextResponse.json({ success: false, error: 'Invalid audience. Must be all_sports or sport_specific.' }, { status: 400 })
+  }
+
   const sportId = body.sportId != null
     ? parseInt(String(body.sportId), 10) || null
     : null
@@ -94,13 +101,13 @@ export async function POST(req: Request) {
         isPinned:     isPinned     ?? false,
         alsoEmail:    alsoEmail    ?? false,
         emailSubject: emailSubject ?? null,
+        posterRole:   session.role,
       })
 
       if (errorCode && errorCode !== 'OK') {
         return NextResponse.json({ success: false, error: errorCode }, { status: 400 })
       }
 
-      // Fire-and-forget email dispatch (queue + send in background)
       if (alsoEmail && campaignId && session.appDb) {
         sendCampaignEmailsBackground({
           campaignId,

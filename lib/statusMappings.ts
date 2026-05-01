@@ -51,10 +51,13 @@ export const CAMPAIGN_STATUS_BADGE: Record<string, 'green' | 'gold' | 'gray' | '
 
 /** Feed post audience → Badge variant */
 export const AUDIENCE_BADGE: Record<string, 'green' | 'gold' | 'gray'> = {
-  all:          'gray',
-  players_only: 'green',
-  alumni_only:  'gold',
-  by_position:  'gray',
-  by_grad_year: 'gray',
-  custom:       'gray',
+  all_sports:    'gray',
+  sport_specific: 'green',
+  // legacy values kept as fallback for any pre-migration posts
+  all:           'gray',
+  players_only:  'green',
+  alumni_only:   'gold',
+  by_position:   'gray',
+  by_grad_year:  'gray',
+  custom:        'gray',
 }
