@@ -7,6 +7,12 @@ import { sendCampaignEmailsBackground } from '@/lib/email'
 
 const CAN_POST_ROLES = ['platform_owner', 'app_admin', 'head_coach', 'position_coach', 'alumni_director']
 
+function getRoleGroup(roleId: number): string {
+  if (roleId <= 2) return 'admin'   // platform_owner, app_admin
+  if (roleId <= 5) return 'staff'   // head_coach, position_coach, alumni_director
+  return 'player'                    // player, alumni
+}
+
 export async function GET(req: Request) {
   const session = await getServerSession()
   if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
@@ -25,6 +31,11 @@ export async function GET(req: Request) {
   const sportIdParam = searchParams.get('sportId')
   const sportId      = sportIdParam ? parseInt(sportIdParam, 10) || null : null
 
+  const VALID_TIERS = ['starter', 'pro', 'enterprise']
+  const tierParam   = searchParams.get('tier') ?? ''
+  const tierGroup   = VALID_TIERS.includes(tierParam) ? tierParam : null
+  const roleGroup   = getRoleGroup(session.roleId)
+
   return appDbContext.run(session.appDb, async () => {
     try {
       const { posts, totalCount } = await sp_GetFeed({
@@ -32,6 +43,8 @@ export async function GET(req: Request) {
         sportId,
         page,
         pageSize,
+        tierGroup,
+        roleGroup,
       })
       return NextResponse.json({ success: true, data: posts, total: totalCount })
     } catch (err) {
