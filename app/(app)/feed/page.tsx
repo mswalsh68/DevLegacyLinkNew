@@ -253,7 +253,7 @@ function FeedCard({
             }}
           />
           {editErr && (
-            <p style={{ fontSize: 12, color: theme.red ?? '#dc2626', marginTop: 4 }}>{editErr}</p>
+            <p style={{ fontSize: 12, color: '#dc2626', marginTop: 4 }}>{editErr}</p>
           )}
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
             <Button label={saving ? 'Saving…' : 'Save'} onClick={handleSaveEdit} />
