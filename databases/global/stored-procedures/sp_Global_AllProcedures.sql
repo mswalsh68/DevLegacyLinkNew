@@ -149,6 +149,17 @@ BEGIN
       AND t.is_active   = 1;
   END
 
+  DECLARE @TierId   INT        = NULL;
+  DECLARE @TierName NVARCHAR(50) = N'starter';
+
+  IF @CurrentTeamId IS NOT NULL
+  BEGIN
+    SELECT @TierId = t.tier_id, @TierName = tr.name
+    FROM   dbo.teams t
+    JOIN   dbo.tiers tr ON tr.id = t.tier_id
+    WHERE  t.id = @CurrentTeamId;
+  END
+
   SELECT @UserJson = (
     SELECT
       u.user_id                             AS userId,
@@ -163,6 +174,8 @@ BEGIN
       @CurrentTeamId                        AS currentTeamId,
       @PreferredTeamId                      AS preferredTeamId,
       @AppDb                                AS appDb,
+      @TierId                               AS tierId,
+      @TierName                             AS tierName,
       JSON_QUERY(@TeamsJson)                AS teams,
       (
         SELECT
@@ -479,6 +492,8 @@ BEGIN
       t.name,
       t.abbr,
       t.app_db               AS appDb,
+      t.tier_id              AS tierId,
+      tr.name                AS tierName,
       tc.logo_url            AS logoUrl,
       tc.color_primary       AS colorPrimary,
       tc.color_primary_dark  AS colorPrimaryDark,
@@ -492,6 +507,7 @@ BEGIN
       tc.roster_label        AS rosterLabel,
       tc.class_label         AS classLabel
     FROM dbo.teams t
+    JOIN  dbo.tiers tr       ON tr.id = t.tier_id
     LEFT JOIN dbo.team_config tc ON tc.team_id = t.id
     WHERE t.id = @NewTeamId
     FOR JSON PATH, WITHOUT_ARRAY_WRAPPER

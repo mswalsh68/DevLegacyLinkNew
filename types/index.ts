@@ -11,6 +11,7 @@ export interface UserSession {
   currentTeamId?: number  // Set by POST /api/auth/switch-team; tells /api/config which team to load
   preferredTeamId?: number // User's saved default team (INT, from user_team_preferences)
   appDb?: string          // Tenant App DB name from dbo.teams.app_db — embedded in JWT by sp_Login / sp_SwitchTeam
+  tierId?: number         // 1=starter, 2=pro, 3=enterprise — from teams.tier_id via sp_Login / sp_SwitchTeam
   username: string
   email: string
   roleId: number          // dbo.roles.id (1 = platform_owner … 7 = alumni) — source of truth since migration 018

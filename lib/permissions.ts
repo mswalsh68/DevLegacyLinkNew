@@ -58,6 +58,9 @@ type Feature =
   | 'message:alumni'
   | 'feed:players'
   | 'feed:alumni'
+  | 'feed:post'
+  | 'feed:delete_any'
+  | 'feed:pin'
   | 'settings:view'
   | 'settings:requests'
 
@@ -71,6 +74,10 @@ const FEATURE_ROLES: Record<Feature, readonly string[]> = {
   'message:alumni':     [...HEAD_COACHES, 'alumni_director', ...ALUMNI_ROLE],
   'feed:players':       [...ALL_STAFF, ...PLAYERS],
   'feed:alumni':        [...HEAD_COACHES, 'alumni_director', ...ALUMNI_ROLE],
+  // feed:post — tier check for alumni is enforced at API level, not here
+  'feed:post':          [...ALL_STAFF, ...ALUMNI_ROLE],
+  'feed:delete_any':    [...ADMINS],
+  'feed:pin':           [...ADMINS],
   'settings:view':      [...ADMINS],
   'settings:requests':  [...ADMINS],
 }

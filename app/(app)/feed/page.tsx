@@ -22,45 +22,71 @@ interface FeedPost {
   title:         string | null
   bodyHtml:      string
   audience:      string
+  sportId:       number | null
+  sportName:     string | null
   isPinned:      boolean
   isWelcomePost: boolean
   imageUrl:      string | null
-  createdBy:     string
+  createdBy:     number
+  createdByName: string
   publishedAt:   string
+  updatedAt:     string | null
   isRead:        boolean
+  likeCount:     number
+  userHasLiked:  boolean
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const AUDIENCE_LABEL: Record<string, string> = {
-  all:          'All',
-  players_only: 'Players',
-  alumni_only:  'Alumni',
-  by_position:  'By Position',
-  by_grad_year: 'By Grad Year',
-  custom:       'Custom',
+  all_sports:    'All Sports',
+  sport_specific: 'Sport',
+  // legacy fallbacks
+  all:           'All',
+  players_only:  'Players',
+  alumni_only:   'Alumni',
+  by_position:   'By Position',
+  by_grad_year:  'By Grad Year',
+  custom:        'Custom',
 }
 
 const PAGE_SIZE = 20
 
-// Staff roles that can create posts (matches guardAppWrite on the API)
-const CAN_POST_ROLES = ['platform_owner','app_admin','head_coach','position_coach','alumni_director']
+const CAN_POST_ROLES = ['platform_owner', 'app_admin', 'head_coach', 'position_coach', 'alumni_director', 'alumni']
 
 // ─── FeedCard ─────────────────────────────────────────────────────────────────
 
 function FeedCard({
   post,
+  currentUserId,
+  canDeleteAny,
+  canPin,
   onRead,
   onNavigate,
+  onLike,
+  onDelete,
+  onEdit,
+  onPin,
   config,
 }: {
-  post:       FeedPost
-  onRead:     (id: string) => void
-  onNavigate: (id: string) => void
-  config:     TeamConfig
+  post:          FeedPost
+  currentUserId: number
+  canDeleteAny:  boolean
+  canPin:        boolean
+  onRead:        (id: string) => void
+  onNavigate:    (id: string) => void
+  onLike:        (id: string) => void
+  onDelete:      (id: string) => void
+  onEdit:        (id: string, newBody: string) => void
+  onPin:         (id: string) => void
+  config:        TeamConfig
 }) {
-  const cardRef = useRef<HTMLDivElement>(null)
-  const marked  = useRef(false)
+  const cardRef    = useRef<HTMLDivElement>(null)
+  const marked     = useRef(false)
+  const [editing,  setEditing]  = useState(false)
+  const [editBody, setEditBody] = useState(post.bodyHtml)
+  const [saving,   setSaving]   = useState(false)
+  const [editErr,  setEditErr]  = useState('')
 
   // IntersectionObserver: auto-mark as read when 60% visible
   useEffect(() => {
@@ -88,15 +114,45 @@ function FeedCard({
   const resolvedHtml = post.isWelcomePost
     ? resolvePostTokens(post.bodyHtml, config)
     : post.bodyHtml
-  const safeHtml = useSafeHtml(resolvedHtml)
+  const safeHtml = useSafeHtml(editing ? editBody : resolvedHtml)
 
   const resolvedTitle = post.title
     ? (post.isWelcomePost ? resolvePostTokens(post.title, config) : post.title)
     : null
 
+  const isOwner     = post.createdBy === currentUserId
+  const canEdit     = isOwner && !post.isWelcomePost
+  const canDelete   = isOwner || canDeleteAny
+
+  const audienceLabel = post.audience === 'sport_specific' && post.sportName
+    ? post.sportName
+    : (AUDIENCE_LABEL[post.audience] ?? post.audience)
+
   const resolvedImageUrl = post.isWelcomePost && post.imageUrl
     ? resolvePostTokens(post.imageUrl, config)
     : null
+
+  async function handleSaveEdit() {
+    if (!editBody.trim()) return
+    setSaving(true)
+    setEditErr('')
+    try {
+      const res = await fetch(`/api/feed/${post.id}`, {
+        method:      'PATCH',
+        credentials: 'include',
+        headers:     { 'Content-Type': 'application/json' },
+        body:        JSON.stringify({ bodyHtml: editBody }),
+      })
+      const data = await res.json() as { success: boolean; error?: string }
+      if (!data.success) throw new Error(data.error ?? 'Failed to save')
+      onEdit(post.id, editBody)
+      setEditing(false)
+    } catch (e) {
+      setEditErr(e instanceof Error ? e.message : 'Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <div
@@ -147,7 +203,7 @@ function FeedCard({
         />
       )}
 
-      {/* Meta row: pinned indicator + audience badge + date */}
+      {/* Meta row: pinned + audience + date + edited */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         {post.isPinned && (
           <span style={{ fontSize: 12, color: 'var(--color-accent-dark)', fontWeight: 700 }}>
@@ -155,42 +211,129 @@ function FeedCard({
           </span>
         )}
         <Badge
-          label={AUDIENCE_LABEL[post.audience] ?? post.audience}
+          label={audienceLabel}
           variant={AUDIENCE_BADGE[post.audience] ?? 'gray'}
         />
+        <span style={{ fontSize: 12, color: theme.gray500 }}>
+          {post.createdByName}
+        </span>
         <span style={{ fontSize: 12, color: theme.gray400, marginLeft: 'auto' }}>
           {published}
+          {post.updatedAt && (
+            <span style={{ marginLeft: 6, color: theme.gray400, fontStyle: 'italic' }}>
+              · edited
+            </span>
+          )}
         </span>
       </div>
 
-      {/* Title — omitted for welcome posts (body carries the heading) */}
-      {resolvedTitle && !post.isWelcomePost && (
+      {/* Title */}
+      {resolvedTitle && !post.isWelcomePost && !editing && (
         <h2 style={{ fontSize: 16, fontWeight: 700, color: theme.gray900, margin: '0 0 12px 0' }}>
           {resolvedTitle}
         </h2>
       )}
 
-      {/* Rendered body HTML */}
-      <div
-        className="feed-body"
-        style={{ fontSize: 15, lineHeight: 1.7, color: theme.gray800 }}
-        dangerouslySetInnerHTML={{ __html: safeHtml }}
-      />
+      {/* Body / Edit mode */}
+      {editing ? (
+        <div style={{ marginBottom: 12 }}>
+          <textarea
+            value={editBody}
+            onChange={e => setEditBody(e.target.value)}
+            rows={6}
+            style={{
+              width:        '100%',
+              padding:      '10px 12px',
+              borderRadius: 'var(--radius-md)',
+              border:       '1px solid var(--color-card-border)',
+              fontSize:     14,
+              resize:       'vertical',
+              backgroundColor: 'var(--color-card-bg)',
+              color:        theme.gray800,
+            }}
+          />
+          {editErr && (
+            <p style={{ fontSize: 12, color: theme.red ?? '#dc2626', marginTop: 4 }}>{editErr}</p>
+          )}
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <Button label={saving ? 'Saving…' : 'Save'} onClick={handleSaveEdit} />
+            <Button label="Cancel" variant="outline" onClick={() => { setEditing(false); setEditBody(post.bodyHtml) }} />
+          </div>
+        </div>
+      ) : (
+        <div
+          className="feed-body"
+          style={{ fontSize: 15, lineHeight: 1.7, color: theme.gray800 }}
+          dangerouslySetInnerHTML={{ __html: safeHtml }}
+        />
+      )}
 
-      {/* View stats link */}
-      <div style={{ marginTop: 14, textAlign: 'right' }}>
+      {/* Action row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 14 }}>
+        {/* Like */}
         <button
-          onClick={() => onNavigate(post.id)}
+          onClick={() => onLike(post.id)}
           style={{
             background: 'none',
             border:     'none',
-            color:      theme.gray400,
-            fontSize:   12,
             cursor:     'pointer',
+            display:    'flex',
+            alignItems: 'center',
+            gap:        4,
+            fontSize:   13,
+            color:      post.userHasLiked ? 'var(--color-primary)' : theme.gray400,
             padding:    0,
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-primary)')}
-          onMouseLeave={(e) => (e.currentTarget.style.color = theme.gray400)}
+          aria-label={post.userHasLiked ? 'Unlike' : 'Like'}
+        >
+          <span style={{ fontSize: 16 }}>{post.userHasLiked ? '♥' : '♡'}</span>
+          {post.likeCount > 0 && <span>{post.likeCount}</span>}
+        </button>
+
+        <div style={{ flex: 1 }} />
+
+        {/* Admin actions */}
+        {canPin && !post.isPinned && (
+          <button
+            onClick={() => onPin(post.id)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: theme.gray400, padding: 0 }}
+            onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-primary)')}
+            onMouseLeave={e => (e.currentTarget.style.color = theme.gray400)}
+          >
+            📌 Pin
+          </button>
+        )}
+
+        {canEdit && !editing && (
+          <button
+            onClick={() => setEditing(true)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: theme.gray400, padding: 0 }}
+            onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-primary)')}
+            onMouseLeave={e => (e.currentTarget.style.color = theme.gray400)}
+          >
+            Edit
+          </button>
+        )}
+
+        {canDelete && (
+          <button
+            onClick={() => {
+              if (confirm('Delete this post?')) onDelete(post.id)
+            }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: theme.gray400, padding: 0 }}
+            onMouseEnter={e => (e.currentTarget.style.color = '#dc2626')}
+            onMouseLeave={e => (e.currentTarget.style.color = theme.gray400)}
+          >
+            Delete
+          </button>
+        )}
+
+        {/* Stats link */}
+        <button
+          onClick={() => onNavigate(post.id)}
+          style={{ background: 'none', border: 'none', color: theme.gray400, fontSize: 12, cursor: 'pointer', padding: 0 }}
+          onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-primary)')}
+          onMouseLeave={e => (e.currentTarget.style.color = theme.gray400)}
         >
           View stats →
         </button>
@@ -204,8 +347,8 @@ function FeedCard({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function FeedPage() {
-  const router          = useRouter()
-  const config          = useTeamConfig()
+  const router              = useRouter()
+  const config              = useTeamConfig()
   const { user, isLoading } = useAuth()
 
   const [posts,   setPosts]   = useState<FeedPost[]>([])
@@ -213,15 +356,21 @@ export default function FeedPage() {
   const [error,   setError]   = useState('')
   const [page,    setPage]    = useState(1)
   const [total,   setTotal]   = useState(0)
+  const [mySport, setMySport] = useState(false)
 
-  const canView = can(user, 'feed:players') || can(user, 'feed:alumni')
-  const canPost = CAN_POST_ROLES.includes(user?.role ?? '')
+  const canView      = can(user, 'feed:players') || can(user, 'feed:alumni')
+  const canDeleteAny = can(user, 'feed:delete_any')
+  const canPin       = can(user, 'feed:pin')
 
-  const fetchFeed = useCallback(async (p: number) => {
+  const isAlumni = user?.role === 'alumni'
+  const canPost  = CAN_POST_ROLES.includes(user?.role ?? '')
+    && !(isAlumni && (user?.tierId ?? 1) < 2)
+
+  const fetchFeed = useCallback(async (p: number, sport: boolean) => {
     setLoading(true)
     try {
-      const tier = config.subscriptionTier ?? ''
-      const res  = await fetch(`/api/feed?page=${p}&pageSize=${PAGE_SIZE}&tier=${encodeURIComponent(tier)}`, { credentials: 'include' })
+      const qs   = `page=${p}&pageSize=${PAGE_SIZE}${sport ? '&mySport=true' : ''}`
+      const res  = await fetch(`/api/feed?${qs}`, { credentials: 'include' })
       const data = await res.json() as { success: boolean; data: FeedPost[]; total: number; error?: string }
       if (!data.success) throw new Error(data.error ?? 'Failed to load feed')
       setPosts(prev => p === 1 ? (data.data ?? []) : [...prev, ...(data.data ?? [])])
@@ -231,11 +380,11 @@ export default function FeedPage() {
     } finally {
       setLoading(false)
     }
-  }, [config.subscriptionTier])
+  }, [])
 
   useEffect(() => {
-    if (canView) fetchFeed(1)
-  }, [canView, fetchFeed])
+    if (canView) fetchFeed(1, mySport)
+  }, [canView, mySport, fetchFeed])
 
   const handleRead = useCallback((postId: string) => {
     setPosts(prev => prev.map(p => p.id === postId ? { ...p, isRead: true } : p))
@@ -243,10 +392,73 @@ export default function FeedPage() {
       .catch(() => { /* fire-and-forget */ })
   }, [])
 
+  const handleLike = useCallback((postId: string) => {
+    // Optimistic update
+    setPosts(prev => prev.map(p => {
+      if (p.id !== postId) return p
+      const liked = !p.userHasLiked
+      return { ...p, userHasLiked: liked, likeCount: p.likeCount + (liked ? 1 : -1) }
+    }))
+    fetch(`/api/feed/${postId}/like`, { method: 'POST', credentials: 'include' })
+      .then(r => r.json())
+      .then((d: { success: boolean; data?: { liked: boolean; likeCount: number } }) => {
+        if (d.success && d.data) {
+          setPosts(prev => prev.map(p =>
+            p.id === postId ? { ...p, userHasLiked: d.data!.liked, likeCount: d.data!.likeCount } : p
+          ))
+        }
+      })
+      .catch(() => {
+        // revert optimistic update on failure
+        setPosts(prev => prev.map(p => {
+          if (p.id !== postId) return p
+          const reverted = !p.userHasLiked
+          return { ...p, userHasLiked: reverted, likeCount: p.likeCount + (reverted ? 1 : -1) }
+        }))
+      })
+  }, [])
+
+  const handleDelete = useCallback((postId: string) => {
+    fetch(`/api/feed/${postId}`, { method: 'DELETE', credentials: 'include' })
+      .then(r => r.json())
+      .then((d: { success: boolean }) => {
+        if (d.success) {
+          setPosts(prev => prev.filter(p => p.id !== postId))
+          setTotal(prev => prev - 1)
+        }
+      })
+      .catch(() => setError('Failed to delete post.'))
+  }, [])
+
+  const handleEdit = useCallback((postId: string, newBody: string) => {
+    setPosts(prev => prev.map(p =>
+      p.id === postId
+        ? { ...p, bodyHtml: newBody, updatedAt: new Date().toISOString() }
+        : p
+    ))
+  }, [])
+
+  const handlePin = useCallback((postId: string) => {
+    fetch(`/api/feed/${postId}/pin`, { method: 'POST', credentials: 'include' })
+      .then(r => r.json())
+      .then((d: { success: boolean }) => {
+        if (d.success) {
+          setPosts(prev => prev.map(p => ({ ...p, isPinned: p.id === postId })))
+        }
+      })
+      .catch(() => setError('Failed to pin post.'))
+  }, [])
+
+  const handleToggleSport = (sport: boolean) => {
+    setMySport(sport)
+    setPage(1)
+    setPosts([])
+  }
+
   const handleLoadMore = () => {
     const next = page + 1
     setPage(next)
-    fetchFeed(next)
+    fetchFeed(next, mySport)
   }
 
   const hasMore = posts.length < total
@@ -265,7 +477,7 @@ export default function FeedPage() {
   return (
     <>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: theme.gray900, margin: 0 }}>
             {config.teamName} Feed
@@ -277,6 +489,32 @@ export default function FeedPage() {
         {canPost && (
           <Button label="+ New Post" onClick={() => router.push('/feed/new')} />
         )}
+      </div>
+
+      {/* All Posts / My Sport toggle */}
+      <div style={{ display: 'flex', gap: 0, marginBottom: 20, border: '1px solid var(--color-card-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden', width: 'fit-content' }}>
+        {[
+          { label: 'All Posts', value: false },
+          { label: 'My Sport', value: true  },
+        ].map(opt => (
+          <button
+            key={String(opt.value)}
+            onClick={() => handleToggleSport(opt.value)}
+            style={{
+              padding:         '6px 16px',
+              border:          'none',
+              borderRight:     opt.value ? 'none' : '1px solid var(--color-card-border)',
+              fontSize:        13,
+              fontWeight:      mySport === opt.value ? 600 : 400,
+              cursor:          'pointer',
+              backgroundColor: mySport === opt.value ? 'var(--color-primary)' : 'var(--color-card-bg)',
+              color:           mySport === opt.value ? '#fff' : theme.gray600,
+              transition:      'background-color 0.15s',
+            }}
+          >
+            {opt.label}
+          </button>
+        ))}
       </div>
 
       {error && <Alert message={error} variant="error" onClose={() => setError('')} />}
@@ -305,8 +543,15 @@ export default function FeedPage() {
             <FeedCard
               key={post.id}
               post={post}
+              currentUserId={user?.userId ?? 0}
+              canDeleteAny={canDeleteAny}
+              canPin={canPin}
               onRead={handleRead}
               onNavigate={id => router.push(`/feed/${id}`)}
+              onLike={handleLike}
+              onDelete={handleDelete}
+              onEdit={handleEdit}
+              onPin={handlePin}
               config={config}
             />
           ))
