@@ -57,6 +57,20 @@ export function LoginForm() {
         localStorage.setItem('cfb_user', JSON.stringify(body.data.user))
       }
 
+      // If the user has a preferred team that differs from their current team,
+      // switch to it now so the dashboard lands on the right team.
+      const user = body.data?.user as Record<string, unknown> | undefined
+      const preferredTeamId = user?.preferredTeamId as number | undefined
+      const currentTeamId   = user?.currentTeamId   as number | undefined
+      if (preferredTeamId && preferredTeamId !== currentTeamId) {
+        await fetch('/api/auth/switch-team', {
+          method:      'POST',
+          credentials: 'include',
+          headers:     { 'Content-Type': 'application/json' },
+          body:        JSON.stringify({ teamId: preferredTeamId }),
+        })
+      }
+
       // Full reload instead of router.push — AuthProvider useEffect only runs on
       // mount, so a client-side navigation leaves user=null and blanks the dashboard.
       window.location.href = '/dashboard'
