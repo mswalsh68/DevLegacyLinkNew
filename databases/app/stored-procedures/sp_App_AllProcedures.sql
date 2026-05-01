@@ -1211,7 +1211,9 @@ BEGIN
   SET NOCOUNT ON;
   SET @TotalCount = 0;
 
-  DECLARE @Offset INT = (@Page - 1) * @PageSize;
+  DECLARE @Offset    INT          = (@Page - 1) * @PageSize;
+  DECLARE @TierGroup NVARCHAR(20) = NULL;  -- not used in V2; kept for welcome-post compat
+  DECLARE @RoleGroup NVARCHAR(20) = NULL;
   IF @Offset < 0 SET @Offset = 0;
 
   ;WITH visible_posts AS (
@@ -1235,8 +1237,8 @@ BEGIN
       AND (
         fp.is_welcome_post = 0
         OR (
-          (fp.tier_group  IS NULL OR fp.tier_group  = @TierGroup)
-          AND (fp.role_group IS NULL OR fp.role_group = @RoleGroup)
+          (@TierGroup IS NULL OR fp.tier_group  IS NULL OR fp.tier_group  = @TierGroup)
+          AND (@RoleGroup IS NULL OR fp.role_group IS NULL OR fp.role_group = @RoleGroup)
         )
       )
   )
@@ -1263,8 +1265,8 @@ BEGIN
       AND (
         fp.is_welcome_post = 0
         OR (
-          (fp.tier_group  IS NULL OR fp.tier_group  = @TierGroup)
-          AND (fp.role_group IS NULL OR fp.role_group = @RoleGroup)
+          (@TierGroup IS NULL OR fp.tier_group  IS NULL OR fp.tier_group  = @TierGroup)
+          AND (@RoleGroup IS NULL OR fp.role_group IS NULL OR fp.role_group = @RoleGroup)
         )
       )
   )
