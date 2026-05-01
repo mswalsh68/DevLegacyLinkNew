@@ -1202,18 +1202,18 @@ GO
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetFeed
   @ViewerUserId INT,
-  @MySport      BIT  = 0,
-  @Page         INT  = 1,
-  @PageSize     INT  = 20,
-  @TotalCount   INT  OUTPUT
+  @MySport      BIT          = 0,
+  @Page         INT          = 1,
+  @PageSize     INT          = 20,
+  @TierGroup    NVARCHAR(20) = NULL,
+  @RoleGroup    NVARCHAR(20) = NULL,
+  @TotalCount   INT          OUTPUT
 AS
 BEGIN
   SET NOCOUNT ON;
   SET @TotalCount = 0;
 
-  DECLARE @Offset    INT          = (@Page - 1) * @PageSize;
-  DECLARE @TierGroup NVARCHAR(20) = NULL;  -- not used in V2; kept for welcome-post compat
-  DECLARE @RoleGroup NVARCHAR(20) = NULL;
+  DECLARE @Offset INT = (@Page - 1) * @PageSize;
   IF @Offset < 0 SET @Offset = 0;
 
   ;WITH visible_posts AS (

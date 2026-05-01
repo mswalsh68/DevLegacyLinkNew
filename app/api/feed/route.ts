@@ -30,10 +30,9 @@ export async function GET(req: Request) {
   const pageSize = parseInt(searchParams.get('pageSize') ?? '20')
   const mySport  = searchParams.get('mySport') === 'true'
 
-  const VALID_TIERS = ['starter', 'pro', 'enterprise']
-  const tierParam   = searchParams.get('tier') ?? ''
-  const tierGroup   = VALID_TIERS.includes(tierParam) ? tierParam : null
-  const roleGroup   = getRoleGroup(session.roleId)
+  const TIER_MAP: Record<number, string> = { 1: 'starter', 2: 'pro', 3: 'enterprise' }
+  const tierGroup = session.tierId != null ? (TIER_MAP[session.tierId] ?? null) : null
+  const roleGroup = getRoleGroup(session.roleId)
 
   return appDbContext.run(session.appDb, async () => {
     try {

@@ -803,10 +803,12 @@ export async function sp_GetFeed(params: {
   roleGroup?:   string | null
 }): Promise<{ posts: FeedPostRow[]; totalCount: number }> {
   const { recordset, output } = await execFull('app', 'sp_GetFeed', (r) => {
-    r.input ('ViewerUserId', sql.Int, params.viewerUserId)
-    r.input ('MySport',      sql.Bit, params.mySport ? 1 : 0)
-    r.input ('Page',         sql.Int, params.page)
-    r.input ('PageSize',     sql.Int, params.pageSize)
+    r.input ('ViewerUserId', sql.Int,          params.viewerUserId)
+    r.input ('MySport',      sql.Bit,          params.mySport ? 1 : 0)
+    r.input ('Page',         sql.Int,          params.page)
+    r.input ('PageSize',     sql.Int,          params.pageSize)
+    r.input ('TierGroup',    sql.NVarChar(20), params.tierGroup ?? null)
+    r.input ('RoleGroup',    sql.NVarChar(20), params.roleGroup ?? null)
     r.output('TotalCount',   sql.Int)
   })
   return {
