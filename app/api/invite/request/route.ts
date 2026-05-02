@@ -12,6 +12,7 @@ import { getPool } from '@/lib/db/connection'
 import {
   sp_RegisterUserViaInvite,
   sp_SubmitAccessRequest,
+  sp_ActivatePendingAccount,
 } from '@/lib/db/procedures'
 
 function getConfig() {
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
   }
 
   const token = typeof body.token === 'string' ? body.token.trim() : ''
-  const mode  = body.mode === 'login' ? 'login' : 'signup'
+  const mode  = body.mode === 'login' ? 'login' : body.mode === 'claim' ? 'claim' : 'signup'
   const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
 
   if (!token) return NextResponse.json({ error: 'Invite code is required.' }, { status: 400 })
@@ -119,6 +120,87 @@ export async function POST(req: NextRequest) {
       console.error('[POST /api/invite/request] login error', err)
       return NextResponse.json({ error: 'Login failed.' }, { status: 500 })
     }
+  }
+
+  // ── Claim mode: activate an INVITE_PENDING account ───────────────────────
+  if (mode === 'claim') {
+    const password = typeof body.password === 'string' ? body.password : ''
+    if (!password || password.length < 8) {
+      return NextResponse.json({ error: 'Password must be at least 8 characters.' }, { status: 422 })
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12)
+    const { userId: activatedId, errorCode: activateErr } = await sp_ActivatePendingAccount({
+      email, newPasswordHash: passwordHash,
+    })
+
+    if (activateErr === 'NOT_PENDING') {
+      return NextResponse.json(
+        { error: 'No pending account found for this email. Please sign in with your existing password.' },
+        { status: 409 },
+      )
+    }
+    if (!activatedId) {
+      return NextResponse.json({ error: 'Failed to activate account.' }, { status: 500 })
+    }
+
+    // Try a full login — directly-added users already have team access and can
+    // skip the /pending queue and go straight to /dashboard.
+    let skipPending = false
+    try {
+      const db        = await getPool('global')
+      const loginReq  = db.request()
+      loginReq.input ('Email',         sql.NVarChar(255),     email)
+      loginReq.input ('CurrentTeamId', sql.Int,               null)
+      loginReq.input ('IpAddress',     sql.NVarChar(100),     req.headers.get('x-forwarded-for') ?? null)
+      loginReq.input ('DeviceInfo',    sql.NVarChar(255),     req.headers.get('user-agent')      ?? null)
+      loginReq.output('UserId',        sql.BigInt)
+      loginReq.output('PasswordHash',  sql.NVarChar(sql.MAX))
+      loginReq.output('UserJson',      sql.NVarChar(sql.MAX))
+      loginReq.output('ErrorCode',     sql.NVarChar(50))
+      const { output: loginOut } = await loginReq.execute('dbo.sp_Login')
+
+      if (!loginOut.ErrorCode && loginOut.UserJson && loginOut.PasswordHash) {
+        const passwordOk = await bcrypt.compare(password, loginOut.PasswordHash as string)
+        if (passwordOk) {
+          userId      = loginOut.UserId as number
+          userJson    = JSON.parse(loginOut.UserJson as string) as Record<string, unknown>
+          skipPending = true
+        }
+      }
+    } catch (loginErr) {
+      console.warn('[invite/claim] Login attempt after activation failed:', loginErr)
+    }
+
+    if (!skipPending) {
+      // Fallback: submit an access request so the admin can approve manually
+      await sp_SubmitAccessRequest({ userId: activatedId, token }).catch(() => {})
+      userId   = activatedId
+      userJson = { email, roleId: 7, role: 'alumni', appPermissions: [], teams: [] }
+    }
+
+    // Issue JWT and return — redirect field tells the client where to go
+    const subStr      = String(userId)
+    const accessToken = await new SignJWT({ sub: subStr, userId, ...userJson })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuedAt()
+      .setExpirationTime(cfg.accessExpiry)
+      .sign(cfg.jwtSecret)
+
+    const refreshToken = await new SignJWT({ sub: subStr })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuedAt()
+      .setExpirationTime(cfg.refreshExpiry)
+      .sign(cfg.refreshSecret)
+
+    const claimResponse = NextResponse.json({
+      success:  true,
+      redirect: skipPending ? '/dashboard' : '/pending',
+      data:     { user: { userId, ...userJson }, accessToken },
+    })
+    claimResponse.cookies.set('access_token',  accessToken,  { ...cookieBase, maxAge: 15 * 60 })
+    claimResponse.cookies.set('refresh_token', refreshToken, { ...cookieBase, maxAge: 7 * 24 * 60 * 60 })
+    return claimResponse
   }
 
   // ── Submit access request ─────────────────────────────────────────────────

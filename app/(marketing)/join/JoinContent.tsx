@@ -2,14 +2,14 @@
 
 // JoinContent — client component for the /join self-signup flow.
 // Step 1: Enter invite code → validate → show team preview card.
-// Step 2: Choose login (existing account) or signup (new account).
-// Step 3: Submit → pending redirect.
+// Step 2: Choose login (existing account), signup (new account), or
+//         claim (admin pre-created account — just set a password).
+// Step 3: Submit → redirect to /pending or /dashboard.
 
 import { useState, type FormEvent } from 'react'
-import { useRouter } from 'next/navigation'
 
 type Step = 'code' | 'form' | 'submitting'
-type FormMode = 'signup' | 'login'
+type FormMode = 'signup' | 'login' | 'claim'
 
 interface TeamPreview {
   teamName: string
@@ -27,8 +27,6 @@ const inputClass = `
 const labelClass = 'block text-white/60 text-xs uppercase tracking-widest mb-2'
 
 export function JoinContent({ initialCode }: { initialCode: string }) {
-  const router = useRouter()
-
   const [step,      setStep]      = useState<Step>(initialCode ? 'code' : 'code')
   const [code,      setCode]      = useState(initialCode)
   const [preview,   setPreview]   = useState<TeamPreview | null>(null)
@@ -65,25 +63,27 @@ export function JoinContent({ initialCode }: { initialCode: string }) {
   }
 
   // ── Step 2: submit request ────────────────────────────────────────────────
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent, overrideMode?: FormMode) {
     e.preventDefault()
     setError('')
 
+    const effectiveMode = overrideMode ?? mode
+
     if (!email) { setError('Email is required.'); return }
     if (!password) { setError('Password is required.'); return }
-    if (mode === 'signup' && (!firstName || !lastName)) {
+    if (effectiveMode === 'signup' && (!firstName || !lastName)) {
       setError('First and last name are required.')
       return
     }
-    if (mode === 'signup' && password.length < 8) {
+    if ((effectiveMode === 'signup' || effectiveMode === 'claim') && password.length < 8) {
       setError('Password must be at least 8 characters.')
       return
     }
 
     setStep('submitting')
 
-    const body: Record<string, string> = { token: code.trim(), mode, email, password }
-    if (mode === 'signup') {
+    const body: Record<string, string> = { token: code.trim(), mode: effectiveMode, email, password }
+    if (effectiveMode === 'signup') {
       body.firstName = firstName
       body.lastName  = lastName
     }
@@ -98,6 +98,15 @@ export function JoinContent({ initialCode }: { initialCode: string }) {
       const data = await res.json()
 
       if (!res.ok) {
+        // 409 EMAIL_EXISTS during signup → this is an admin-pre-created account.
+        // Silently switch to claim mode so the user just sets a password.
+        if (res.status === 409 && effectiveMode === 'signup') {
+          setMode('claim')
+          setStep('form')
+          setError('')
+          return
+        }
+
         setError(data.error ?? 'Submission failed. Please try again.')
         setStep('form')
         return
@@ -108,8 +117,9 @@ export function JoinContent({ initialCode }: { initialCode: string }) {
         localStorage.setItem('cfb_user', JSON.stringify(data.data.user))
       }
 
-      // Full reload so AuthProvider re-mounts and picks up the new session
-      window.location.href = '/pending'
+      // Use redirect field from response — claim mode goes to /dashboard if
+      // the user already has team access, otherwise /pending.
+      window.location.href = data.redirect ?? '/pending'
     } catch {
       setError('Network error. Please try again.')
       setStep('form')
@@ -173,32 +183,50 @@ export function JoinContent({ initialCode }: { initialCode: string }) {
         </div>
       )}
 
+      {/* Claim mode banner */}
+      {mode === 'claim' && (
+        <div
+          style={{
+            padding:         '10px 14px',
+            borderRadius:    8,
+            fontSize:        13,
+            backgroundColor: 'rgba(207,196,147,0.10)',
+            color:           '#CFC493',
+            border:          '1px solid rgba(207,196,147,0.30)',
+          }}
+        >
+          Your account was pre-created by your program. Just set a password to activate it.
+        </div>
+      )}
+
       {error && <ErrorBanner message={error} />}
 
-      {/* Mode toggle */}
-      <div style={{ display: 'flex', gap: 8 }}>
-        {(['signup', 'login'] as const).map(m => (
-          <button
-            key={m}
-            type="button"
-            onClick={() => { setMode(m); setError('') }}
-            style={{
-              flex:            1,
-              padding:         '8px 0',
-              borderRadius:    6,
-              fontSize:        12,
-              fontWeight:      600,
-              cursor:          'pointer',
-              border:          '1px solid rgba(255,255,255,0.12)',
-              backgroundColor: mode === m ? 'rgba(207,196,147,0.15)' : 'transparent',
-              color:           mode === m ? '#CFC493' : 'rgba(255,255,255,0.4)',
-              transition:      'all 0.15s',
-            }}
-          >
-            {m === 'signup' ? 'New Account' : 'Existing Account'}
-          </button>
-        ))}
-      </div>
+      {/* Mode toggle — hidden in claim mode */}
+      {mode !== 'claim' && (
+        <div style={{ display: 'flex', gap: 8 }}>
+          {(['signup', 'login'] as const).map(m => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => { setMode(m); setError('') }}
+              style={{
+                flex:            1,
+                padding:         '8px 0',
+                borderRadius:    6,
+                fontSize:        12,
+                fontWeight:      600,
+                cursor:          'pointer',
+                border:          '1px solid rgba(255,255,255,0.12)',
+                backgroundColor: mode === m ? 'rgba(207,196,147,0.15)' : 'transparent',
+                color:           mode === m ? '#CFC493' : 'rgba(255,255,255,0.4)',
+                transition:      'all 0.15s',
+              }}
+            >
+              {m === 'signup' ? 'New Account' : 'Existing Account'}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Signup-only fields */}
       {mode === 'signup' && (
@@ -248,11 +276,11 @@ export function JoinContent({ initialCode }: { initialCode: string }) {
           value={password}
           onChange={e => setPassword(e.target.value)}
           placeholder="••••••••••"
-          autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+          autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
           disabled={loading}
           className={inputClass}
         />
-        {mode === 'signup' && (
+        {(mode === 'signup' || mode === 'claim') && (
           <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>
             Minimum 8 characters
           </p>
@@ -261,7 +289,11 @@ export function JoinContent({ initialCode }: { initialCode: string }) {
 
       <SubmitButton
         loading={loading}
-        label={mode === 'signup' ? 'Request Access' : 'Sign In & Request Access'}
+        label={
+          mode === 'claim'  ? 'Activate Account' :
+          mode === 'signup' ? 'Request Access' :
+                              'Sign In & Request Access'
+        }
         loadingLabel="Submitting…"
       />
 
