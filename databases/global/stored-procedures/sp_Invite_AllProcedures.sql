@@ -534,3 +534,46 @@ BEGIN
   WHERE  id = @RequestId;
 END
 GO
+
+-- ─── sp_ActivatePendingAccount ────────────────────────────────────────────────
+-- Called when an admin-invited user claims their account via /join.
+-- Only succeeds if password_hash = 'INVITE_PENDING' (set by sp_GetOrCreateUser).
+-- Sets the real password hash so the user can log in normally afterwards.
+-- Returns NOT_PENDING if the account is not in a claimable state.
+
+CREATE OR ALTER PROCEDURE dbo.sp_ActivatePendingAccount
+  @Email           NVARCHAR(255),
+  @NewPasswordHash NVARCHAR(MAX),
+  @UserId          BIGINT        OUTPUT,
+  @ErrorCode       NVARCHAR(50)  OUTPUT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SET @ErrorCode = NULL;
+  SET @UserId    = NULL;
+
+  SELECT @UserId = user_id
+  FROM   dbo.users
+  WHERE  email = @Email AND password_hash = 'INVITE_PENDING';
+
+  IF @UserId IS NULL
+  BEGIN
+    SET @ErrorCode = 'NOT_PENDING';
+    RETURN;
+  END
+
+  UPDATE dbo.users
+  SET    password_hash = @NewPasswordHash
+  WHERE  user_id = @UserId;
+
+  INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload, performed_at)
+  VALUES (
+    @UserId,
+    'account_activated',
+    'user',
+    CAST(@UserId AS NVARCHAR(20)),
+    (SELECT @Email AS email, 'invite_claim' AS via FOR JSON PATH, WITHOUT_ARRAY_WRAPPER),
+    SYSUTCDATETIME()
+  );
+END
+GO

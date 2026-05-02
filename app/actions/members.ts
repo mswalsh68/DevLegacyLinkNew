@@ -37,6 +37,14 @@ export interface GenerateInviteCodeInput {
   maxUses?:   number | null
 }
 
+export interface ResendInviteInput {
+  email:     string
+  firstName: string
+  teamId:    number
+  teamName?: string
+  role:      string
+}
+
 // ─── Actions ─────────────────────────────────────────────────────────────────
 
 /**
@@ -142,6 +150,57 @@ export async function generateInviteCode(
     return { success: true, inviteUrl, token }
   } catch (err) {
     console.error('[generateInviteCode]', err)
+    return { success: false, error: 'INTERNAL_ERROR' }
+  }
+}
+
+/**
+ * Resends an invite email to an existing member who hasn't claimed their account.
+ * Generates a fresh single-use invite code and sends a new invite email.
+ */
+export async function resendInvite(
+  input: ResendInviteInput,
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const session = await getServerSession()
+    if (!session) return { success: false, error: 'Unauthorized' }
+
+    const token = randomUUID()
+
+    const { inviteCodeId, errorCode } = await sp_CreateInviteCode({
+      teamId:    input.teamId,
+      role:      input.role,
+      token,
+      createdBy: session.userId,
+      expiresAt: null,
+      maxUses:   1,
+    })
+
+    if (errorCode || !inviteCodeId) {
+      const messages: Record<string, string> = {
+        TEAM_NOT_FOUND: 'Team not found.',
+        FORBIDDEN:      'You do not have access to this team.',
+      }
+      return { success: false, error: messages[errorCode ?? ''] ?? (errorCode ?? 'Failed to generate code') }
+    }
+
+    const baseUrl   = process.env.NEXT_PUBLIC_APP_URL ?? ''
+    const inviteUrl = `${baseUrl}/join?code=${token}`
+
+    await sendTransactionalEmail(
+      input.email,
+      `Your invite to ${input.teamName ?? 'your program'} — LegacyLink`,
+      buildInviteEmailHtml({
+        firstName: input.firstName,
+        teamName:  input.teamName ?? 'your program',
+        inviteUrl,
+        role:      input.role,
+      }),
+    )
+
+    return { success: true }
+  } catch (err) {
+    console.error('[resendInvite]', err)
     return { success: false, error: 'INTERNAL_ERROR' }
   }
 }
