@@ -137,7 +137,7 @@ BEGIN
 
   SELECT @TotalCount = COUNT(*)
   FROM dbo.vwRoster r
-  WHERE r.sport_id = @SportId
+  WHERE (@SportId IS NULL OR r.sport_id = @SportId)
     AND (@PositionId IS NULL OR r.position_id  = @PositionId)
     AND (@ClassYear  IS NULL OR r.class_year   = @ClassYear)
     AND (@Search IS NULL
@@ -161,7 +161,7 @@ BEGIN
     r.created_at    AS createdAt,
     r.updated_at    AS updatedAt
   FROM dbo.vwRoster r
-  WHERE r.sport_id = @SportId
+  WHERE (@SportId IS NULL OR r.sport_id = @SportId)
     AND (@PositionId IS NULL OR r.position_id  = @PositionId)
     AND (@ClassYear  IS NULL OR r.class_year   = @ClassYear)
     AND (@Search IS NULL
@@ -194,7 +194,7 @@ BEGIN
 
   SELECT @TotalCount = COUNT(*)
   FROM dbo.vwAlumniRoster a
-  WHERE a.sport_id = @SportId
+  WHERE (@SportId IS NULL OR a.sport_id = @SportId)
     AND (@PositionId IS NULL OR a.position_id = @PositionId)
     AND (@ClassYear  IS NULL OR a.class_year  = @ClassYear)
     AND (@Search IS NULL
@@ -218,7 +218,7 @@ BEGIN
     a.created_at    AS createdAt,
     a.updated_at    AS updatedAt
   FROM dbo.vwAlumniRoster a
-  WHERE a.sport_id = @SportId
+  WHERE (@SportId IS NULL OR a.sport_id = @SportId)
     AND (@PositionId IS NULL OR a.position_id = @PositionId)
     AND (@ClassYear  IS NULL OR a.class_year  = @ClassYear)
     AND (@Search IS NULL
