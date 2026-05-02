@@ -8,9 +8,9 @@ import { sendCampaignEmailsBackground } from '@/lib/email'
 const CAN_POST_ROLES = ['platform_owner', 'app_admin', 'head_coach', 'position_coach', 'alumni_director', 'alumni']
 
 function getRoleGroup(roleId: number): string {
-  if (roleId <= 2) return 'admin'   // platform_owner, app_admin
-  if (roleId <= 5) return 'staff'   // head_coach, position_coach, alumni_director
-  return 'player'                    // player, alumni
+  if (roleId <= 5) return 'admin'   // platform_owner, app_admin, head_coach, position_coach, alumni_director
+  if (roleId === 7) return 'alumni' // alumni
+  return 'player'                   // player (roleId 6)
 }
 
 export async function GET(req: Request) {
