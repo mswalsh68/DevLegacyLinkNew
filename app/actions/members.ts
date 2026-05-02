@@ -17,6 +17,7 @@
 import { randomUUID } from 'crypto'
 import { getServerSession } from '@/lib/auth'
 import { sp_CreateTeamMember, sp_CreateInviteCode } from '@/lib/db/procedures'
+import { sendTransactionalEmail, buildInviteEmailHtml } from '@/lib/resend'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,6 +26,7 @@ export interface CreateCoachStaffInput {
   firstName: string
   lastName:  string
   teamId:    number
+  teamName?: string   // for invite email
   role:      'app_admin' | 'head_coach' | 'position_coach' | 'alumni_director'
 }
 
@@ -63,6 +65,39 @@ export async function createCoachStaff(
       }
       return { success: false, error: messages[errorCode] ?? errorCode }
     }
+
+    // Send invite email (fire-and-forget)
+    void (async () => {
+      try {
+        const token = randomUUID()
+        const { inviteCodeId, errorCode: codeErr } = await sp_CreateInviteCode({
+          teamId:    input.teamId,
+          role:      input.role,
+          token,
+          createdBy: session.userId,
+          expiresAt: null,
+          maxUses:   1,
+        })
+        if (codeErr || !inviteCodeId) {
+          console.warn('[createCoachStaff] sp_CreateInviteCode error:', codeErr)
+          return
+        }
+        const baseUrl   = process.env.NEXT_PUBLIC_APP_URL ?? ''
+        const inviteUrl = `${baseUrl}/join?code=${token}`
+        await sendTransactionalEmail(
+          input.email,
+          `You've been added to ${input.teamName ?? 'your program'} — LegacyLink`,
+          buildInviteEmailHtml({
+            firstName: input.firstName,
+            teamName:  input.teamName ?? 'your program',
+            inviteUrl,
+            role:      input.role,
+          }),
+        )
+      } catch (err) {
+        console.error('[createCoachStaff] invite send failed:', err)
+      }
+    })()
 
     return { success: true, userId: userId ?? undefined }
   } catch (err) {
