@@ -12,6 +12,7 @@ export interface UserSession {
   preferredTeamId?: number // User's saved default team (INT, from user_team_preferences)
   appDb?: string          // Tenant App DB name from dbo.teams.app_db — embedded in JWT by sp_Login / sp_SwitchTeam
   tierId?: number         // 1=starter, 2=pro, 3=enterprise — from teams.tier_id via sp_Login / sp_SwitchTeam
+  replyToEmail?: string   // team_config.email_reply_to — embedded by sp_SwitchTeam, used as Reply-To on outbound email
   username: string
   email: string
   roleId: number          // dbo.roles.id (1 = super_admin, 2 = support_admin, 3 = client) — see migration 028

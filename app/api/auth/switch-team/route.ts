@@ -107,6 +107,7 @@ export async function POST(req: NextRequest) {
       ...restClaims,
       currentTeamId: teamId,
       tierId:        (teamData.tierId as number | undefined) ?? session.tierId,
+      replyToEmail:  (teamData.replyToEmail as string | undefined) ?? session.replyToEmail,
     })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()

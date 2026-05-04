@@ -505,7 +505,8 @@ BEGIN
       tc.academic_years_json AS academicYearsJson,
       tc.alumni_label        AS alumniLabel,
       tc.roster_label        AS rosterLabel,
-      tc.class_label         AS classLabel
+      tc.class_label         AS classLabel,
+      tc.email_reply_to      AS replyToEmail
     FROM dbo.teams t
     JOIN  dbo.tiers tr       ON tr.id = t.tier_id
     LEFT JOIN dbo.team_config tc ON tc.team_id = t.id

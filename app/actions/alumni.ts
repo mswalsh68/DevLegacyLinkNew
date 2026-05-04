@@ -38,12 +38,13 @@ import { sendTransactionalEmail, buildInviteEmailHtml } from '@/lib/resend'
 // ─── Invite helper ────────────────────────────────────────────────────────────
 
 async function sendInvite(params: {
-  email:     string
-  firstName: string
-  teamId:    number
-  teamName:  string
-  role:      string
-  createdBy: number
+  email:        string
+  firstName:    string
+  teamId:       number
+  teamName:     string
+  role:         string
+  createdBy:    number
+  replyToEmail?: string
 }): Promise<void> {
   try {
     const token = randomUUID()
@@ -65,6 +66,7 @@ async function sendInvite(params: {
       params.email,
       `You've been added to ${params.teamName} — LegacyLink`,
       buildInviteEmailHtml({ firstName: params.firstName, teamName: params.teamName, inviteUrl, role: params.role }),
+      { fromName: `${params.teamName} — LegacyLink`, replyTo: params.replyToEmail },
     )
   } catch (err) {
     console.error('[sendInvite/alumni] Failed:', err)
@@ -80,6 +82,7 @@ export interface AddAlumniInput {
   lastName:      string
   globalTeamId:  number
   teamName?:     string   // for invite email
+  replyToEmail?: string   // team_config.email_reply_to — Reply-To header on invite email
   programRoleId: number   // dbo.program_role.id (e.g. 7 = Alumni)
   sportId?:      number | null
   positionId?:   number | null
@@ -113,6 +116,7 @@ export interface BulkAddAlumniInput {
   appDb:         string
   globalTeamId:  number
   teamName?:     string
+  replyToEmail?: string
   programRoleId: number
   sportId?:      number | null
   adminUserId:   number
@@ -173,12 +177,13 @@ export async function addAlumniRecord(
 
       // 4. Send invite email (fire-and-forget)
       void sendInvite({
-        email:     input.email,
-        firstName: input.firstName,
-        teamId:    input.globalTeamId,
-        teamName:  input.teamName ?? 'your program',
-        role:      'alumni',
-        createdBy: input.adminUserId,
+        email:        input.email,
+        firstName:    input.firstName,
+        teamId:       input.globalTeamId,
+        teamName:     input.teamName ?? 'your program',
+        role:         'alumni',
+        createdBy:    input.adminUserId,
+        replyToEmail: input.replyToEmail,
       })
 
       return { success: true, userId, userSportId: newUserSportId ?? undefined }
@@ -301,12 +306,13 @@ export async function bulkAddAlumni(
           } else {
             successCount++
             void sendInvite({
-              email:     row.email!,
-              firstName: row.firstName,
-              teamId:    input.globalTeamId,
-              teamName:  input.teamName ?? 'your program',
-              role:      'alumni',
-              createdBy: input.adminUserId,
+              email:        row.email!,
+              firstName:    row.firstName,
+              teamId:       input.globalTeamId,
+              teamName:     input.teamName ?? 'your program',
+              role:         'alumni',
+              createdBy:    input.adminUserId,
+              replyToEmail: input.replyToEmail,
             })
           }
         } catch (err) {

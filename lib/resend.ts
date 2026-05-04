@@ -4,23 +4,31 @@
  * For campaign (bulk) emails use lib/email.ts instead.
  */
 export async function sendTransactionalEmail(
-  to:      string,
-  subject: string,
-  html:    string,
+  to:       string,
+  subject:  string,
+  html:     string,
+  options?: { fromName?: string; replyTo?: string },
 ): Promise<void> {
-  const apiKey   = process.env.RESEND_API_KEY
-  const fromAddr = process.env.CONTACT_FROM_EMAIL ?? 'noreply@legacylink.app'
+  const apiKey    = process.env.RESEND_API_KEY
+  const fromDomain = process.env.CONTACT_FROM_EMAIL ?? 'noreply@legacylinkhq.app'
 
   if (!apiKey) {
     console.warn('[resend] RESEND_API_KEY not set — skipping email to', to)
     return
   }
 
+  const fromLabel = options?.fromName
+    ? `"${options.fromName}" <${fromDomain}>`
+    : fromDomain
+
+  const body: Record<string, unknown> = { from: fromLabel, to, subject, html }
+  if (options?.replyTo) body.reply_to = options.replyTo
+
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method:  'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: fromAddr, to, subject, html }),
+      body: JSON.stringify(body),
     })
     if (!res.ok) {
       console.error('[resend] Non-OK response', res.status, await res.text())

@@ -59,6 +59,7 @@ export interface AddMembersWizardProps {
   onClose:              () => void
   teamId:               number
   teamName:             string
+  replyToEmail?:        string
   academicYears:        string[]
   userId:               number
   appDb:                string
@@ -199,7 +200,7 @@ function parseCSV(text: string): Record<string, string>[] {
 
 export function AddMembersWizard({
   isOpen, onClose,
-  teamId, teamName, academicYears, userId, appDb,
+  teamId, teamName, replyToEmail, academicYears, userId, appDb,
   creatorProgramRoleId,
   sports,
 }: AddMembersWizardProps) {
@@ -305,7 +306,7 @@ export function AddMembersWizard({
     if (memberType === 'player') {
       const res = await addPlayerToRoster({
         appDb, email, firstName, lastName,
-        globalTeamId:  teamId, teamName,
+        globalTeamId:  teamId, teamName, replyToEmail,
         programRoleId: 8,
         sportId:       selSportId,
         positionId,
@@ -322,7 +323,7 @@ export function AddMembersWizard({
     } else if (memberType === 'alumni') {
       const res = await addAlumniRecord({
         appDb, email, firstName, lastName,
-        globalTeamId:  teamId, teamName,
+        globalTeamId:  teamId, teamName, replyToEmail,
         programRoleId: 7,
         sportId:       selSportId,
         positionId,
@@ -373,7 +374,7 @@ export function AddMembersWizard({
       }))
       const res = await bulkAddPlayersToRoster({
         appDb, players,
-        globalTeamId:  teamId, teamName,
+        globalTeamId:  teamId, teamName, replyToEmail,
         programRoleId: 8,
         sportId:       selSportId,
         adminUserId:   userId,
@@ -396,7 +397,7 @@ export function AddMembersWizard({
       }))
       const res = await bulkAddAlumni({
         appDb, alumni,
-        globalTeamId:  teamId, teamName,
+        globalTeamId:  teamId, teamName, replyToEmail,
         programRoleId: 7,
         sportId:       selSportId,
         adminUserId:   userId,

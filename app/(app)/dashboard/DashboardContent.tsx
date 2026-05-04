@@ -371,6 +371,7 @@ export default function DashboardContent() {
           onClose={() => setWizardOpen(false)}
           teamId={user.currentTeamId}
           teamName={config.teamName}
+          replyToEmail={user.replyToEmail}
           academicYears={config.academicYears}
           userId={user.userId}
           appDb={user.appDb}

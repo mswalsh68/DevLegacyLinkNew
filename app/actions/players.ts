@@ -43,12 +43,13 @@ import { sendTransactionalEmail, buildInviteEmailHtml } from '@/lib/resend'
 // ─── Invite helper ────────────────────────────────────────────────────────────
 
 async function sendInvite(params: {
-  email:     string
-  firstName: string
-  teamId:    number
-  teamName:  string
-  role:      string
-  createdBy: number
+  email:        string
+  firstName:    string
+  teamId:       number
+  teamName:     string
+  role:         string
+  createdBy:    number
+  replyToEmail?: string
 }): Promise<void> {
   try {
     const token = randomUUID()
@@ -58,7 +59,7 @@ async function sendInvite(params: {
       token,
       createdBy: params.createdBy,
       expiresAt: null,
-      maxUses:   1,  // single-use — this is a personal invite
+      maxUses:   1,
     })
     if (errorCode || !inviteCodeId) {
       console.warn('[sendInvite] sp_CreateInviteCode error:', errorCode)
@@ -70,9 +71,9 @@ async function sendInvite(params: {
       params.email,
       `You've been added to ${params.teamName} — LegacyLink`,
       buildInviteEmailHtml({ firstName: params.firstName, teamName: params.teamName, inviteUrl, role: params.role }),
+      { fromName: `${params.teamName} — LegacyLink`, replyTo: params.replyToEmail },
     )
   } catch (err) {
-    // Non-fatal — roster row was created successfully
     console.error('[sendInvite] Failed:', err)
   }
 }
@@ -86,6 +87,7 @@ export interface AddPlayerInput {
   lastName:      string
   globalTeamId:  number   // for Global DB user registration
   teamName?:     string   // for invite email subject/body
+  replyToEmail?: string   // team_config.email_reply_to — Reply-To header on invite email
   programRoleId: number   // dbo.program_role.id (e.g. 8 = Player)
   sportId?:      number | null
   positionId?:   number | null
@@ -126,6 +128,7 @@ export interface BulkAddPlayersInput {
   appDb:         string
   globalTeamId:  number
   teamName?:     string
+  replyToEmail?: string
   programRoleId: number
   sportId?:      number | null
   adminUserId:   number
@@ -188,12 +191,13 @@ export async function addPlayerToRoster(
 
       // 4. Send invite email (fire-and-forget — roster row already committed)
       void sendInvite({
-        email:     input.email,
-        firstName: input.firstName,
-        teamId:    input.globalTeamId,
-        teamName:  input.teamName ?? 'your program',
-        role:      'player',
-        createdBy: input.adminUserId,
+        email:        input.email,
+        firstName:    input.firstName,
+        teamId:       input.globalTeamId,
+        teamName:     input.teamName ?? 'your program',
+        role:         'player',
+        createdBy:    input.adminUserId,
+        replyToEmail: input.replyToEmail,
       })
 
       return { success: true, userId, userSportId: newUserSportId ?? undefined }
@@ -371,12 +375,13 @@ export async function bulkAddPlayersToRoster(
             successCount++
             // Fire-and-forget invite per successfully added player
             void sendInvite({
-              email:     row.email!,
-              firstName: row.firstName,
-              teamId:    input.globalTeamId,
-              teamName:  input.teamName ?? 'your program',
-              role:      'player',
-              createdBy: input.adminUserId,
+              email:        row.email!,
+              firstName:    row.firstName,
+              teamId:       input.globalTeamId,
+              teamName:     input.teamName ?? 'your program',
+              role:         'player',
+              createdBy:    input.adminUserId,
+              replyToEmail: input.replyToEmail,
             })
           }
         } catch (err) {

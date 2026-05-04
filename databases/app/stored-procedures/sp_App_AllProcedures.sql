@@ -167,7 +167,7 @@ BEGIN
     AND (@Search IS NULL
          OR r.first_name    LIKE @SearchWild
          OR r.last_name     LIKE @SearchWild
-         OR CAST(ISNULL(r.jersey_number, -1) AS NVARCHAR) = @Search);
+         OR (r.jersey_number IS NOT NULL AND CAST(r.jersey_number AS NVARCHAR(10)) = @Search));
 
   SELECT
     r.userSportId   AS userSportId,
@@ -191,7 +191,7 @@ BEGIN
     AND (@Search IS NULL
          OR r.first_name    LIKE @SearchWild
          OR r.last_name     LIKE @SearchWild
-         OR CAST(ISNULL(r.jersey_number, -1) AS NVARCHAR) = @Search)
+         OR (r.jersey_number IS NOT NULL AND CAST(r.jersey_number AS NVARCHAR(10)) = @Search))
   ORDER BY r.last_name, r.first_name
   OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;
 END;
