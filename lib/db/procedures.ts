@@ -803,10 +803,12 @@ export async function sp_GetFeed(params: {
   roleGroup?:   string | null
 }): Promise<{ posts: FeedPostRow[]; totalCount: number }> {
   const { recordset, output } = await execFull('app', 'sp_GetFeed', (r) => {
-    r.input ('ViewerUserId', sql.Int, params.viewerUserId)
-    r.input ('MySport',      sql.Bit, params.mySport ? 1 : 0)
-    r.input ('Page',         sql.Int, params.page)
-    r.input ('PageSize',     sql.Int, params.pageSize)
+    r.input ('ViewerUserId', sql.Int,          params.viewerUserId)
+    r.input ('MySport',      sql.Bit,          params.mySport ? 1 : 0)
+    r.input ('Page',         sql.Int,          params.page)
+    r.input ('PageSize',     sql.Int,          params.pageSize)
+    r.input ('TierGroup',    sql.NVarChar(20), params.tierGroup ?? null)
+    r.input ('RoleGroup',    sql.NVarChar(20), params.roleGroup ?? null)
     r.output('TotalCount',   sql.Int)
   })
   return {
@@ -1085,6 +1087,22 @@ export async function sp_CreateTeamMember(params: {
 }
 
 // ─── Global DB — Invite Codes & Access Requests ───────────────────────────────
+
+export async function sp_ActivatePendingAccount(params: {
+  email:           string
+  newPasswordHash: string
+}): Promise<{ userId: number | null; errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_ActivatePendingAccount', (r) => {
+    r.input ('Email',           sql.NVarChar(255),     params.email)
+    r.input ('NewPasswordHash', sql.NVarChar(sql.MAX), params.newPasswordHash)
+    r.output('UserId',          sql.BigInt)
+    r.output('ErrorCode',       sql.NVarChar(50))
+  })
+  return {
+    userId:    (output.UserId    as number | null) ?? null,
+    errorCode: (output.ErrorCode as string | null) ?? null,
+  }
+}
 
 export async function sp_RegisterUserViaInvite(params: {
   email:        string

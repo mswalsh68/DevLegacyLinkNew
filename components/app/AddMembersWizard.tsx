@@ -316,6 +316,7 @@ export function AddMembersWizard({
         appDb,
         email, firstName, lastName,
         globalTeamId:    teamId,
+        teamName,
         programRoleId:   playerProgramRoleId,
         sportId:         selSportId,
         // positionId lookup not yet wired — pass null; update via edit after creation
@@ -338,6 +339,7 @@ export function AddMembersWizard({
         appDb,
         email, firstName, lastName,
         globalTeamId:  teamId,
+        teamName,
         programRoleId: alumniProgramRoleId,
         sportId:       selSportId,
         positionId:    null,
@@ -356,7 +358,7 @@ export function AddMembersWizard({
 
     } else if (memberType === 'coach') {
       const res = await createCoachStaff({
-        email, firstName, lastName, teamId, role: coachRole,
+        email, firstName, lastName, teamId, teamName, role: coachRole,
       })
       if (res.success) {
         setResult({
@@ -386,6 +388,7 @@ export function AddMembersWizard({
       const res = await bulkAddPlayersToRoster({
         appDb, players,
         globalTeamId:  teamId,
+        teamName,
         programRoleId: playerProgramRoleId,
         sportId:       selSportId,
         adminUserId:   userId,
@@ -408,6 +411,7 @@ export function AddMembersWizard({
       const res = await bulkAddAlumni({
         appDb, alumni,
         globalTeamId:  teamId,
+        teamName,
         programRoleId: alumniProgramRoleId,
         sportId:       selSportId,
         adminUserId:   userId,

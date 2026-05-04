@@ -3,12 +3,14 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useAuth } from '@/providers/AuthProvider'
+import { useTeamConfig } from '@/providers/ThemeProvider'
 import { Badge }        from '@/components/ui/Badge'
 import { Button }       from '@/components/ui/Button'
 import { AccessDenied } from '@/components/ui/AccessDenied'
 import { can, roleLabel, requiredRoleLabel } from '@/lib/permissions'
 import { playerStatusBadge } from '@/lib/statusMappings'
 import { theme } from '@/lib/theme'
+import { resendInvite } from '@/app/actions/members'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -153,14 +155,16 @@ export default function PlayerDetailPage() {
   const params = useParams()
   const userId = params.userId as string
   const { user, isLoading } = useAuth()
+  const teamConfig = useTeamConfig()
 
-  const [player,    setPlayer]    = useState<Player | null>(null)
-  const [loading,   setLoading]   = useState(true)
-  const [error,     setError]     = useState<string | null>(null)
-  const [isEditing, setIsEditing] = useState(false)
-  const [editState, setEditState] = useState<EditState | null>(null)
-  const [saving,    setSaving]    = useState(false)
-  const [saveError, setSaveError] = useState<string | null>(null)
+  const [player,       setPlayer]       = useState<Player | null>(null)
+  const [loading,      setLoading]      = useState(true)
+  const [error,        setError]        = useState<string | null>(null)
+  const [isEditing,    setIsEditing]    = useState(false)
+  const [editState,    setEditState]    = useState<EditState | null>(null)
+  const [saving,       setSaving]       = useState(false)
+  const [saveError,    setSaveError]    = useState<string | null>(null)
+  const [inviteStatus, setInviteStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
 
   const canEdit = can(user, 'roster:edit')
 
@@ -245,6 +249,23 @@ export default function PlayerDetailPage() {
     setEditState(null)
   }
 
+  async function handleResendInvite() {
+    if (!player?.email || !user?.currentTeamId) return
+    setInviteStatus('sending')
+    const result = await resendInvite({
+      email:     player.email,
+      firstName: player.firstName,
+      teamId:    user.currentTeamId,
+      teamName:  teamConfig.teamName,
+      role:      'player',
+    })
+    setInviteStatus(result.success ? 'sent' : 'error')
+    if (result.success) {
+      // Reset back to idle after 3 seconds
+      setTimeout(() => setInviteStatus('idle'), 3000)
+    }
+  }
+
   if (isLoading) return null
   if (!can(user, 'roster:view')) {
     return <AccessDenied currentRole={roleLabel(user?.role)} requiredRole={requiredRoleLabel('roster:view')} />
@@ -300,6 +321,18 @@ export default function PlayerDetailPage() {
             </>
           ) : (
             <>
+              {canEdit && player?.email && (
+                <Button
+                  label={
+                    inviteStatus === 'sending' ? 'Sending…' :
+                    inviteStatus === 'sent'    ? '✓ Invite Sent' :
+                    inviteStatus === 'error'   ? 'Error — Retry' :
+                                                'Resend Invite'
+                  }
+                  variant="outline"
+                  onClick={handleResendInvite}
+                />
+              )}
               {canEdit && <Button label="Edit" variant="outline" onClick={handleEdit} />}
               <Button label="← Back to Roster" variant="outline" onClick={() => router.push('/roster')} />
             </>

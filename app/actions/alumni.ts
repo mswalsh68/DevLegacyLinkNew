@@ -24,14 +24,53 @@
 //   bulkAddAlumni:
 //     Steps 1–3 per row, errors collected.
 
+import { randomUUID } from 'crypto'
 import {
   sp_GetOrCreateUser,
   sp_UpsertUser,
   sp_AddUserRole,
   sp_UpdateUserRole,
   sp_LogInteraction,
+  sp_CreateInviteCode,
 } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
+import { sendTransactionalEmail, buildInviteEmailHtml } from '@/lib/resend'
+
+// ─── Invite helper ────────────────────────────────────────────────────────────
+
+async function sendInvite(params: {
+  email:     string
+  firstName: string
+  teamId:    number
+  teamName:  string
+  role:      string
+  createdBy: number
+}): Promise<void> {
+  try {
+    const token = randomUUID()
+    const { inviteCodeId, errorCode } = await sp_CreateInviteCode({
+      teamId:    params.teamId,
+      role:      params.role,
+      token,
+      createdBy: params.createdBy,
+      expiresAt: null,
+      maxUses:   1,
+    })
+    if (errorCode || !inviteCodeId) {
+      console.warn('[sendInvite/alumni] sp_CreateInviteCode error:', errorCode)
+      return
+    }
+    const baseUrl   = process.env.NEXT_PUBLIC_APP_URL ?? ''
+    const inviteUrl = `${baseUrl}/join?code=${token}`
+    await sendTransactionalEmail(
+      params.email,
+      `You've been added to ${params.teamName} — LegacyLink`,
+      buildInviteEmailHtml({ firstName: params.firstName, teamName: params.teamName, inviteUrl, role: params.role }),
+    )
+  } catch (err) {
+    console.error('[sendInvite/alumni] Failed:', err)
+  }
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -41,6 +80,7 @@ export interface AddAlumniInput {
   firstName:     string
   lastName:      string
   globalTeamId:  number
+  teamName?:     string   // for invite email
   programRoleId: number   // dbo.program_role.id (e.g. "Alumni" role)
   sportId?:      number | null
   positionId?:   number | null
@@ -72,6 +112,7 @@ export interface LogInteractionInput {
 export interface BulkAddAlumniInput {
   appDb:         string
   globalTeamId:  number
+  teamName?:     string
   programRoleId: number
   sportId?:      number | null
   adminUserId:   number
@@ -130,6 +171,16 @@ export async function addAlumniRecord(
       if (errorCode) {
         return { success: false, error: errorCode }
       }
+
+      // 4. Send invite email (fire-and-forget)
+      void sendInvite({
+        email:     input.email,
+        firstName: input.firstName,
+        teamId:    input.globalTeamId,
+        teamName:  input.teamName ?? 'your program',
+        role:      'alumni',
+        createdBy: input.adminUserId,
+      })
 
       return { success: true, userId, userRoleId: newUserRoleId ?? undefined }
     } catch (err) {
@@ -251,6 +302,14 @@ export async function bulkAddAlumni(
             skippedCount++
           } else {
             successCount++
+            void sendInvite({
+              email:     row.email!,
+              firstName: row.firstName,
+              teamId:    input.globalTeamId,
+              teamName:  input.teamName ?? 'your program',
+              role:      'alumni',
+              createdBy: input.adminUserId,
+            })
           }
         } catch (err) {
           errors.push({ index: i, reason: 'INTERNAL_ERROR' })

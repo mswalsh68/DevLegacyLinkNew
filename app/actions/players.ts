@@ -27,14 +27,54 @@
 //   bulkAddPlayersToRoster:
 //     Steps 1–3 per row, errors collected per row.
 
+import { randomUUID } from 'crypto'
 import {
   sp_GetOrCreateUser,
   sp_UpsertUser,
   sp_AddUserRole,
   sp_UpdateUserRole,
   sp_TransferUserRole,
+  sp_CreateInviteCode,
 } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
+import { sendTransactionalEmail, buildInviteEmailHtml } from '@/lib/resend'
+
+// ─── Invite helper ────────────────────────────────────────────────────────────
+
+async function sendInvite(params: {
+  email:     string
+  firstName: string
+  teamId:    number
+  teamName:  string
+  role:      string
+  createdBy: number
+}): Promise<void> {
+  try {
+    const token = randomUUID()
+    const { inviteCodeId, errorCode } = await sp_CreateInviteCode({
+      teamId:    params.teamId,
+      role:      params.role,
+      token,
+      createdBy: params.createdBy,
+      expiresAt: null,
+      maxUses:   1,  // single-use — this is a personal invite
+    })
+    if (errorCode || !inviteCodeId) {
+      console.warn('[sendInvite] sp_CreateInviteCode error:', errorCode)
+      return
+    }
+    const baseUrl   = process.env.NEXT_PUBLIC_APP_URL ?? ''
+    const inviteUrl = `${baseUrl}/join?code=${token}`
+    await sendTransactionalEmail(
+      params.email,
+      `You've been added to ${params.teamName} — LegacyLink`,
+      buildInviteEmailHtml({ firstName: params.firstName, teamName: params.teamName, inviteUrl, role: params.role }),
+    )
+  } catch (err) {
+    // Non-fatal — roster row was created successfully
+    console.error('[sendInvite] Failed:', err)
+  }
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,6 +84,7 @@ export interface AddPlayerInput {
   firstName:     string
   lastName:      string
   globalTeamId:  number   // for Global DB user registration
+  teamName?:     string   // for invite email subject/body
   programRoleId: number   // dbo.program_role.id (e.g. "Player" role)
   sportId?:      number | null
   positionId?:   number | null
@@ -81,6 +122,7 @@ export interface RemovePlayerInput {
 export interface BulkAddPlayersInput {
   appDb:         string
   globalTeamId:  number
+  teamName?:     string
   programRoleId: number
   sportId?:      number | null
   adminUserId:   number
@@ -141,6 +183,16 @@ export async function addPlayerToRoster(
       if (errorCode) {
         return { success: false, error: errorCode }
       }
+
+      // 4. Send invite email (fire-and-forget — roster row already committed)
+      void sendInvite({
+        email:     input.email,
+        firstName: input.firstName,
+        teamId:    input.globalTeamId,
+        teamName:  input.teamName ?? 'your program',
+        role:      'player',
+        createdBy: input.adminUserId,
+      })
 
       return { success: true, userId, userRoleId: newUserRoleId ?? undefined }
     } catch (err) {
@@ -315,6 +367,15 @@ export async function bulkAddPlayersToRoster(
             skippedCount++
           } else {
             successCount++
+            // Fire-and-forget invite per successfully added player
+            void sendInvite({
+              email:     row.email!,
+              firstName: row.firstName,
+              teamId:    input.globalTeamId,
+              teamName:  input.teamName ?? 'your program',
+              role:      'player',
+              createdBy: input.adminUserId,
+            })
           }
         } catch (err) {
           errors.push({ index: i, reason: 'INTERNAL_ERROR' })

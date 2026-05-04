@@ -22,29 +22,7 @@ import {
   sp_ReviewAccessRequest,
   sp_SendRequestReminder,
 } from '@/lib/db/procedures'
-
-// ─── Email helper (Resend — matches existing /api/contact pattern) ────────────
-
-async function sendEmail(to: string, subject: string, html: string) {
-  const apiKey   = process.env.RESEND_API_KEY
-  const fromAddr = process.env.CONTACT_FROM_EMAIL ?? 'noreply@legacylink.app'
-
-  if (!apiKey) {
-    console.warn('[invite/actions] RESEND_API_KEY not set — skipping email to', to)
-    return
-  }
-
-  try {
-    await fetch('https://api.resend.com/emails', {
-      method:  'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: fromAddr, to, subject, html }),
-    })
-  } catch (err) {
-    console.error('[invite/actions] Email send failed:', err)
-    // Non-fatal — log and continue
-  }
-}
+import { sendTransactionalEmail as sendEmail } from '@/lib/resend'
 
 // ─── Actions ─────────────────────────────────────────────────────────────────
 

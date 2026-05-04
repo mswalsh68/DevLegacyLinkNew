@@ -34,12 +34,19 @@ IF NOT EXISTS (
   SELECT 1 FROM sys.columns
   WHERE object_id = OBJECT_ID('dbo.feed_posts') AND name = 'is_deleted'
 )
-BEGIN
-  ALTER TABLE dbo.feed_posts
-    ADD is_deleted BIT       NOT NULL DEFAULT 0,
-        deleted_at DATETIME2 NULL,
-        updated_at DATETIME2 NULL;
-END;
+  ALTER TABLE dbo.feed_posts ADD is_deleted BIT NOT NULL DEFAULT 0;
+
+IF NOT EXISTS (
+  SELECT 1 FROM sys.columns
+  WHERE object_id = OBJECT_ID('dbo.feed_posts') AND name = 'deleted_at'
+)
+  ALTER TABLE dbo.feed_posts ADD deleted_at DATETIME2 NULL;
+
+IF NOT EXISTS (
+  SELECT 1 FROM sys.columns
+  WHERE object_id = OBJECT_ID('dbo.feed_posts') AND name = 'updated_at'
+)
+  ALTER TABLE dbo.feed_posts ADD updated_at DATETIME2 NULL;
 GO
 
 -- ── 3. Audience data migration ────────────────────────────────

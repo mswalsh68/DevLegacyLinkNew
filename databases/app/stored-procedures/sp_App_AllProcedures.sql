@@ -137,7 +137,7 @@ BEGIN
 
   SELECT @TotalCount = COUNT(*)
   FROM dbo.vwRoster r
-  WHERE r.sport_id = @SportId
+  WHERE (@SportId IS NULL OR r.sport_id = @SportId)
     AND (@PositionId IS NULL OR r.position_id  = @PositionId)
     AND (@ClassYear  IS NULL OR r.class_year   = @ClassYear)
     AND (@Search IS NULL
@@ -161,7 +161,7 @@ BEGIN
     r.created_at    AS createdAt,
     r.updated_at    AS updatedAt
   FROM dbo.vwRoster r
-  WHERE r.sport_id = @SportId
+  WHERE (@SportId IS NULL OR r.sport_id = @SportId)
     AND (@PositionId IS NULL OR r.position_id  = @PositionId)
     AND (@ClassYear  IS NULL OR r.class_year   = @ClassYear)
     AND (@Search IS NULL
@@ -194,7 +194,7 @@ BEGIN
 
   SELECT @TotalCount = COUNT(*)
   FROM dbo.vwAlumniRoster a
-  WHERE a.sport_id = @SportId
+  WHERE (@SportId IS NULL OR a.sport_id = @SportId)
     AND (@PositionId IS NULL OR a.position_id = @PositionId)
     AND (@ClassYear  IS NULL OR a.class_year  = @ClassYear)
     AND (@Search IS NULL
@@ -218,7 +218,7 @@ BEGIN
     a.created_at    AS createdAt,
     a.updated_at    AS updatedAt
   FROM dbo.vwAlumniRoster a
-  WHERE a.sport_id = @SportId
+  WHERE (@SportId IS NULL OR a.sport_id = @SportId)
     AND (@PositionId IS NULL OR a.position_id = @PositionId)
     AND (@ClassYear  IS NULL OR a.class_year  = @ClassYear)
     AND (@Search IS NULL
@@ -1202,10 +1202,12 @@ GO
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetFeed
   @ViewerUserId INT,
-  @MySport      BIT  = 0,
-  @Page         INT  = 1,
-  @PageSize     INT  = 20,
-  @TotalCount   INT  OUTPUT
+  @MySport      BIT          = 0,
+  @Page         INT          = 1,
+  @PageSize     INT          = 20,
+  @TierGroup    NVARCHAR(20) = NULL,
+  @RoleGroup    NVARCHAR(20) = NULL,
+  @TotalCount   INT          OUTPUT
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -1235,8 +1237,8 @@ BEGIN
       AND (
         fp.is_welcome_post = 0
         OR (
-          (fp.tier_group  IS NULL OR fp.tier_group  = @TierGroup)
-          AND (fp.role_group IS NULL OR fp.role_group = @RoleGroup)
+          (@TierGroup IS NULL OR fp.tier_group  IS NULL OR fp.tier_group  = @TierGroup)
+          AND (@RoleGroup IS NULL OR fp.role_group IS NULL OR fp.role_group = @RoleGroup)
         )
       )
   )
@@ -1263,8 +1265,8 @@ BEGIN
       AND (
         fp.is_welcome_post = 0
         OR (
-          (fp.tier_group  IS NULL OR fp.tier_group  = @TierGroup)
-          AND (fp.role_group IS NULL OR fp.role_group = @RoleGroup)
+          (@TierGroup IS NULL OR fp.tier_group  IS NULL OR fp.tier_group  = @TierGroup)
+          AND (@RoleGroup IS NULL OR fp.role_group IS NULL OR fp.role_group = @RoleGroup)
         )
       )
   )
