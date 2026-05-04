@@ -1,14 +1,22 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from '@/lib/auth'
+import { getServerSession, isGlobalAdmin } from '@/lib/auth'
 import { sp_GetUserProgramRole } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 
 // GET /api/me/role
 // Returns the most-privileged program role for the current user in their active team.
-// Used by the Add Members wizard to gate what the creator can do.
+// Global admins (super_admin / support_admin) have no users_roles record — they
+// receive programRoleId=1 (Athletic Director) so they get full wizard access.
 export async function GET() {
   const session = await getServerSession()
   if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+
+  if (isGlobalAdmin(session)) {
+    return NextResponse.json({
+      success: true,
+      data: { programRoleId: 1, roleName: 'athletic_director', displayName: 'Athletic Director' },
+    })
+  }
 
   if (!session.appDb) {
     return NextResponse.json({ success: false, error: 'App DB not configured.' }, { status: 503 })
