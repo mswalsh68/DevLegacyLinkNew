@@ -2,51 +2,44 @@
 // Define which roles can access each named feature, then call can() in page components.
 // Server pages use getServerSession(); client pages use useAuth().
 //
-// One role per user. The role defines what the user can do.
-// Sport scope (head_coach / position_coach see only their sport's records) is
-// enforced by the App DB stored procedures via dbo.users_sports — not here.
-// These checks only gate route/feature access (can they reach the page at all).
+// Global roles (migration 028):
+//   super_admin   — internal, full access
+//   support_admin — internal, support access
+//   client        — external; program-level category stored in App DB users_roles.program_role_id
+//
+// NOTE: client-role feature permissions are not yet spec'd.
+// They will be defined once the program_role permission model is designed.
 
 import type { UserSession } from '@/types'
 
 // ─── Role groups ──────────────────────────────────────────────────────────────
 
-/** Platform-level — unrestricted across all teams. */
-const PLATFORM      = ['platform_owner'] as const
+/** Internal — unrestricted across all teams. */
+const SUPER_ADMIN    = ['super_admin'] as const
 
-/** Full client access — platform owners plus team administrators. */
-const ADMINS        = [...PLATFORM, 'app_admin'] as const
-
-/** Coaching staff — admins plus head coaches. */
-const HEAD_COACHES  = [...ADMINS, 'head_coach'] as const
-
-/** All staff with any roster visibility. */
-const ALL_STAFF     = [...HEAD_COACHES, 'position_coach', 'alumni_director'] as const
-
-/** Players — their own profile and player feed/messaging. */
-const PLAYERS       = ['player'] as const
-
-/** Alumni — their own profile and alumni feed/messaging. */
-const ALUMNI_ROLE   = ['alumni'] as const
+/** Internal — super admin plus support staff. */
+const INTERNAL       = [...SUPER_ADMIN, 'support_admin'] as const
 
 // ─── Feature map ──────────────────────────────────────────────────────────────
 //
-// Access matrix summary:
+// Internal roles have full access to all features.
+// Client permissions will be added here once the program_role permission model is spec'd.
 //
-//   Feature             platform  app_admin  head_coach  position_coach  alumni_director  player  alumni
-//   roster:view         ✓         ✓           ✓ (sport)   ✓ (sport/curr)  ✓                –       –
-//   roster:edit         ✓         ✓           ✓ (sport)   ✓ (sport/curr)  –                –       –
-//   roster:transfer     ✓         ✓           ✓           –               ✓                –       –
-//   alumni:view         ✓         ✓           ✓ (sport)   –               ✓                –       –
-//   alumni:edit         ✓         ✓           ✓ (sport)   –               ✓                –       –
-//   message:players     ✓         ✓           ✓           ✓ (sport/curr)  –                ✓       –
-//   message:alumni      ✓         ✓           ✓           –               ✓                –       ✓
-//   feed:players        ✓         ✓           ✓           ✓               ✓                ✓       –
-//   feed:alumni         ✓         ✓           ✓           –               ✓                –       ✓
-//   settings:view       ✓         ✓           –           –               –                –       –
-//   settings:requests   ✓         ✓           –           –               –                –       –
-//
-// ✓ (sport) = access is granted here; row-level sport filtering is enforced by the SP.
+//   Feature             super_admin  support_admin  client
+//   roster:view         ✓            ✓              TBD
+//   roster:edit         ✓            ✓              TBD
+//   roster:transfer     ✓            ✓              TBD
+//   alumni:view         ✓            ✓              TBD
+//   alumni:edit         ✓            ✓              TBD
+//   message:players     ✓            ✓              TBD
+//   message:alumni      ✓            ✓              TBD
+//   feed:players        ✓            ✓              TBD
+//   feed:alumni         ✓            ✓              TBD
+//   feed:post           ✓            ✓              TBD
+//   feed:delete_any     ✓            ✓              TBD
+//   feed:pin            ✓            ✓              TBD
+//   settings:view       ✓            ✓              TBD
+//   settings:requests   ✓            ✓              TBD
 
 type Feature =
   | 'roster:view'
@@ -65,21 +58,20 @@ type Feature =
   | 'settings:requests'
 
 const FEATURE_ROLES: Record<Feature, readonly string[]> = {
-  'roster:view':        [...ALL_STAFF],
-  'roster:edit':        [...HEAD_COACHES, 'position_coach'],
-  'roster:transfer':    [...HEAD_COACHES, 'alumni_director'],
-  'alumni:view':        [...HEAD_COACHES, 'alumni_director'],
-  'alumni:edit':        [...HEAD_COACHES, 'alumni_director'],
-  'message:players':    [...HEAD_COACHES, 'position_coach', ...PLAYERS],
-  'message:alumni':     [...HEAD_COACHES, 'alumni_director', ...ALUMNI_ROLE],
-  'feed:players':       [...ALL_STAFF, ...PLAYERS],
-  'feed:alumni':        [...HEAD_COACHES, 'alumni_director', ...ALUMNI_ROLE],
-  // feed:post — tier check for alumni is enforced at API level, not here
-  'feed:post':          [...ALL_STAFF, ...ALUMNI_ROLE],
-  'feed:delete_any':    [...ADMINS],
-  'feed:pin':           [...ADMINS],
-  'settings:view':      [...ADMINS],
-  'settings:requests':  [...ADMINS],
+  'roster:view':        [...INTERNAL],
+  'roster:edit':        [...INTERNAL],
+  'roster:transfer':    [...INTERNAL],
+  'alumni:view':        [...INTERNAL],
+  'alumni:edit':        [...INTERNAL],
+  'message:players':    [...INTERNAL],
+  'message:alumni':     [...INTERNAL],
+  'feed:players':       [...INTERNAL],
+  'feed:alumni':        [...INTERNAL],
+  'feed:post':          [...INTERNAL],
+  'feed:delete_any':    [...INTERNAL],
+  'feed:pin':           [...INTERNAL],
+  'settings:view':      [...INTERNAL],
+  'settings:requests':  [...INTERNAL],
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -102,47 +94,16 @@ export function can(
  */
 export function roleLabel(role: string | undefined): string {
   switch (role) {
-    case 'platform_owner':  return 'Platform Owner'
-    case 'app_admin':       return 'App Admin'
-    case 'head_coach':      return 'Head Coach'
-    case 'position_coach':  return 'Position Coach'
-    case 'alumni_director': return 'Alumni Director'
-    case 'player':          return 'Player'
-    case 'alumni':          return 'Alumni'
-    // Legacy aliases (kept until SP migration is complete)
-    case 'global_admin':    return 'Global Admin'
-    case 'coach_staff':     return 'Coach / Staff'
-    case 'readonly':
-    case 'read_only':       return 'Read Only'
-    default:                return role ?? 'Unknown'
+    case 'super_admin':    return 'Super Admin'
+    case 'support_admin':  return 'Support Admin'
+    case 'client':         return 'Client'
+    default:               return role ?? 'Unknown'
   }
 }
 
 /**
  * Minimum role required to access a feature — shown in the AccessDenied message.
  */
-export function requiredRoleLabel(feature: Feature): string {
-  switch (feature) {
-    case 'settings:view':
-    case 'settings:requests':
-      return 'App Admin or higher'
-    case 'roster:transfer':
-    case 'alumni:view':
-    case 'alumni:edit':
-      return 'Head Coach or higher'
-    case 'roster:edit':
-      return 'Position Coach or higher'
-    case 'roster:view':
-      return 'Coach or Alumni Director'
-    case 'message:players':
-      return 'Coach or Player'
-    case 'message:alumni':
-      return 'Head Coach, Alumni Director, or Alumni'
-    case 'feed:players':
-      return 'Staff or Player'
-    case 'feed:alumni':
-      return 'Head Coach, Alumni Director, or Alumni'
-    default:
-      return 'a higher permission level'
-  }
+export function requiredRoleLabel(_feature: Feature): string {
+  return 'Support Admin or higher'
 }

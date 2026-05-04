@@ -14,8 +14,8 @@ export interface UserSession {
   tierId?: number         // 1=starter, 2=pro, 3=enterprise — from teams.tier_id via sp_Login / sp_SwitchTeam
   username: string
   email: string
-  roleId: number          // dbo.roles.id (1 = platform_owner … 7 = alumni) — source of truth since migration 018
-  role: UserRole          // dbo.roles.role_name — human-readable alias, used by permissions.ts can()
+  roleId: number          // dbo.roles.id (1 = super_admin, 2 = support_admin, 3 = client) — see migration 028
+  role: UserRole          // dbo.roles.role_name — used by permissions.ts can()
   accountClaimed: boolean // true after first login; gates who may edit the user record
   apps: string[]
   exp: number
