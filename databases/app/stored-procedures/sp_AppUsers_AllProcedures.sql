@@ -1,29 +1,34 @@
 -- ============================================================
 -- APP DB — USER SYNC STORED PROCEDURES
 -- Run this file on: LegacyLinkApp (and every tenant App DB)
--- Requires: 008_schema_refactor.sql to have run
+-- Requires: 014_schema_consolidation.sql to have run
 -- ============================================================
 -- Procedures:
 --   sp_UpsertAppUser       — sync global user record into App DB dbo.users
 --   sp_UpdateLastTeamLogin — stamp last_team_login on successful app login
 --   sp_GetProgramRoles     — returns program_role lookup for dropdowns
---   sp_SetProgramRole      — upserts a users_roles record for a user
---                            (program_role_id is now on users_roles, not users)
+--   sp_SetProgramRole      — updates program_role_id directly on dbo.users
+--   sp_GetUserProgramRole  — returns a user's current program role
+-- ============================================================
+-- NOTE: program_role_id now lives on dbo.users (1-to-1).
+--       Role assignment goes through sp_SetProgramRole or sp_AddUserRole.
 -- ============================================================
 
 -- ============================================================
 -- sp_UpsertAppUser
 -- Called on team switch when global data has changed.
--- Creates the row if the user has never logged into this team before.
--- NOTE: program_role_id was removed from dbo.users in migration 008.
---       Role assignment goes through sp_SetProgramRole → users_roles.
+-- Creates the row if the user has never logged into this team.
+-- program_role_id defaults to 8 (player) on first insert;
+-- it should be set via sp_AddUserRole / sp_SetProgramRole after.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_UpsertAppUser
-  @UserId       INT,            -- global user_id (INT)
-  @Email        NVARCHAR(255),
-  @FirstName    NVARCHAR(100),
-  @LastName     NVARCHAR(100),
-  @PlatformRole NVARCHAR(50)    -- global dbo.roles.role_name
+  @UserId        INT,
+  @Email         NVARCHAR(255),
+  @FirstName     NVARCHAR(100),
+  @LastName      NVARCHAR(100),
+  @PlatformRole  NVARCHAR(50),       -- global dbo.roles.role_name
+  @GlobalRoleId  INT          = 3,   -- 1=super_admin 2=support_admin 3=client
+  @ProgramRoleId INT          = NULL -- override default if known at sync time
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -35,13 +40,18 @@ BEGIN
       first_name    = @FirstName,
       last_name     = @LastName,
       platform_role = @PlatformRole,
+      global_role_id= @GlobalRoleId,
       synced_at     = SYSUTCDATETIME()
     WHERE user_id = @UserId;
   END
   ELSE
   BEGIN
-    INSERT INTO dbo.users (user_id, email, first_name, last_name, platform_role)
-    VALUES (@UserId, @Email, @FirstName, @LastName, @PlatformRole);
+    INSERT INTO dbo.users (user_id, email, first_name, last_name, platform_role, global_role_id, program_role_id)
+    VALUES (
+      @UserId, @Email, @FirstName, @LastName, @PlatformRole,
+      @GlobalRoleId,
+      ISNULL(@ProgramRoleId, 8)   -- default to player if not specified
+    );
   END
 END;
 GO
@@ -52,7 +62,7 @@ GO
 -- in this App DB. Called after a successful team-switch / login.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_UpdateLastTeamLogin
-  @UserId INT     -- global user_id INT
+  @UserId INT
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -81,18 +91,13 @@ GO
 
 -- ============================================================
 -- sp_SetProgramRole
--- Upserts a users_roles record for a user within this App DB.
--- Called by admins from the member management UI.
+-- Directly sets a user's program_role_id on dbo.users.
+-- Used by admins from the member management UI.
 -- Roles are program-local — never synced back to global.
---
--- @Status: 'current_player' | 'alumni' | 'removed'
--- @SportId: NULL means the role applies to any/all sports
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_SetProgramRole
   @UserId        INT,
   @ProgramRoleId INT,
-  @SportId       INT           = NULL,
-  @Status        NVARCHAR(20)  = 'current_player',
   @ErrorCode     NVARCHAR(50)  OUTPUT
 AS
 BEGIN
@@ -111,45 +116,15 @@ BEGIN
     RETURN;
   END
 
-  IF @SportId IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.sports WHERE id = @SportId AND is_active = 1)
-  BEGIN
-    SET @ErrorCode = 'INVALID_SPORT';
-    RETURN;
-  END
-
-  IF @Status NOT IN ('current_player', 'alumni', 'removed')
-  BEGIN
-    SET @ErrorCode = 'INVALID_STATUS';
-    RETURN;
-  END
-
-  -- Upsert into users_roles
-  IF EXISTS (
-    SELECT 1 FROM dbo.users_roles
-    WHERE user_id        = @UserId
-      AND program_role_id= @ProgramRoleId
-      AND ((@SportId IS NULL AND sport_id IS NULL) OR sport_id = @SportId)
-  )
-  BEGIN
-    UPDATE dbo.users_roles SET
-      status     = @Status,
-      updated_at = SYSUTCDATETIME()
-    WHERE user_id         = @UserId
-      AND program_role_id = @ProgramRoleId
-      AND ((@SportId IS NULL AND sport_id IS NULL) OR sport_id = @SportId);
-  END
-  ELSE
-  BEGIN
-    INSERT INTO dbo.users_roles (user_id, program_role_id, sport_id, status)
-    VALUES (@UserId, @ProgramRoleId, @SportId, @Status);
-  END
+  UPDATE dbo.users
+  SET    program_role_id = @ProgramRoleId
+  WHERE  user_id = @UserId;
 END;
 GO
 
 -- ============================================================
 -- sp_GetUserProgramRole
--- Returns the most-privileged (lowest sort_order) program role
--- for a user across all their active users_roles records.
+-- Returns the user's current program role.
 -- Used by the Add Members wizard to determine what the creator
 -- is allowed to do (player=blocked, alumni=invite-only, staff=full).
 -- ============================================================
@@ -159,14 +134,13 @@ AS
 BEGIN
   SET NOCOUNT ON;
 
-  SELECT TOP 1
-    ur.program_role_id  AS programRoleId,
+  SELECT
+    u.program_role_id   AS programRoleId,
     pr.role_name        AS roleName,
-    pr.display_name     AS displayName
-  FROM   dbo.users_roles ur
-  JOIN   dbo.program_role pr ON pr.id = ur.program_role_id AND pr.is_active = 1
-  WHERE  ur.user_id = @UserId
-    AND  ur.status  <> 'removed'
-  ORDER  BY pr.sort_order ASC;
+    pr.display_name     AS displayName,
+    u.global_role_id    AS globalRoleId
+  FROM   dbo.users u
+  JOIN   dbo.program_role pr ON pr.id = u.program_role_id
+  WHERE  u.user_id = @UserId;
 END;
 GO

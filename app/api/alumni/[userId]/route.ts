@@ -4,7 +4,8 @@ import { sp_GetMemberDetails, sp_UpdateUserRole } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 
 // ─── GET /api/alumni/[userId] ─────────────────────────────────────────────────
-// Returns the user's alumni role records + interaction history.
+// Returns the user's profile, sport membership rows, and interaction history.
+// sportRows: one entry per users_sports row (user may have multiple sports).
 
 export async function GET(
   _req: Request,
@@ -19,21 +20,23 @@ export async function GET(
 
   return appDbContext.run(session.appDb, async () => {
     try {
-      const { roles, interactions, errorCode } = await sp_GetMemberDetails({ userId: uid })
+      const { sportRows, interactions, errorCode } = await sp_GetMemberDetails({ userId: uid })
 
-      if (errorCode === 'USER_NOT_FOUND' || roles.length === 0) {
+      if (errorCode === 'USER_NOT_FOUND' || sportRows.length === 0) {
         return NextResponse.json({ success: false, error: 'Alumni record not found.' }, { status: 404 })
       }
 
-      const base = roles[0]
+      const base = sportRows[0]
       const data = {
-        userId:        base.userId,
-        email:         base.email,
-        firstName:     base.firstName,
-        lastName:      base.lastName,
-        platformRole:  base.platformRole,
-        lastTeamLogin: base.lastTeamLogin,
-        roles:         roles.filter(r => r.status === 'alumni'),
+        userId:             base.userId,
+        email:              base.email,
+        firstName:          base.firstName,
+        lastName:           base.lastName,
+        platformRole:       base.platformRole,
+        programRoleId:      base.programRoleId,
+        programRoleDisplay: base.programRoleDisplay,
+        lastTeamLogin:      base.lastTeamLogin,
+        sportRows:          sportRows.filter(r => r.sportIsActive !== false),
       }
 
       return NextResponse.json({ success: true, data, interactions })
@@ -45,8 +48,8 @@ export async function GET(
 }
 
 // ─── PATCH /api/alumni/[userId] ───────────────────────────────────────────────
-// Body: { userRoleId, positionId?, jerseyNumber?, seasonsPlayed?, classYear? }
-// userRoleId is required — returned by GET as roles[n].userRoleId.
+// Body: { sportId, positionId?, jerseyNumber?, seasonsPlayed?, classYear? }
+// userId comes from the URL; sportId identifies which sport membership to update.
 
 export async function PATCH(
   req: Request,
@@ -56,7 +59,8 @@ export async function PATCH(
   if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
   if (!session.appDb) return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
 
-  await params   // unused — update is by userRoleId in body
+  const { userId } = await params
+  const uid = parseInt(userId, 10)
 
   let body: Record<string, unknown>
   try {
@@ -65,15 +69,16 @@ export async function PATCH(
     return NextResponse.json({ success: false, error: 'Invalid request body.' }, { status: 400 })
   }
 
-  const userRoleId = body.userRoleId != null ? Number(body.userRoleId) : undefined
-  if (!userRoleId) {
-    return NextResponse.json({ success: false, error: 'userRoleId is required' }, { status: 400 })
+  const sportId = body.sportId != null ? Number(body.sportId) : undefined
+  if (!sportId) {
+    return NextResponse.json({ success: false, error: 'sportId is required' }, { status: 400 })
   }
 
   return appDbContext.run(session.appDb, async () => {
     try {
       const { errorCode } = await sp_UpdateUserRole({
-        userRoleId,
+        userId:        uid,
+        sportId,
         positionId:    body.positionId    != null ? Number(body.positionId)   : null,
         jerseyNumber:  body.jerseyNumber  != null ? Number(body.jerseyNumber)  : null,
         seasonsPlayed: body.seasonsPlayed != null ? Number(body.seasonsPlayed) : null,

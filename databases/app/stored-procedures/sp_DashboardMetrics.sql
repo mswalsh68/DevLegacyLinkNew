@@ -1,7 +1,7 @@
 -- ============================================================
 -- APP DB — DASHBOARD METRICS STORED PROCEDURES
 -- Run on: each tenant AppDB after sp_App_AllProcedures.sql
--- Requires: migration 008 + 009 schema
+-- Requires: migration 014 schema
 -- ============================================================
 -- Procedures:
 --   sp_GetDashboardMetrics_Alumni  — alumni engagement KPIs
@@ -11,6 +11,8 @@
 -- @TenantId is accepted for convention / future sharding but
 -- is unused here — each tenant has its own App DB.
 -- @SportId INT = NULL filters to a specific sport; NULL = all.
+--
+-- Role IDs: program_role_id = 8 (player), 7 (alumni)
 -- ============================================================
 
 USE [$(AppDb)]
@@ -35,17 +37,18 @@ BEGIN
     @TotalInteractions = COUNT(*),
     @MonthInteractions = SUM(CASE WHEN il.logged_at >= DATEADD(DAY, -30, SYSUTCDATETIME()) THEN 1 ELSE 0 END)
   FROM dbo.interaction_log il
-  WHERE EXISTS (
-    SELECT 1 FROM dbo.users_roles ur
-    WHERE ur.user_id = il.user_id
-      AND ur.status  = 'alumni'
-      AND (@SportId IS NULL OR ur.sport_id = @SportId)
-  );
+  JOIN dbo.users u ON u.user_id = il.user_id
+  WHERE u.program_role_id = 7   -- alumni
+    AND u.is_active = 1
+    AND (@SportId IS NULL OR EXISTS (
+      SELECT 1 FROM dbo.users_sports us
+      WHERE us.user_id = u.user_id AND us.sport_id = @SportId AND us.is_active = 1
+    ));
 
   -- ── Email counts + open rate for alumni recipients ───────────────────────
-  DECLARE @TotalEmailsSent INT   = 0;
-  DECLARE @MonthEmailsSent INT   = 0;
-  DECLARE @TotalOpened     INT   = 0;
+  DECLARE @TotalEmailsSent  INT          = 0;
+  DECLARE @MonthEmailsSent  INT          = 0;
+  DECLARE @TotalOpened      INT          = 0;
   DECLARE @EmailOpenRatePct DECIMAL(5,1) = 0;
 
   SELECT
@@ -54,12 +57,13 @@ BEGIN
                                  AND om.sent_at >= DATEADD(DAY, -30, SYSUTCDATETIME()) THEN 1 ELSE 0 END),
     @TotalOpened     = SUM(CASE WHEN om.opened_at IS NOT NULL THEN 1 ELSE 0 END)
   FROM dbo.outreach_messages om
-  WHERE EXISTS (
-    SELECT 1 FROM dbo.users_roles ur
-    WHERE ur.user_id = om.user_id
-      AND ur.status  = 'alumni'
-      AND (@SportId IS NULL OR ur.sport_id = @SportId)
-  );
+  JOIN dbo.users u ON u.user_id = om.user_id
+  WHERE u.program_role_id = 7   -- alumni
+    AND u.is_active = 1
+    AND (@SportId IS NULL OR EXISTS (
+      SELECT 1 FROM dbo.users_sports us
+      WHERE us.user_id = u.user_id AND us.sport_id = @SportId AND us.is_active = 1
+    ));
 
   SET @EmailOpenRatePct = CASE
     WHEN @TotalEmailsSent = 0 THEN 0
@@ -71,13 +75,13 @@ BEGIN
 
   SELECT @AlumniLogins = COUNT(DISTINCT u.user_id)
   FROM   dbo.users u
-  WHERE  u.last_team_login >= DATEADD(DAY, -30, SYSUTCDATETIME())
-    AND  EXISTS (
-      SELECT 1 FROM dbo.users_roles ur
-      WHERE ur.user_id = u.user_id
-        AND ur.status  = 'alumni'
-        AND (@SportId IS NULL OR ur.sport_id = @SportId)
-    );
+  WHERE  u.program_role_id = 7
+    AND  u.is_active = 1
+    AND  u.last_team_login >= DATEADD(DAY, -30, SYSUTCDATETIME())
+    AND  (@SportId IS NULL OR EXISTS (
+      SELECT 1 FROM dbo.users_sports us
+      WHERE us.user_id = u.user_id AND us.sport_id = @SportId AND us.is_active = 1
+    ));
 
   -- ── Feed post counts (alumni-visible: all + alumni_only) ──────────────────
   DECLARE @TotalFeedPosts INT = 0;
@@ -122,14 +126,15 @@ BEGIN
     @MonthEmailsSent = SUM(CASE WHEN om.status IN ('sent','responded')
                                  AND om.sent_at >= DATEADD(DAY, -30, SYSUTCDATETIME()) THEN 1 ELSE 0 END)
   FROM dbo.outreach_messages om
-  WHERE EXISTS (
-    SELECT 1 FROM dbo.users_roles ur
-    WHERE ur.user_id = om.user_id
-      AND ur.status  = 'current_player'
-      AND (@SportId IS NULL OR ur.sport_id = @SportId)
-  );
+  JOIN dbo.users u ON u.user_id = om.user_id
+  WHERE u.program_role_id = 8   -- player
+    AND u.is_active = 1
+    AND (@SportId IS NULL OR EXISTS (
+      SELECT 1 FROM dbo.users_sports us
+      WHERE us.user_id = u.user_id AND us.sport_id = @SportId AND us.is_active = 1
+    ));
 
-  -- ── Feed post counts (player-visible: all + players_only + by_position) ────
+  -- ── Feed post counts (player-visible) ────────────────────────────────────
   DECLARE @TotalFeedPosts INT = 0;
   DECLARE @MonthFeedPosts INT = 0;
 
@@ -167,12 +172,13 @@ BEGIN
     @TotalInteractions = COUNT(*),
     @MonthInteractions = SUM(CASE WHEN il.logged_at >= DATEADD(DAY, -30, SYSUTCDATETIME()) THEN 1 ELSE 0 END)
   FROM dbo.interaction_log il
-  WHERE EXISTS (
-    SELECT 1 FROM dbo.users_roles ur
-    WHERE ur.user_id = il.user_id
-      AND ur.status  = 'alumni'
-      AND (@SportId IS NULL OR ur.sport_id = @SportId)
-  );
+  JOIN dbo.users u ON u.user_id = il.user_id
+  WHERE u.program_role_id = 7
+    AND u.is_active = 1
+    AND (@SportId IS NULL OR EXISTS (
+      SELECT 1 FROM dbo.users_sports us
+      WHERE us.user_id = u.user_id AND us.sport_id = @SportId AND us.is_active = 1
+    ));
 
   -- ── Alumni email counts ───────────────────────────────────────────────────
   DECLARE @AlumniEmailsTotal INT = 0;
@@ -183,25 +189,26 @@ BEGIN
     @AlumniEmailsMonth = SUM(CASE WHEN om.status IN ('sent','responded')
                                    AND om.sent_at >= DATEADD(DAY, -30, SYSUTCDATETIME()) THEN 1 ELSE 0 END)
   FROM dbo.outreach_messages om
-  WHERE EXISTS (
-    SELECT 1 FROM dbo.users_roles ur
-    WHERE ur.user_id = om.user_id
-      AND ur.status  = 'alumni'
-      AND (@SportId IS NULL OR ur.sport_id = @SportId)
-  );
+  JOIN dbo.users u ON u.user_id = om.user_id
+  WHERE u.program_role_id = 7
+    AND u.is_active = 1
+    AND (@SportId IS NULL OR EXISTS (
+      SELECT 1 FROM dbo.users_sports us
+      WHERE us.user_id = u.user_id AND us.sport_id = @SportId AND us.is_active = 1
+    ));
 
   -- ── Alumni logins last 30 days ─────────────────────────────────────────────
   DECLARE @AlumniLogins INT = 0;
 
   SELECT @AlumniLogins = COUNT(DISTINCT u.user_id)
   FROM   dbo.users u
-  WHERE  u.last_team_login >= DATEADD(DAY, -30, SYSUTCDATETIME())
-    AND  EXISTS (
-      SELECT 1 FROM dbo.users_roles ur
-      WHERE ur.user_id = u.user_id
-        AND ur.status  = 'alumni'
-        AND (@SportId IS NULL OR ur.sport_id = @SportId)
-    );
+  WHERE  u.program_role_id = 7
+    AND  u.is_active = 1
+    AND  u.last_team_login >= DATEADD(DAY, -30, SYSUTCDATETIME())
+    AND  (@SportId IS NULL OR EXISTS (
+      SELECT 1 FROM dbo.users_sports us
+      WHERE us.user_id = u.user_id AND us.sport_id = @SportId AND us.is_active = 1
+    ));
 
   -- ── Player email counts ───────────────────────────────────────────────────
   DECLARE @PlayerEmailsTotal INT = 0;
@@ -212,12 +219,13 @@ BEGIN
     @PlayerEmailsMonth = SUM(CASE WHEN om.status IN ('sent','responded')
                                    AND om.sent_at >= DATEADD(DAY, -30, SYSUTCDATETIME()) THEN 1 ELSE 0 END)
   FROM dbo.outreach_messages om
-  WHERE EXISTS (
-    SELECT 1 FROM dbo.users_roles ur
-    WHERE ur.user_id = om.user_id
-      AND ur.status  = 'current_player'
-      AND (@SportId IS NULL OR ur.sport_id = @SportId)
-  );
+  JOIN dbo.users u ON u.user_id = om.user_id
+  WHERE u.program_role_id = 8
+    AND u.is_active = 1
+    AND (@SportId IS NULL OR EXISTS (
+      SELECT 1 FROM dbo.users_sports us
+      WHERE us.user_id = u.user_id AND us.sport_id = @SportId AND us.is_active = 1
+    ));
 
   -- ── Feed post counts ──────────────────────────────────────────────────────
   DECLARE @TotalFeedPosts INT = 0;

@@ -3,30 +3,39 @@ SET ANSI_NULLS ON;
 GO
 -- ============================================================
 -- APP DB — ALL STORED PROCEDURES
--- Run on: each tenant AppDB after 009_outreach_feed_schema_update.sql
+-- Run on: each tenant AppDB after 014_schema_consolidation.sql
 --
--- Schema (post-migration 008 + 009):
---   dbo.users          — thin sync: user_id INT PK (mirrors Global)
---   dbo.users_roles    — junction: user_id + program_role_id + sport_id + status
+-- Schema (post-migration 014):
+--   dbo.users          — user_id INT PK, program_role_id INT FK → program_role
+--                        global_role_id INT (1/2/3), is_active BIT
+--   dbo.users_sports   — id INT PK, user_id + sport_id (UNIQUE)
+--                        position_id, jersey_number, class_year, seasons_played
+--                        is_active BIT (soft-delete for sport membership)
 --   dbo.sports         — id INT PK (Football = 1)
 --   dbo.sports_position — position lookup by sport
---   dbo.role_transfer_log — audit log for status transitions
---   dbo.interaction_log   — staff interactions, keyed on user_id
+--   dbo.program_role   — 8 roles; 8=player, 7=alumni, 1-6=staff
+--   dbo.role_change_log — audit log for program_role changes
+--   dbo.interaction_log — staff interactions, keyed on user_id
 --   dbo.outreach_*     — campaign/email system (user_id based)
 --   dbo.feed_*         — news feed (sport_id INT)
 --
 -- ID conventions:
---   @UserId    INT = dbo.users.user_id (global INT)
---   @UserRoleId INT = dbo.users_roles.user_role_id
---   @SportId   INT = dbo.sports.id
+--   @UserId      INT = dbo.users.user_id (global INT)
+--   @UserSportId INT = dbo.users_sports.id
+--   @SportId     INT = dbo.sports.id
 --   @AdminUserId INT = dbo.users.user_id of the acting staff member
+--
+-- Role IDs (dbo.program_role):
+--   1=athletic_director  2=program_admin  3=alumni_director
+--   4=head_coach  5=coach  6=support_staff  7=alumni  8=player
 -- ============================================================
 
 -- ============================================================
 -- sp_UpsertUser
 -- Syncs a LegacyLinkGlobal user into local dbo.users.
 -- Called at login and before any role-assignment flow.
--- NOTE: program_role_id removed from dbo.users in migration 008.
+-- program_role_id defaults to 8 (player); set correctly via
+-- sp_AddUserRole after the user record exists.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_UpsertUser
   @UserId       INT,
@@ -52,68 +61,70 @@ BEGIN
   BEGIN
     INSERT INTO dbo.users (user_id, email, first_name, last_name, platform_role)
     VALUES (@UserId, @Email, @FirstName, @LastName, ISNULL(@PlatformRole, 'player'));
+    -- program_role_id defaults to 8 (player) via column default
+    -- global_role_id  defaults to 3 (client) via column default
   END
 END;
 GO
 
 -- ============================================================
 -- vwRoster
--- Active current players.
--- Joins users_roles (status='current_player') with users,
--- sports, and sports_position for display.
+-- Active current players (program_role_id = 8, is_active = 1).
 -- ============================================================
 CREATE OR ALTER VIEW dbo.vwRoster AS
 SELECT
-  ur.user_role_id,
-  ur.user_id,
+  us.id            AS userSportId,
+  us.user_id,
   u.email,
   u.first_name,
   u.last_name,
-  ur.sport_id,
-  s.name          AS sport_name,
-  s.abbr          AS sport_abbr,
-  ur.position_id,
+  us.sport_id,
+  s.name           AS sport_name,
+  s.abbr           AS sport_abbr,
+  us.position_id,
   sp.position_name AS position,
-  ur.jersey_number,
-  ur.seasons_played,
-  ur.class_year,
-  ur.created_at,
-  ur.updated_at
-FROM dbo.users_roles ur
-JOIN dbo.users         u  ON u.user_id   = ur.user_id
-JOIN dbo.sports        s  ON s.id        = ur.sport_id
-LEFT JOIN dbo.sports_position sp ON sp.position_id = ur.position_id
-WHERE ur.status = 'current_player'
-  AND ur.sport_id IS NOT NULL;
+  us.jersey_number,
+  us.seasons_played,
+  us.class_year,
+  us.joined_at     AS created_at,
+  us.updated_at
+FROM dbo.users_sports us
+JOIN dbo.users         u  ON u.user_id       = us.user_id
+JOIN dbo.sports        s  ON s.id            = us.sport_id
+LEFT JOIN dbo.sports_position sp ON sp.position_id = us.position_id
+WHERE u.program_role_id = 8   -- player
+  AND us.is_active = 1
+  AND u.is_active  = 1;
 GO
 
 -- ============================================================
 -- vwAlumniRoster
--- All alumni (status='alumni').
+-- All alumni (program_role_id = 7, is_active = 1).
 -- ============================================================
 CREATE OR ALTER VIEW dbo.vwAlumniRoster AS
 SELECT
-  ur.user_role_id,
-  ur.user_id,
+  us.id            AS userSportId,
+  us.user_id,
   u.email,
   u.first_name,
   u.last_name,
-  ur.sport_id,
-  s.name          AS sport_name,
-  s.abbr          AS sport_abbr,
-  ur.position_id,
+  us.sport_id,
+  s.name           AS sport_name,
+  s.abbr           AS sport_abbr,
+  us.position_id,
   sp.position_name AS position,
-  ur.jersey_number,
-  ur.seasons_played,
-  ur.class_year,
-  ur.created_at,
-  ur.updated_at
-FROM dbo.users_roles ur
-JOIN dbo.users         u  ON u.user_id   = ur.user_id
-JOIN dbo.sports        s  ON s.id        = ur.sport_id
-LEFT JOIN dbo.sports_position sp ON sp.position_id = ur.position_id
-WHERE ur.status = 'alumni'
-  AND ur.sport_id IS NOT NULL;
+  us.jersey_number,
+  us.seasons_played,
+  us.class_year,
+  us.joined_at     AS created_at,
+  us.updated_at
+FROM dbo.users_sports us
+JOIN dbo.users         u  ON u.user_id       = us.user_id
+JOIN dbo.sports        s  ON s.id            = us.sport_id
+LEFT JOIN dbo.sports_position sp ON sp.position_id = us.position_id
+WHERE u.program_role_id = 7   -- alumni
+  AND us.is_active = 1
+  AND u.is_active  = 1;
 GO
 
 -- ============================================================
@@ -146,7 +157,7 @@ BEGIN
          OR CAST(ISNULL(r.jersey_number, -1) AS NVARCHAR) = @Search);
 
   SELECT
-    r.user_role_id  AS userRoleId,
+    r.userSportId   AS userSportId,
     r.user_id       AS userId,
     r.first_name    AS firstName,
     r.last_name     AS lastName,
@@ -203,7 +214,7 @@ BEGIN
          OR a.email      LIKE @SearchWild);
 
   SELECT
-    a.user_role_id  AS userRoleId,
+    a.userSportId   AS userSportId,
     a.user_id       AS userId,
     a.first_name    AS firstName,
     a.last_name     AS lastName,
@@ -232,7 +243,7 @@ GO
 
 -- ============================================================
 -- sp_GetUserRoles
--- Returns all roles for a user across all sports.
+-- Returns the user's program role + all sport memberships.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetUserRoles
   @UserId INT
@@ -240,53 +251,61 @@ AS
 BEGIN
   SET NOCOUNT ON;
 
+  -- Row 1: user base + program role
   SELECT
-    ur.user_role_id  AS userRoleId,
-    ur.user_id       AS userId,
-    ur.sport_id      AS sportId,
+    u.user_id        AS userId,
+    u.program_role_id AS programRoleId,
+    pr.display_name  AS programRoleDisplay,
+    u.global_role_id AS globalRoleId,
+    u.is_active      AS isActive
+  FROM dbo.users u
+  JOIN dbo.program_role pr ON pr.id = u.program_role_id
+  WHERE u.user_id = @UserId;
+
+  -- Row 2+: sport memberships (one per sport)
+  SELECT
+    us.id            AS userSportId,
+    us.sport_id      AS sportId,
     s.name           AS sportName,
     s.abbr           AS sportAbbr,
-    ur.program_role_id AS programRoleId,
-    pr.display_name  AS programRoleDisplay,
-    ur.status,
-    ur.position_id   AS positionId,
+    us.position_id   AS positionId,
     sp.position_name AS position,
-    ur.jersey_number AS jerseyNumber,
-    ur.seasons_played AS seasonsPlayed,
-    ur.class_year    AS classYear,
-    ur.created_at    AS createdAt,
-    ur.updated_at    AS updatedAt
-  FROM dbo.users_roles ur
-  LEFT JOIN dbo.sports          s  ON s.id  = ur.sport_id
-  LEFT JOIN dbo.program_role    pr ON pr.id = ur.program_role_id
-  LEFT JOIN dbo.sports_position sp ON sp.position_id = ur.position_id
-  WHERE ur.user_id = @UserId
-  ORDER BY s.name, pr.sort_order;
+    us.jersey_number AS jerseyNumber,
+    us.seasons_played AS seasonsPlayed,
+    us.class_year    AS classYear,
+    us.is_active     AS isActive,
+    us.joined_at     AS createdAt,
+    us.updated_at    AS updatedAt
+  FROM dbo.users_sports us
+  LEFT JOIN dbo.sports          s  ON s.id  = us.sport_id
+  LEFT JOIN dbo.sports_position sp ON sp.position_id = us.position_id
+  WHERE us.user_id = @UserId
+  ORDER BY s.name;
 END;
 GO
 
 -- ============================================================
 -- sp_AddUserRole
--- Adds a new users_roles record for a user.
--- Called when adding a player to a sport roster.
+-- Sets a user's program role and creates/activates a sport
+-- membership row in users_sports.
+-- Returns @NewUserSportId = users_sports.id
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_AddUserRole
   @UserId        INT,
   @ProgramRoleId INT,
   @SportId       INT           = NULL,
-  @Status        NVARCHAR(20)  = 'current_player',
   @PositionId    INT           = NULL,
   @JerseyNumber  TINYINT       = NULL,
   @SeasonsPlayed TINYINT       = NULL,
   @ClassYear     SMALLINT      = NULL,
   @AdminUserId   INT,
-  @NewUserRoleId INT           OUTPUT,
+  @NewUserSportId INT          OUTPUT,
   @ErrorCode     NVARCHAR(50)  OUTPUT
 AS
 BEGIN
   SET NOCOUNT ON;
-  SET @ErrorCode     = NULL;
-  SET @NewUserRoleId = NULL;
+  SET @ErrorCode      = NULL;
+  SET @NewUserSportId = NULL;
 
   IF NOT EXISTS (SELECT 1 FROM dbo.users WHERE user_id = @UserId)
   BEGIN
@@ -306,67 +325,69 @@ BEGIN
     RETURN;
   END
 
-  IF @Status NOT IN ('current_player', 'alumni', 'removed')
-  BEGIN
-    SET @ErrorCode = 'INVALID_STATUS';
-    RETURN;
-  END
-
+  -- Jersey uniqueness check within sport (active players only)
   IF @JerseyNumber IS NOT NULL AND @SportId IS NOT NULL
      AND EXISTS (
-       SELECT 1 FROM dbo.users_roles
-       WHERE sport_id      = @SportId
-         AND jersey_number = @JerseyNumber
-         AND status        = 'current_player'
-         AND user_id       <> @UserId
+       SELECT 1 FROM dbo.users_sports us
+       JOIN   dbo.users u ON u.user_id = us.user_id
+       WHERE  us.sport_id      = @SportId
+         AND  us.jersey_number = @JerseyNumber
+         AND  us.is_active     = 1
+         AND  u.program_role_id = 8   -- only enforce for active players
+         AND  us.user_id       <> @UserId
      )
   BEGIN
     SET @ErrorCode = 'JERSEY_NUMBER_IN_USE';
     RETURN;
   END
 
-  -- Check for duplicate active role
-  IF EXISTS (
-    SELECT 1 FROM dbo.users_roles
-    WHERE user_id         = @UserId
-      AND program_role_id = @ProgramRoleId
-      AND status          NOT IN ('removed')
-      AND ((@SportId IS NULL AND sport_id IS NULL) OR sport_id = @SportId)
-  )
-  BEGIN
-    SET @ErrorCode = 'ROLE_ALREADY_EXISTS';
-    RETURN;
-  END
+  -- 1. Set the program role on the user record
+  UPDATE dbo.users
+  SET    program_role_id = @ProgramRoleId
+  WHERE  user_id = @UserId;
 
-  INSERT INTO dbo.users_roles (
-    user_id, program_role_id, sport_id, status,
-    position_id, jersey_number, seasons_played, class_year
-  )
-  VALUES (
-    @UserId, @ProgramRoleId, @SportId, @Status,
-    @PositionId, @JerseyNumber, @SeasonsPlayed, @ClassYear
-  );
-
-  SET @NewUserRoleId = SCOPE_IDENTITY();
-
-  -- Ensure the user has a users_sports entry for this sport
+  -- 2. Upsert the users_sports row
   IF @SportId IS NOT NULL
-     AND NOT EXISTS (SELECT 1 FROM dbo.users_sports WHERE user_id = @UserId AND sport_id = @SportId)
   BEGIN
-    INSERT INTO dbo.users_sports (user_id, sport_id, username)
-    SELECT @UserId, @SportId, first_name + ' ' + last_name
-    FROM   dbo.users WHERE user_id = @UserId;
+    IF EXISTS (SELECT 1 FROM dbo.users_sports WHERE user_id = @UserId AND sport_id = @SportId)
+    BEGIN
+      -- Reactivate and update detail fields
+      UPDATE dbo.users_sports SET
+        is_active      = 1,
+        position_id    = COALESCE(@PositionId,    position_id),
+        jersey_number  = COALESCE(@JerseyNumber,  jersey_number),
+        seasons_played = COALESCE(@SeasonsPlayed, seasons_played),
+        class_year     = COALESCE(@ClassYear,      class_year),
+        updated_at     = SYSUTCDATETIME()
+      WHERE user_id = @UserId AND sport_id = @SportId;
+
+      SELECT @NewUserSportId = id FROM dbo.users_sports WHERE user_id = @UserId AND sport_id = @SportId;
+    END
+    ELSE
+    BEGIN
+      INSERT INTO dbo.users_sports (
+        user_id, sport_id, username,
+        position_id, jersey_number, seasons_played, class_year
+      )
+      SELECT
+        @UserId, @SportId, u.first_name + N' ' + u.last_name,
+        @PositionId, @JerseyNumber, @SeasonsPlayed, @ClassYear
+      FROM dbo.users u WHERE u.user_id = @UserId;
+
+      SET @NewUserSportId = SCOPE_IDENTITY();
+    END
   END
 END;
 GO
 
 -- ============================================================
 -- sp_UpdateUserRole
--- Updates mutable fields on a users_roles record.
--- NULL = no change.
+-- Updates mutable fields on a users_sports row.
+-- Identified by userId + sportId. NULL = no change.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_UpdateUserRole
-  @UserRoleId    INT,
+  @UserId        INT,
+  @SportId       INT,
   @PositionId    INT          = NULL,
   @JerseyNumber  TINYINT      = NULL,
   @SeasonsPlayed TINYINT      = NULL,
@@ -378,99 +399,105 @@ BEGIN
   SET NOCOUNT ON;
   SET @ErrorCode = NULL;
 
-  DECLARE @SportId INT, @CurUser INT;
-  SELECT @SportId = sport_id, @CurUser = user_id
-  FROM   dbo.users_roles WHERE user_role_id = @UserRoleId;
-
-  IF @CurUser IS NULL
+  IF NOT EXISTS (SELECT 1 FROM dbo.users_sports WHERE user_id = @UserId AND sport_id = @SportId)
   BEGIN
-    SET @ErrorCode = 'ROLE_NOT_FOUND';
+    SET @ErrorCode = 'SPORT_NOT_FOUND';
     RETURN;
   END
 
-  IF @JerseyNumber IS NOT NULL AND @SportId IS NOT NULL
+  -- Jersey uniqueness check for active players in this sport
+  IF @JerseyNumber IS NOT NULL
      AND EXISTS (
-       SELECT 1 FROM dbo.users_roles
-       WHERE sport_id      = @SportId
-         AND jersey_number = @JerseyNumber
-         AND status        = 'current_player'
-         AND user_role_id  <> @UserRoleId
+       SELECT 1 FROM dbo.users_sports us
+       JOIN   dbo.users u ON u.user_id = us.user_id
+       WHERE  us.sport_id      = @SportId
+         AND  us.jersey_number = @JerseyNumber
+         AND  us.is_active     = 1
+         AND  u.program_role_id = 8
+         AND  us.user_id       <> @UserId
      )
   BEGIN
     SET @ErrorCode = 'JERSEY_NUMBER_IN_USE';
     RETURN;
   END
 
-  UPDATE dbo.users_roles SET
-    position_id   = COALESCE(@PositionId,    position_id),
-    jersey_number = COALESCE(@JerseyNumber,  jersey_number),
-    seasons_played= COALESCE(@SeasonsPlayed, seasons_played),
-    class_year    = COALESCE(@ClassYear,     class_year),
-    updated_at    = SYSUTCDATETIME()
-  WHERE user_role_id = @UserRoleId;
+  UPDATE dbo.users_sports SET
+    position_id    = COALESCE(@PositionId,    position_id),
+    jersey_number  = COALESCE(@JerseyNumber,  jersey_number),
+    seasons_played = COALESCE(@SeasonsPlayed, seasons_played),
+    class_year     = COALESCE(@ClassYear,      class_year),
+    updated_at     = SYSUTCDATETIME()
+  WHERE user_id = @UserId AND sport_id = @SportId;
 END;
 GO
 
 -- ============================================================
 -- sp_TransferUserRole
--- Transitions a user_role status (e.g. current_player → alumni).
--- Logs the change to dbo.role_transfer_log.
+-- Changes a user's program role (e.g. player → alumni).
+-- Optionally updates class_year and seasons_played on
+-- the sport membership row.
+-- Logs the change to dbo.role_change_log.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_TransferUserRole
-  @UserRoleId          INT,
-  @NewStatus           NVARCHAR(20),
-  @SeasonsPlayed       TINYINT      = NULL,
-  @ClassYear           SMALLINT     = NULL,
-  @AdminUserId         INT,
-  @AdminAcknowledged   BIT          = 0,
-  @Notes               NVARCHAR(MAX)= NULL,
-  @ErrorCode           NVARCHAR(50) OUTPUT
+  @UserId            INT,
+  @NewProgramRoleId  INT,
+  @SportId           INT           = NULL,
+  @SeasonsPlayed     TINYINT       = NULL,
+  @ClassYear         SMALLINT      = NULL,
+  @AdminUserId       INT,
+  @Notes             NVARCHAR(MAX) = NULL,
+  @ErrorCode         NVARCHAR(50)  OUTPUT
 AS
 BEGIN
   SET NOCOUNT ON;
   SET @ErrorCode = NULL;
 
-  IF @NewStatus NOT IN ('current_player', 'alumni', 'removed')
+  IF NOT EXISTS (SELECT 1 FROM dbo.program_role WHERE id = @NewProgramRoleId AND is_active = 1)
   BEGIN
-    SET @ErrorCode = 'INVALID_STATUS';
+    SET @ErrorCode = 'INVALID_PROGRAM_ROLE';
     RETURN;
   END
 
-  DECLARE @FromStatus NVARCHAR(20);
-  SELECT @FromStatus = status FROM dbo.users_roles WHERE user_role_id = @UserRoleId;
+  DECLARE @FromProgramRoleId INT;
+  SELECT @FromProgramRoleId = program_role_id FROM dbo.users WHERE user_id = @UserId;
 
-  IF @FromStatus IS NULL
+  IF @FromProgramRoleId IS NULL
   BEGIN
-    SET @ErrorCode = 'ROLE_NOT_FOUND';
+    SET @ErrorCode = 'USER_NOT_FOUND';
     RETURN;
   END
 
-  IF @FromStatus = @NewStatus
+  IF @FromProgramRoleId = @NewProgramRoleId
   BEGIN
-    SET @ErrorCode = 'STATUS_UNCHANGED';
+    SET @ErrorCode = 'ROLE_UNCHANGED';
     RETURN;
   END
 
   BEGIN TRANSACTION;
   BEGIN TRY
-    UPDATE dbo.users_roles SET
-      status        = @NewStatus,
-      seasons_played= COALESCE(@SeasonsPlayed, seasons_played),
-      class_year    = COALESCE(@ClassYear,     class_year),
-      updated_at    = SYSUTCDATETIME()
-    WHERE user_role_id = @UserRoleId;
+    -- Update the user's program role
+    UPDATE dbo.users
+    SET    program_role_id = @NewProgramRoleId
+    WHERE  user_id = @UserId;
 
-    INSERT INTO dbo.role_transfer_log (
-      user_role_id, admin_user_id,
-      from_status, to_status,
-      seasons_played, class_year,
-      admin_acknowledged, notes
+    -- Update sport membership detail fields if sport provided
+    IF @SportId IS NOT NULL
+      UPDATE dbo.users_sports SET
+        seasons_played = COALESCE(@SeasonsPlayed, seasons_played),
+        class_year     = COALESCE(@ClassYear,      class_year),
+        updated_at     = SYSUTCDATETIME()
+      WHERE user_id = @UserId AND sport_id = @SportId;
+
+    -- Log the change
+    INSERT INTO dbo.role_change_log (
+      user_id, sport_id,
+      from_program_role_id, to_program_role_id,
+      changed_by, notes
     )
     VALUES (
-      @UserRoleId, @AdminUserId,
-      @FromStatus, @NewStatus,
-      @SeasonsPlayed, @ClassYear,
-      @AdminAcknowledged, @Notes
+      @UserId, @SportId,
+      @FromProgramRoleId, @NewProgramRoleId,
+      @AdminUserId, @Notes
     );
 
     COMMIT TRANSACTION;
@@ -479,6 +506,49 @@ BEGIN
     IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
     SET @ErrorCode = 'TRANSFER_FAILED';
   END CATCH;
+END;
+GO
+
+-- ============================================================
+-- sp_DeactivateUserSport
+-- Soft-removes a user from a sport (is_active = 0).
+-- Does NOT change the user's program role.
+-- Logs a note to role_change_log for audit.
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_DeactivateUserSport
+  @UserId      INT,
+  @SportId     INT,
+  @AdminUserId INT,
+  @Notes       NVARCHAR(MAX) = NULL,
+  @ErrorCode   NVARCHAR(50)  OUTPUT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SET @ErrorCode = NULL;
+
+  IF NOT EXISTS (SELECT 1 FROM dbo.users_sports WHERE user_id = @UserId AND sport_id = @SportId)
+  BEGIN
+    SET @ErrorCode = 'SPORT_NOT_FOUND';
+    RETURN;
+  END
+
+  DECLARE @CurrentRoleId INT;
+  SELECT @CurrentRoleId = program_role_id FROM dbo.users WHERE user_id = @UserId;
+
+  UPDATE dbo.users_sports SET is_active = 0, updated_at = SYSUTCDATETIME()
+  WHERE user_id = @UserId AND sport_id = @SportId;
+
+  -- Log deactivation as a role event (same from/to role, sport context)
+  INSERT INTO dbo.role_change_log (
+    user_id, sport_id,
+    from_program_role_id, to_program_role_id,
+    changed_by, notes
+  )
+  VALUES (
+    @UserId, @SportId,
+    @CurrentRoleId, @CurrentRoleId,
+    @AdminUserId, ISNULL(@Notes, N'Removed from sport')
+  );
 END;
 GO
 
@@ -522,8 +592,9 @@ GO
 
 -- ============================================================
 -- sp_GetUserSports
--- @UserId INT NULL = staff user_id. NULL = admin (all sports).
--- sport_id is now INT (after migration 008).
+-- Returns the sports a user has access to.
+-- NULL @UserId = admin (all active sports).
+-- Non-null = sports from dbo.users_sports (active rows only).
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetUserSports
   @TenantId INT,
@@ -544,8 +615,9 @@ BEGIN
     SELECT s.id, s.name, s.abbr
     FROM   dbo.sports       s
     JOIN   dbo.users_sports us ON us.sport_id = s.id
-    WHERE  us.user_id  = @UserId
-      AND  s.is_active = 1
+    WHERE  us.user_id   = @UserId
+      AND  us.is_active = 1
+      AND  s.is_active  = 1
     ORDER  BY s.name;
   END
 END;
@@ -554,12 +626,12 @@ GO
 -- ============================================================
 -- sp_LogInteraction
 -- Logs a staff interaction with a user (player or alumni).
--- Keyed on user_id (no longer alumni_id).
+-- Keyed on user_id.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_LogInteraction
-  @UserId     INT,            -- dbo.users.user_id of the member
-  @LoggedBy   INT,            -- dbo.users.user_id of the staff member
-  @Channel    NVARCHAR(30),   -- 'email' | 'phone' | 'text' | 'in_person' | 'other'
+  @UserId     INT,
+  @LoggedBy   INT,
+  @Channel    NVARCHAR(30),
   @Summary    NVARCHAR(MAX),
   @Outcome    NVARCHAR(50)  = NULL,
   @FollowUpAt DATETIME2     = NULL,
@@ -628,19 +700,20 @@ BEGIN
   SET NOCOUNT ON;
 
   SELECT
-    COUNT(CASE WHEN ur.status = 'current_player' THEN 1 END) AS totalCurrentPlayers,
-    COUNT(CASE WHEN ur.status = 'alumni'         THEN 1 END) AS totalAlumni,
-    MIN(CASE WHEN ur.status = 'alumni' THEN ur.class_year END) AS earliestClass,
-    MAX(CASE WHEN ur.status = 'alumni' THEN ur.class_year END) AS latestClass
-  FROM dbo.users_roles ur
-  WHERE (@SportId IS NULL OR ur.sport_id = @SportId)
-    AND ur.status IN ('current_player', 'alumni');
+    COUNT(CASE WHEN u.program_role_id = 8 THEN 1 END) AS totalCurrentPlayers,
+    COUNT(CASE WHEN u.program_role_id = 7 THEN 1 END) AS totalAlumni,
+    MIN(CASE WHEN u.program_role_id = 7 THEN us.class_year END) AS earliestClass,
+    MAX(CASE WHEN u.program_role_id = 7 THEN us.class_year END) AS latestClass
+  FROM dbo.users u
+  JOIN dbo.users_sports us ON us.user_id = u.user_id AND us.is_active = 1
+  WHERE u.is_active = 1
+    AND u.program_role_id IN (7, 8)
+    AND (@SportId IS NULL OR us.sport_id = @SportId);
 END;
 GO
 
 -- ============================================================
 -- sp_CreateCampaign
--- sport_id is now INT (after migration 009).
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_CreateCampaign
   @Name            NVARCHAR(200),
@@ -795,9 +868,9 @@ GO
 
 -- ============================================================
 -- sp_ResolveAudienceForCampaign
--- Returns eligible recipients from dbo.users_roles.
--- Recipients are users with status='current_player' or 'alumni'
--- who have an email address on file.
+-- Returns eligible recipients based on program_role_id + users_sports.
+-- Recipients: active users with program_role_id IN (7,8)
+-- who have an email address and are not unsubscribed.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_ResolveAudienceForCampaign
   @CampaignId UNIQUEIDENTIFIER,
@@ -817,50 +890,54 @@ BEGIN
 
   IF @Audience IS NULL BEGIN SET @ErrorCode = 'CAMPAIGN_NOT_FOUND'; RETURN; END
 
-  DECLARE @FilterClassYear SMALLINT     = TRY_CAST(JSON_VALUE(@FiltersJson, '$.classYear')  AS SMALLINT);
-  DECLARE @FilterGradYear  SMALLINT     = TRY_CAST(JSON_VALUE(@FiltersJson, '$.gradYear')   AS SMALLINT);
-  DECLARE @FilterPositionId INT         = TRY_CAST(JSON_VALUE(@FiltersJson, '$.positionId') AS INT);
-  DECLARE @FilterGradYears NVARCHAR(MAX)= JSON_QUERY(@FiltersJson, '$.gradYears');
+  DECLARE @FilterClassYear  SMALLINT     = TRY_CAST(JSON_VALUE(@FiltersJson, '$.classYear')  AS SMALLINT);
+  DECLARE @FilterGradYear   SMALLINT     = TRY_CAST(JSON_VALUE(@FiltersJson, '$.gradYear')   AS SMALLINT);
+  DECLARE @FilterPositionId INT          = TRY_CAST(JSON_VALUE(@FiltersJson, '$.positionId') AS INT);
+  DECLARE @FilterGradYears  NVARCHAR(MAX)= JSON_QUERY(@FiltersJson, '$.gradYears');
 
   SELECT
-    ur.user_id          AS recipientId,
-    ur.status           AS recipientType,
+    u.user_id           AS recipientId,
+    CASE u.program_role_id WHEN 8 THEN 'current_player' ELSE 'alumni' END AS recipientType,
     u.first_name        AS firstName,
     u.last_name         AS lastName,
     u.email,
     sp.position_name    AS position,
-    ur.class_year       AS classYear,
+    us.class_year       AS classYear,
     CASE WHEN eu.id IS NOT NULL THEN 1 ELSE 0 END AS isUnsubscribed
-  FROM dbo.users_roles ur
-  JOIN dbo.users u ON u.user_id = ur.user_id
-  LEFT JOIN dbo.sports_position sp ON sp.position_id = ur.position_id
-  LEFT JOIN dbo.email_unsubscribes eu ON eu.user_id = ur.user_id AND eu.channel = 'email'
+  FROM dbo.users u
+  LEFT JOIN dbo.users_sports    us ON us.user_id = u.user_id
+    AND us.is_active = 1
+    AND (@SportId IS NULL OR us.sport_id = @SportId)
+  LEFT JOIN dbo.sports_position sp ON sp.position_id = us.position_id
+  LEFT JOIN dbo.email_unsubscribes eu ON eu.user_id = u.user_id AND eu.channel = 'email'
   WHERE u.email IS NOT NULL
-    AND (@SportId IS NULL OR ur.sport_id = @SportId)
+    AND u.is_active = 1
+    AND u.program_role_id IN (7, 8)
+    AND (@SportId IS NULL OR us.user_id IS NOT NULL)   -- must be in sport if filter active
     AND (
-      (@Audience = 'all'         AND ur.status IN ('current_player','alumni'))
-      OR (@Audience = 'players_only' AND ur.status = 'current_player')
-      OR (@Audience = 'alumni_only'  AND ur.status = 'alumni')
+      (@Audience = 'all'         AND u.program_role_id IN (7, 8))
+      OR (@Audience = 'players_only' AND u.program_role_id = 8)
+      OR (@Audience = 'alumni_only'  AND u.program_role_id = 7)
       OR (@Audience = 'byClass'
-          AND ur.status = 'current_player'
+          AND u.program_role_id = 8
           AND @FilterClassYear IS NOT NULL
-          AND ur.class_year = @FilterClassYear)
+          AND us.class_year = @FilterClassYear)
       OR (@Audience = 'byGradYear'
-          AND ur.status = 'alumni'
+          AND u.program_role_id = 7
           AND (
-            (@FilterGradYear  IS NOT NULL AND ur.class_year = @FilterGradYear)
+            (@FilterGradYear  IS NOT NULL AND us.class_year = @FilterGradYear)
             OR (@FilterGradYears IS NOT NULL AND EXISTS (
-              SELECT 1 FROM OPENJSON(@FilterGradYears) WHERE CAST([value] AS SMALLINT) = ur.class_year
+              SELECT 1 FROM OPENJSON(@FilterGradYears) WHERE CAST([value] AS SMALLINT) = us.class_year
             ))
           ))
       OR (@Audience = 'byPosition'
-          AND ur.status IN ('current_player','alumni')
+          AND u.program_role_id IN (7, 8)
           AND @FilterPositionId IS NOT NULL
-          AND ur.position_id = @FilterPositionId)
+          AND us.position_id = @FilterPositionId)
       OR (@Audience = 'custom'
-          AND ur.status IN ('current_player','alumni')
-          AND (@FilterPositionId IS NULL OR ur.position_id = @FilterPositionId)
-          AND (@FilterGradYear   IS NULL OR ur.class_year  = @FilterGradYear))
+          AND u.program_role_id IN (7, 8)
+          AND (@FilterPositionId IS NULL OR us.position_id = @FilterPositionId)
+          AND (@FilterGradYear   IS NULL OR us.class_year  = @FilterGradYear))
     );
 END;
 GO
@@ -868,7 +945,7 @@ GO
 -- ============================================================
 -- sp_DispatchEmailCampaign
 -- Queues outreach_messages for all eligible recipients.
--- outreach_messages now uses user_id (migration 009).
+-- Returns: Resultset 1 = campaign header, Resultset 2 = queued recipients
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_DispatchEmailCampaign
   @CampaignId       UNIQUEIDENTIFIER,
@@ -910,53 +987,57 @@ BEGIN
   IF @CampaignStatus IS NULL BEGIN SET @ErrorCode = 'CAMPAIGN_NOT_FOUND'; RETURN; END
   IF @CampaignStatus NOT IN ('draft','scheduled') BEGIN SET @ErrorCode = 'INVALID_CAMPAIGN_STATUS'; RETURN; END
 
-  DECLARE @FilterClassYear SMALLINT     = TRY_CAST(JSON_VALUE(@FiltersJson, '$.classYear')  AS SMALLINT);
-  DECLARE @FilterGradYear  SMALLINT     = TRY_CAST(JSON_VALUE(@FiltersJson, '$.gradYear')   AS SMALLINT);
-  DECLARE @FilterPositionId INT         = TRY_CAST(JSON_VALUE(@FiltersJson, '$.positionId') AS INT);
-  DECLARE @FilterGradYears NVARCHAR(MAX)= JSON_QUERY(@FiltersJson, '$.gradYears');
+  DECLARE @FilterClassYear  SMALLINT     = TRY_CAST(JSON_VALUE(@FiltersJson, '$.classYear')  AS SMALLINT);
+  DECLARE @FilterGradYear   SMALLINT     = TRY_CAST(JSON_VALUE(@FiltersJson, '$.gradYear')   AS SMALLINT);
+  DECLARE @FilterPositionId INT          = TRY_CAST(JSON_VALUE(@FiltersJson, '$.positionId') AS INT);
+  DECLARE @FilterGradYears  NVARCHAR(MAX)= JSON_QUERY(@FiltersJson, '$.gradYears');
 
   SELECT
-    ur.user_id   AS userId,
+    u.user_id    AS userId,
     u.email      AS emailAddress,
     u.first_name AS firstName,
     NEWID()      AS unsubToken
   INTO #recipients
-  FROM dbo.users_roles ur
-  JOIN dbo.users u ON u.user_id = ur.user_id
+  FROM dbo.users u
+  LEFT JOIN dbo.users_sports us ON us.user_id = u.user_id
+    AND us.is_active = 1
+    AND (@SportId IS NULL OR us.sport_id = @SportId)
   WHERE u.email IS NOT NULL
-    AND (@SportId IS NULL OR ur.sport_id = @SportId)
+    AND u.is_active = 1
+    AND u.program_role_id IN (7, 8)
+    AND (@SportId IS NULL OR us.user_id IS NOT NULL)
     AND NOT EXISTS (
       SELECT 1 FROM dbo.email_unsubscribes eu
-      WHERE eu.user_id = ur.user_id AND eu.channel = 'email'
+      WHERE eu.user_id = u.user_id AND eu.channel = 'email'
     )
     AND NOT EXISTS (
       SELECT 1 FROM dbo.outreach_messages om
-      WHERE om.campaign_id = @CampaignId AND om.user_id = ur.user_id
+      WHERE om.campaign_id = @CampaignId AND om.user_id = u.user_id
     )
     AND (
-      (@Audience = 'all'         AND ur.status IN ('current_player','alumni'))
-      OR (@Audience = 'players_only' AND ur.status = 'current_player')
-      OR (@Audience = 'alumni_only'  AND ur.status = 'alumni')
+      (@Audience = 'all'         AND u.program_role_id IN (7, 8))
+      OR (@Audience = 'players_only' AND u.program_role_id = 8)
+      OR (@Audience = 'alumni_only'  AND u.program_role_id = 7)
       OR (@Audience = 'byClass'
-          AND ur.status = 'current_player'
+          AND u.program_role_id = 8
           AND @FilterClassYear IS NOT NULL
-          AND ur.class_year = @FilterClassYear)
+          AND us.class_year = @FilterClassYear)
       OR (@Audience = 'byGradYear'
-          AND ur.status = 'alumni'
+          AND u.program_role_id = 7
           AND (
-            (@FilterGradYear IS NOT NULL AND ur.class_year = @FilterGradYear)
+            (@FilterGradYear IS NOT NULL AND us.class_year = @FilterGradYear)
             OR (@FilterGradYears IS NOT NULL AND EXISTS (
-              SELECT 1 FROM OPENJSON(@FilterGradYears) WHERE CAST([value] AS SMALLINT) = ur.class_year
+              SELECT 1 FROM OPENJSON(@FilterGradYears) WHERE CAST([value] AS SMALLINT) = us.class_year
             ))
           ))
       OR (@Audience = 'byPosition'
-          AND ur.status IN ('current_player','alumni')
+          AND u.program_role_id IN (7, 8)
           AND @FilterPositionId IS NOT NULL
-          AND ur.position_id = @FilterPositionId)
+          AND us.position_id = @FilterPositionId)
       OR (@Audience = 'custom'
-          AND ur.status IN ('current_player','alumni')
-          AND (@FilterPositionId IS NULL OR ur.position_id = @FilterPositionId)
-          AND (@FilterGradYear   IS NULL OR ur.class_year  = @FilterGradYear))
+          AND u.program_role_id IN (7, 8)
+          AND (@FilterPositionId IS NULL OR us.position_id = @FilterPositionId)
+          AND (@FilterGradYear   IS NULL OR us.class_year  = @FilterGradYear))
     );
 
   SET @QueuedCount = (SELECT COUNT(*) FROM #recipients);
@@ -1004,7 +1085,6 @@ GO
 -- sp_MarkEmailSent
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_MarkEmailSent
-  -- JSON array of objects: [{"messageId":"<uuid>","resendId":"re_xxx"},...]
   @MessagesJson NVARCHAR(MAX),
   @ErrorCode    NVARCHAR(50) OUTPUT
 AS
@@ -1012,7 +1092,6 @@ BEGIN
   SET NOCOUNT ON;
   SET @ErrorCode = NULL;
 
-  -- Mark each message as sent and store the Resend ID for webhook correlation
   UPDATE om
   SET    om.status    = 'sent',
          om.sent_at   = SYSUTCDATETIME(),
@@ -1025,7 +1104,6 @@ BEGIN
          ) j ON j.messageId = om.id
   WHERE  om.status = 'queued';
 
-  -- Auto-complete campaigns that have no queued messages left
   UPDATE oc
   SET    oc.status       = 'completed',
          oc.completed_at = SYSUTCDATETIME(),
@@ -1043,7 +1121,6 @@ GO
 -- sp_MarkEmailOpened
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_MarkEmailOpened
-  -- resend_id is the Resend message ID from the webhook event (data.email_id)
   @ResendId  NVARCHAR(100),
   @ErrorCode NVARCHAR(50) OUTPUT
 AS
@@ -1063,8 +1140,6 @@ GO
 
 -- ============================================================
 -- sp_ProcessUnsubscribe
--- Records an email unsubscribe. outreach_messages and
--- email_unsubscribes now use user_id (migration 009).
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_ProcessUnsubscribe
   @Token     UNIQUEIDENTIFIER,
@@ -1098,7 +1173,7 @@ GO
 -- ============================================================
 -- sp_CreatePost
 -- V2: audience = 'all_sports' | 'sport_specific' only.
--- Alumni posters are validated against their sport in users_roles.
+-- Alumni are validated against their sport in users_sports.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_CreatePost
   @CreatedBy    INT,
@@ -1110,7 +1185,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreatePost
   @IsPinned     BIT              = 0,
   @AlsoEmail    BIT              = 0,
   @EmailSubject NVARCHAR(500)    = NULL,
-  @PosterRole   NVARCHAR(50)     = NULL,   -- JWT global role, used for alumni sport check
+  @PosterRole   NVARCHAR(50)     = NULL,
   @NewPostId    UNIQUEIDENTIFIER OUTPUT,
   @CampaignId   UNIQUEIDENTIFIER OUTPUT,
   @ErrorCode    NVARCHAR(50)     OUTPUT
@@ -1137,10 +1212,10 @@ BEGIN
   IF @PosterRole = 'alumni' AND @Audience = 'sport_specific'
   BEGIN
     IF NOT EXISTS (
-      SELECT 1 FROM dbo.users_roles
+      SELECT 1 FROM dbo.users_sports
       WHERE user_id  = @CreatedBy
         AND sport_id = @SportId
-        AND status  <> 'removed'
+        AND is_active = 1
     )
     BEGIN
       SET @ErrorCode = 'SPORT_NOT_ALLOWED';
@@ -1154,7 +1229,6 @@ BEGIN
     RETURN;
   END
 
-  -- When pinning, unpin all other posts first (only one pinned at a time)
   IF @IsPinned = 1
     UPDATE dbo.feed_posts SET is_pinned = 0 WHERE is_pinned = 1;
 
@@ -1169,7 +1243,6 @@ BEGIN
     @SportId, ISNULL(@IsPinned, 0), SYSUTCDATETIME()
   );
 
-  -- Campaign audience: 'all' for all_sports; sport_id restricts recipients for sport_specific
   IF @AlsoEmail = 1
   BEGIN
     SET @CampaignId = NEWID();
@@ -1194,11 +1267,7 @@ GO
 
 -- ============================================================
 -- sp_GetFeed  (V2)
--- Audience model: all_sports (everyone) | sport_specific (sport only).
 -- @MySport = 1 → filter to viewer's own sport(s) + all_sports.
--- @MySport = 0 → all posts regardless of sport.
--- Includes like count, user_has_liked, updated_at, poster name,
--- sport name. Excludes soft-deleted posts.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetFeed
   @ViewerUserId INT,
@@ -1227,13 +1296,12 @@ BEGIN
           AND (
             @MySport = 0
             OR fp.sport_id IN (
-              SELECT sport_id FROM dbo.users_roles
-              WHERE user_id = @ViewerUserId AND status <> 'removed'
+              SELECT sport_id FROM dbo.users_sports
+              WHERE user_id = @ViewerUserId AND is_active = 1
             )
           )
         )
       )
-      -- Welcome posts are filtered to only the matching tier + role group
       AND (
         fp.is_welcome_post = 0
         OR (
@@ -1255,13 +1323,12 @@ BEGIN
           AND (
             @MySport = 0
             OR fp.sport_id IN (
-              SELECT sport_id FROM dbo.users_roles
-              WHERE user_id = @ViewerUserId AND status <> 'removed'
+              SELECT sport_id FROM dbo.users_sports
+              WHERE user_id = @ViewerUserId AND is_active = 1
             )
           )
         )
       )
-      -- Welcome posts filtered to matching tier + role group only
       AND (
         fp.is_welcome_post = 0
         OR (
@@ -1306,8 +1373,7 @@ GO
 
 -- ============================================================
 -- sp_GetFeedPost  (V2)
--- Returns a single post with like count, user_has_liked, updated_at.
--- Audience check uses the new all_sports / sport_specific model.
+-- Returns a single post. Audience check via users_sports.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetFeedPost
   @PostId       UNIQUEIDENTIFIER,
@@ -1352,8 +1418,8 @@ BEGIN
       OR (
         fp.audience = 'sport_specific'
         AND fp.sport_id IN (
-          SELECT sport_id FROM dbo.users_roles
-          WHERE user_id = @ViewerUserId AND status <> 'removed'
+          SELECT sport_id FROM dbo.users_sports
+          WHERE user_id = @ViewerUserId AND is_active = 1
         )
       )
     );
@@ -1386,8 +1452,7 @@ GO
 
 -- ============================================================
 -- sp_GetPostReadStats  (V2)
--- Audience model: all_sports counts all active members;
--- sport_specific counts members of that sport only.
+-- Counts eligible audience from users + users_sports.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetPostReadStats
   @PostId    UNIQUEIDENTIFIER,
@@ -1409,16 +1474,22 @@ BEGIN
 
   IF @Audience = 'all_sports'
   BEGIN
-    SELECT @TotalEligible = COUNT(DISTINCT ur.user_id)
-    FROM   dbo.users_roles ur
-    WHERE  ur.status IN ('current_player','alumni');
+    -- All active players + alumni
+    SELECT @TotalEligible = COUNT(*)
+    FROM   dbo.users
+    WHERE  program_role_id IN (7, 8)
+      AND  is_active = 1;
   END
   ELSE
   BEGIN
-    SELECT @TotalEligible = COUNT(DISTINCT ur.user_id)
-    FROM   dbo.users_roles ur
-    WHERE  ur.sport_id = @SportId
-      AND  ur.status IN ('current_player','alumni');
+    -- Active players + alumni who have a users_sports row for this sport
+    SELECT @TotalEligible = COUNT(DISTINCT us.user_id)
+    FROM   dbo.users_sports us
+    JOIN   dbo.users u ON u.user_id = us.user_id
+    WHERE  us.sport_id  = @SportId
+      AND  us.is_active = 1
+      AND  u.program_role_id IN (7, 8)
+      AND  u.is_active  = 1;
   END
 
   DECLARE @TotalRead INT;
@@ -1435,12 +1506,9 @@ GO
 
 -- ============================================================
 -- sp_GetMemberDetails
--- Returns a user's profile (from dbo.users) + all role records
--- (from dbo.users_roles) + recent interaction history.
--- Used by player detail and alumni detail pages.
--- Returns two result sets:
---   [0] One row per users_roles entry (joined to users + sports + position)
---   [1] Up to 20 most-recent interaction_log entries for this user
+-- Returns a user's profile + sport memberships + interactions.
+-- Result set 1: user base + program role + sport memberships
+-- Result set 2: up to 20 most-recent interaction_log entries
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetMemberDetails
   @UserId    INT,
@@ -1456,35 +1524,37 @@ BEGIN
     RETURN;
   END
 
-  -- Result set 1: user base row + all role rows (one row per users_roles entry)
+  -- Result set 1: user + role + sport memberships (one row per sport)
   SELECT
     u.user_id          AS userId,
     u.email,
     u.first_name       AS firstName,
     u.last_name        AS lastName,
     u.platform_role    AS platformRole,
+    u.program_role_id  AS programRoleId,
+    pr.display_name    AS programRoleDisplay,
+    u.global_role_id   AS globalRoleId,
+    u.is_active        AS isActive,
     u.last_team_login  AS lastTeamLogin,
-    ur.user_role_id    AS userRoleId,
-    ur.sport_id        AS sportId,
+    us.id              AS userSportId,
+    us.sport_id        AS sportId,
     s.name             AS sportName,
     s.abbr             AS sportAbbr,
-    ur.program_role_id AS programRoleId,
-    pr.display_name    AS programRoleDisplay,
-    ur.status,
-    ur.position_id     AS positionId,
+    us.position_id     AS positionId,
     sp.position_name   AS position,
-    ur.jersey_number   AS jerseyNumber,
-    ur.seasons_played  AS seasonsPlayed,
-    ur.class_year      AS classYear,
-    ur.created_at      AS createdAt,
-    ur.updated_at      AS updatedAt
+    us.jersey_number   AS jerseyNumber,
+    us.seasons_played  AS seasonsPlayed,
+    us.class_year      AS classYear,
+    us.is_active       AS sportIsActive,
+    us.joined_at       AS createdAt,
+    us.updated_at      AS updatedAt
   FROM dbo.users u
-  LEFT JOIN dbo.users_roles     ur ON ur.user_id      = u.user_id
-  LEFT JOIN dbo.sports          s  ON s.id            = ur.sport_id
-  LEFT JOIN dbo.program_role    pr ON pr.id           = ur.program_role_id
-  LEFT JOIN dbo.sports_position sp ON sp.position_id  = ur.position_id
+  JOIN  dbo.program_role    pr ON pr.id           = u.program_role_id
+  LEFT JOIN dbo.users_sports    us ON us.user_id  = u.user_id
+  LEFT JOIN dbo.sports          s  ON s.id        = us.sport_id
+  LEFT JOIN dbo.sports_position sp ON sp.position_id = us.position_id
   WHERE u.user_id = @UserId
-  ORDER BY ur.status, s.name;
+  ORDER BY us.is_active DESC, s.name;
 
   -- Result set 2: recent interactions (latest 20)
   SELECT TOP 20
@@ -1505,18 +1575,12 @@ GO
 
 -- ============================================================
 -- sp_GetAllSports
--- Returns ALL sports (active and inactive) for the admin
--- settings panel.  Ordered by id so seeded sports stay stable.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetAllSports
 AS
 BEGIN
   SET NOCOUNT ON;
-  SELECT
-    id,
-    name,
-    abbr,
-    is_active AS isActive
+  SELECT id, name, abbr, is_active AS isActive
   FROM dbo.sports
   ORDER BY id;
 END;
@@ -1524,7 +1588,6 @@ GO
 
 -- ============================================================
 -- sp_SetSportActive
--- Toggles the is_active flag on a single sport row.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_SetSportActive
   @SportId  INT,
@@ -1532,18 +1595,13 @@ CREATE OR ALTER PROCEDURE dbo.sp_SetSportActive
 AS
 BEGIN
   SET NOCOUNT ON;
-  UPDATE dbo.sports
-     SET is_active = @IsActive
-   WHERE id = @SportId;
-
+  UPDATE dbo.sports SET is_active = @IsActive WHERE id = @SportId;
   SELECT @@ROWCOUNT AS rowsAffected;
 END;
 GO
 
 -- ============================================================
 -- sp_AddSport
--- Inserts a new sport.  Returns newId + errorCode.
--- errorCode = 'DUPLICATE_ABBR' if abbr already exists.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_AddSport
   @Name     NVARCHAR(100),
@@ -1568,9 +1626,6 @@ GO
 
 -- ============================================================
 -- sp_AddSportsPosition
--- Inserts a new position for a sport.
--- errorCode = 'DUPLICATE_ABBR' if abbreviation already exists
--- for that sport.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_AddSportsPosition
   @SportId      INT,
@@ -1598,7 +1653,6 @@ GO
 
 -- ============================================================
 -- sp_UpdateSportsPosition
--- Patches a position row.  NULL params = keep existing value.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_UpdateSportsPosition
   @PositionId   INT,
@@ -1621,8 +1675,8 @@ GO
 
 -- ============================================================
 -- sp_DeleteSportsPosition
--- Hard-deletes a position.  Positions referenced by users_roles
--- will be NULLed by the FK cascade (ON DELETE SET NULL).
+-- Hard-deletes a position.  Positions referenced by users_sports
+-- will be NULLed via the FK ON DELETE SET NULL.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_DeleteSportsPosition
   @PositionId INT
@@ -1636,8 +1690,6 @@ GO
 
 -- ============================================================
 -- sp_TogglePostLike
--- Toggles a like for a user on a post. Idempotent — second call
--- removes the like.  Returns new like count and liked status.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_TogglePostLike
   @PostId    UNIQUEIDENTIFIER,
@@ -1680,10 +1732,6 @@ GO
 
 -- ============================================================
 -- sp_SoftDeletePost
--- Soft-deletes a feed post (is_deleted = 1).
--- @CanDeleteAny = 1 → admin/AD can delete any post.
--- @CanDeleteAny = 0 → only the post owner can delete.
--- Welcome posts cannot be deleted by their owner.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_SoftDeletePost
   @PostId       UNIQUEIDENTIFIER,
@@ -1708,7 +1756,6 @@ BEGIN
     RETURN;
   END
 
-  -- Welcome posts can only be deleted by admin (CanDeleteAny)
   IF @IsWelcomePost = 1 AND @CanDeleteAny = 0
   BEGIN
     SET @ErrorCode = 'FORBIDDEN';
@@ -1731,8 +1778,6 @@ GO
 
 -- ============================================================
 -- sp_EditPost
--- Updates a post's body and sets updated_at.
--- Only the post owner can edit. Welcome posts are not editable.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_EditPost
   @PostId    UNIQUEIDENTIFIER,
@@ -1778,8 +1823,6 @@ GO
 
 -- ============================================================
 -- sp_PinPost
--- Pins a post (admin-only action; caller must gate on role).
--- Unpins all other posts first — only one pinned post at a time.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_PinPost
   @PostId    UNIQUEIDENTIFIER,
@@ -1802,7 +1845,7 @@ GO
 
 -- ============================================================
 -- sp_GetUserSportAssociations
--- Returns the sports a user is associated with via users_roles.
+-- Returns the sports a user is active in (via users_sports).
 -- Used by the new-post page to restrict alumni sport selection.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetUserSportAssociations
@@ -1815,10 +1858,10 @@ BEGIN
     s.id   AS sportId,
     s.name AS sportName,
     s.abbr AS sportAbbr
-  FROM dbo.users_roles ur
-  JOIN dbo.sports s ON s.id = ur.sport_id
-  WHERE ur.user_id  = @UserId
-    AND ur.status  <> 'removed'
+  FROM dbo.users_sports us
+  JOIN dbo.sports s ON s.id = us.sport_id
+  WHERE us.user_id   = @UserId
+    AND us.is_active = 1
     AND s.is_active  = 1
   ORDER BY s.name;
 END;
