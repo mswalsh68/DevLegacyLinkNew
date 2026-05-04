@@ -19,10 +19,7 @@ const AUDIENCE_OPTIONS = [
   { value: 'sport_specific', label: 'Sport Specific — one sport only'     },
 ]
 
-const CAN_POST_ROLES = [
-  'platform_owner', 'app_admin', 'head_coach',
-  'position_coach', 'alumni_director', 'alumni',
-]
+const CAN_POST_ROLES = ['super_admin', 'support_admin', 'client']
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -53,34 +50,17 @@ export default function NewPostPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error,      setError]      = useState('')
 
-  const isAlumni = user?.role === 'alumni'
-  const canPost  = CAN_POST_ROLES.includes(user?.role ?? '')
-                && (!isAlumni || (user?.tierId ?? 1) >= 2)
+  const canPost = CAN_POST_ROLES.includes(user?.role ?? '')
 
   // Load sports after access check passes
   useEffect(() => {
     if (!user || !canPost) return
 
-    const endpoint = isAlumni ? '/api/me/sports' : '/api/sports'
-
-    fetch(endpoint, { credentials: 'include' })
+    fetch('/api/sports', { credentials: 'include' })
       .then(r => r.json())
       .then((data: { success: boolean; data: unknown[] }) => {
         if (!data.success) return
-        let list: SportOption[] = []
-        if (isAlumni) {
-          // /api/me/sports returns { sport_id, name, abbr }
-          list = (data.data as { sport_id: number; name: string; abbr: string }[]).map(s => ({
-            id:   String(s.sport_id),
-            name: s.name,
-            abbr: s.abbr,
-          }))
-        } else {
-          list = data.data as SportOption[]
-        }
-        setSports(list)
-        // Auto-select if alumni has exactly one sport
-        if (isAlumni && list.length === 1) setSportId(list[0].id)
+        setSports(data.data as SportOption[])
         setSportsLoaded(true)
       })
       .catch(() => setSportsLoaded(true))
@@ -91,33 +71,7 @@ export default function NewPostPage() {
   if (isLoading) return null
 
   if (!CAN_POST_ROLES.includes(user?.role ?? '')) {
-    return <AccessDenied currentRole={roleLabel(user?.role)} requiredRole="Coach or higher" />
-  }
-
-  // Alumni Tier 1 upgrade prompt
-  if (isAlumni && (user?.tierId ?? 1) < 2) {
-    return (
-      <div style={{ maxWidth: 560, margin: '60px auto', textAlign: 'center', padding: '0 24px' }}>
-        <div
-          style={{
-            backgroundColor: 'var(--color-card-bg)',
-            border:          '1px solid var(--color-card-border)',
-            borderRadius:    'var(--radius-lg)',
-            padding:         40,
-            boxShadow:       'var(--shadow-sm)',
-          }}
-        >
-          <div style={{ fontSize: 40, marginBottom: 16 }}>🔒</div>
-          <h2 style={{ fontSize: 20, fontWeight: 700, color: theme.gray900, margin: '0 0 10px 0' }}>
-            Upgrade to Post
-          </h2>
-          <p style={{ fontSize: 14, color: theme.gray500, margin: '0 0 24px 0', lineHeight: 1.6 }}>
-            Alumni posting is available on Tier 2 and above. Contact your program administrator to upgrade.
-          </p>
-          <Button label="Back to Feed" variant="outline" onClick={() => router.push('/feed')} />
-        </div>
-      </div>
-    )
+    return <AccessDenied currentRole={roleLabel(user?.role)} requiredRole="Support Admin or higher" />
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
