@@ -33,6 +33,7 @@ export interface CreateCoachStaffInput {
 export interface GenerateInviteCodeInput {
   teamId:    number
   role:      string          // 'player' | 'alumni' | 'head_coach' | 'position_coach' | 'alumni_director'
+  sportId?:  number | null   // scopes player/alumni invite to a specific sport
   expiresAt?: Date | null
   maxUses?:   number | null
 }
@@ -130,6 +131,7 @@ export async function generateInviteCode(
     const { inviteCodeId, errorCode } = await sp_CreateInviteCode({
       teamId:    input.teamId,
       role:      input.role,
+      sportId:   input.sportId  ?? null,
       token,
       createdBy: session.userId,
       expiresAt: input.expiresAt ?? null,

@@ -1176,6 +1176,7 @@ export async function sp_ValidateInviteCode(params: {
 export async function sp_CreateInviteCode(params: {
   teamId:    number
   role:      string
+  sportId?:  number | null
   token:     string
   createdBy: number
   expiresAt?: Date | null
@@ -1184,6 +1185,7 @@ export async function sp_CreateInviteCode(params: {
   const { output } = await execFull('global', 'sp_CreateInviteCode', (r) => {
     r.input ('TeamId',       sql.Int,           params.teamId)
     r.input ('Role',         sql.NVarChar(30),  params.role)
+    r.input ('SportId',      sql.Int,           params.sportId   ?? null)
     r.input ('Token',        sql.NVarChar(128), params.token)
     r.input ('CreatedBy',    sql.BigInt,        params.createdBy)
     r.input ('ExpiresAt',    sql.DateTime2,     params.expiresAt ?? null)
