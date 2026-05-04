@@ -5,15 +5,19 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 
 -- ─── sp_CreateTeamMember ──────────────────────────────────────────────────────
--- Creates or looks up a user, sets their role_id, adds them to the team,
--- and grants matching app_permissions.
+-- Creates or looks up a user, assigns global role_id=3 (client) for all
+-- external users (migration 028), adds them to the team, and grants
+-- app_permissions. The @Role string is the program-level role name and is
+-- stored as metadata in app_permissions — it is NOT looked up in dbo.roles.
+--
+-- Alumni-access roles: athletic_director, app_admin, alumni_director, head_coach
 
 CREATE OR ALTER PROCEDURE dbo.sp_CreateTeamMember
   @Email        NVARCHAR(255),
   @FirstName    NVARCHAR(100),
   @LastName     NVARCHAR(100),
   @TeamId       INT,
-  @Role         NVARCHAR(50),
+  @Role         NVARCHAR(50),   -- program role name (metadata only)
   @CreatedBy    BIGINT,
   @UserId       BIGINT       OUTPUT,
   @ErrorCode    NVARCHAR(50) OUTPUT
@@ -23,14 +27,8 @@ BEGIN
   SET @ErrorCode = NULL;
   SET @UserId    = NULL;
 
-  DECLARE @RoleId INT;
-  SELECT @RoleId = id FROM dbo.roles WHERE role_name = @Role;
-
-  IF @RoleId IS NULL
-  BEGIN
-    SET @ErrorCode = 'INVALID_ROLE';
-    RETURN;
-  END
+  -- All external users get global role_id=3 (client) per migration 028.
+  DECLARE @ClientRoleId INT = 3;
 
   IF NOT EXISTS (SELECT 1 FROM dbo.teams WHERE id = @TeamId AND is_active = 1)
   BEGIN
@@ -43,13 +41,14 @@ BEGIN
   IF @UserId IS NULL
   BEGIN
     INSERT INTO dbo.users (email, password_hash, first_name, last_name, role_id, is_active)
-    VALUES (@Email, 'INVITE_PENDING', @FirstName, @LastName, @RoleId, 1);
+    VALUES (@Email, 'INVITE_PENDING', @FirstName, @LastName, @ClientRoleId, 1);
 
     SET @UserId = SCOPE_IDENTITY();
   END
   ELSE
   BEGIN
-    UPDATE dbo.users SET role_id = @RoleId WHERE user_id = @UserId;
+    -- Ensure existing users are on the client global role
+    UPDATE dbo.users SET role_id = @ClientRoleId WHERE user_id = @UserId AND role_id > @ClientRoleId;
   END
 
   IF NOT EXISTS (SELECT 1 FROM dbo.user_teams WHERE user_id = @UserId AND team_id = @TeamId)
@@ -66,8 +65,8 @@ BEGIN
     VALUES (@UserId, 'roster', @Role, @CreatedBy);
   END
 
-  -- app_admin (2), head_coach (3), alumni_director (5) also get alumni access
-  IF @RoleId IN (2, 3, 5)
+  -- Admin/director/coach roles also get alumni app access
+  IF @Role IN ('athletic_director', 'app_admin', 'alumni_director', 'head_coach')
   BEGIN
     IF NOT EXISTS (
       SELECT 1 FROM dbo.app_permissions
@@ -85,7 +84,7 @@ BEGIN
     'team_member_created',
     'user',
     CAST(@UserId AS NVARCHAR(20)),
-    (SELECT @TeamId AS teamId, @Role AS role, @RoleId AS roleId FOR JSON PATH, WITHOUT_ARRAY_WRAPPER),
+    (SELECT @TeamId AS teamId, @Role AS role FOR JSON PATH, WITHOUT_ARRAY_WRAPPER),
     SYSUTCDATETIME()
   );
 END

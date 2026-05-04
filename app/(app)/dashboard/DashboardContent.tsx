@@ -206,9 +206,10 @@ export default function DashboardContent() {
   const config       = useTeamConfig()
   const tier         = normalizeTier(config.subscriptionTier ?? 'starter')
 
-  const [wizardOpen, setWizardOpen] = useState(false)
-  const [sports,     setSports]     = useState<SportOption[]>([])
-  const [sportId,    setSportId]    = useState<number | null>(null)
+  const [wizardOpen,          setWizardOpen]          = useState(false)
+  const [sports,              setSports]              = useState<SportOption[]>([])
+  const [sportId,             setSportId]             = useState<number | null>(null)
+  const [creatorProgramRoleId, setCreatorProgramRoleId] = useState<number | null>(null)
 
   // ── Permission flags ──────────────────────────────────────────────────────
   const canViewRoster = can(user, 'roster:view')
@@ -238,6 +239,17 @@ export default function DashboardContent() {
       })
       .catch(() => { /* non-fatal */ })
   }, [isStaff])
+
+  // ── Load creator's program role ───────────────────────────────────────────
+  useEffect(() => {
+    if (!user?.appDb) return
+    fetch('/api/me/role', { credentials: 'include' })
+      .then(r => r.json())
+      .then(res => {
+        if (res.success && res.data) setCreatorProgramRoleId(res.data.programRoleId)
+      })
+      .catch(() => { /* non-fatal */ })
+  }, [user?.appDb])
 
   // Show sport dropdown only when user has access to 2+ sports
   const showSportFilter = sports.length > 1
@@ -300,7 +312,8 @@ export default function DashboardContent() {
             {canSeeFeed && (
               <NavTile href="/feed"    icon="📬" title="Feed" />
             )}
-            {isStaff && user.currentTeamId && user.appDb && (
+            {/* Role 1-7 can open the wizard (players/role 8 are blocked inside it) */}
+            {user.currentTeamId && user.appDb && creatorProgramRoleId !== null && creatorProgramRoleId <= 7 && (
               <NavTile icon="➕" title="Add Member" onClick={() => setWizardOpen(true)} />
             )}
           </div>
@@ -352,18 +365,17 @@ export default function DashboardContent() {
       )}
 
       {/* ── Add Member Wizard ── */}
-      {user.currentTeamId && user.appDb && (
+      {user.currentTeamId && user.appDb && creatorProgramRoleId !== null && (
         <AddMembersWizard
           isOpen={wizardOpen}
           onClose={() => setWizardOpen(false)}
           teamId={user.currentTeamId}
           teamName={config.teamName}
-          sport={config.sport}
           positions={config.positions}
           academicYears={config.academicYears}
           userId={user.userId}
           appDb={user.appDb}
-          userRoleId={user.roleId}
+          creatorProgramRoleId={creatorProgramRoleId}
           sports={sports}
         />
       )}

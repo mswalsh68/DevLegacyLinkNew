@@ -27,7 +27,7 @@ export interface CreateCoachStaffInput {
   lastName:  string
   teamId:    number
   teamName?: string   // for invite email
-  role:      'app_admin' | 'head_coach' | 'position_coach' | 'alumni_director'
+  role:      'athletic_director' | 'app_admin' | 'alumni_director' | 'head_coach' | 'position_coach' | 'support_staff'
 }
 
 export interface GenerateInviteCodeInput {

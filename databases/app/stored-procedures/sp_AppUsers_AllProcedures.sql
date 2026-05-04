@@ -145,3 +145,28 @@ BEGIN
   END
 END;
 GO
+
+-- ============================================================
+-- sp_GetUserProgramRole
+-- Returns the most-privileged (lowest sort_order) program role
+-- for a user across all their active users_roles records.
+-- Used by the Add Members wizard to determine what the creator
+-- is allowed to do (player=blocked, alumni=invite-only, staff=full).
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_GetUserProgramRole
+  @UserId INT
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  SELECT TOP 1
+    ur.program_role_id  AS programRoleId,
+    pr.role_name        AS roleName,
+    pr.display_name     AS displayName
+  FROM   dbo.users_roles ur
+  JOIN   dbo.program_role pr ON pr.id = ur.program_role_id AND pr.is_active = 1
+  WHERE  ur.user_id = @UserId
+    AND  ur.status  <> 'removed'
+  ORDER  BY pr.sort_order ASC;
+END;
+GO
