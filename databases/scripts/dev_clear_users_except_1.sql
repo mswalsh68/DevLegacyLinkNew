@@ -18,25 +18,27 @@ GO
 
 PRINT '── Global DB: clearing users other than user_id = 1 ──';
 
--- Cascades handle: user_teams, user_team_preferences, refresh_tokens,
---                  password_reset_tokens, app_permissions, audit_log
-DELETE FROM dbo.users WHERE user_id <> 1;
-PRINT CONCAT('Deleted ', @@ROWCOUNT, ' user(s) from dbo.users');
-GO
+-- Non-cascading FKs must be cleared before deleting from dbo.users
 
--- access_requests: no cascade on user FK — delete manually
+-- access_requests references users (no cascade)
 DELETE FROM dbo.access_requests WHERE user_id <> 1;
 PRINT CONCAT('Deleted ', @@ROWCOUNT, ' access_request(s)');
 GO
 
--- invite_codes: creator FK has no cascade — clear all invite codes
+-- invite_codes: creator FK has no cascade — clear all
 DELETE FROM dbo.invite_codes;
 PRINT CONCAT('Deleted ', @@ROWCOUNT, ' invite_code(s)');
 GO
 
--- user_contact: may not cascade — delete manually
+-- user_contact: no cascade
 DELETE FROM dbo.user_contact WHERE user_id <> 1;
 PRINT CONCAT('Deleted ', @@ROWCOUNT, ' user_contact row(s)');
+GO
+
+-- Now safe to delete users — cascades handle: user_teams, user_team_preferences,
+-- refresh_tokens, password_reset_tokens, app_permissions, audit_log
+DELETE FROM dbo.users WHERE user_id <> 1;
+PRINT CONCAT('Deleted ', @@ROWCOUNT, ' user(s) from dbo.users');
 GO
 
 -- Verify
