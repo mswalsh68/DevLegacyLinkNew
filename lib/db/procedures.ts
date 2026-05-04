@@ -968,6 +968,23 @@ export async function sp_GetUserSportAssociations(params: {
   return (recordset as unknown as UserSportAssociation[]) ?? []
 }
 
+// ─── User Program Role ────────────────────────────────────────────────────────
+
+export interface UserProgramRole {
+  programRoleId: number
+  roleName:      string
+  displayName:   string
+}
+
+export async function sp_GetUserProgramRole(params: {
+  userId: number
+}): Promise<UserProgramRole | null> {
+  const { recordset } = await execFull('app', 'sp_GetUserProgramRole', (r) => {
+    r.input('UserId', sql.Int, params.userId)
+  })
+  return (recordset as unknown as UserProgramRole[])[0] ?? null
+}
+
 // ─── Dashboard Metrics ────────────────────────────────────────────────────────
 
 export interface AlumniDashboardMetrics {
