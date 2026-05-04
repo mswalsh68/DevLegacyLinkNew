@@ -1,7 +1,7 @@
 -- ============================================================
--- MIGRATION 012 — Restructure dbo.program_role
+-- MIGRATION 013 — Restructure dbo.program_role
 -- Run on: LegacyLinkApp (and every future tenant App DB)
--- Run after: 011_feed_v2.sql / 011_pinned_welcome_posts.sql
+-- Run after: 012_welcome_posts_v2.sql
 -- ============================================================
 -- New order (aligns with global migration 028):
 --
@@ -29,8 +29,22 @@
 USE LegacyLinkApp
 GO
 
--- ─── Step 1: Remap users_roles.program_role_id to new IDs ────────────────────
--- Use negative intermediates to avoid transient uniqueness collisions.
+-- ─── Step 1: Drop FK first so negative intermediate IDs are allowed ───────────
+
+IF EXISTS (
+  SELECT 1 FROM sys.foreign_keys
+  WHERE name = 'FK_users_roles_program_role'
+)
+BEGIN
+  ALTER TABLE dbo.users_roles DROP CONSTRAINT FK_users_roles_program_role;
+  PRINT 'Dropped FK_users_roles_program_role';
+END
+ELSE
+  PRINT 'FK_users_roles_program_role not found — skipping drop';
+GO
+
+-- ─── Step 2: Remap users_roles.program_role_id to new IDs ────────────────────
+-- Use negative intermediates to avoid transient collisions during remapping.
 
 UPDATE dbo.users_roles
 SET program_role_id = -program_role_id
@@ -47,20 +61,6 @@ UPDATE dbo.users_roles SET program_role_id = 2 WHERE program_role_id = -6;  -- a
 UPDATE dbo.users_roles SET program_role_id = 6 WHERE program_role_id = -7;  -- staff → 6 (support_staff)
 UPDATE dbo.users_roles SET program_role_id = 6 WHERE program_role_id = -8;  -- volunteer → 6 (support_staff)
 PRINT 'Remapped all users_roles program_role_id values to new IDs';
-GO
-
--- ─── Step 2: Drop FK constraint so we can rebuild the lookup table ────────────
-
-IF EXISTS (
-  SELECT 1 FROM sys.foreign_keys
-  WHERE name = 'FK_users_roles_program_role'
-)
-BEGIN
-  ALTER TABLE dbo.users_roles DROP CONSTRAINT FK_users_roles_program_role;
-  PRINT 'Dropped FK_users_roles_program_role';
-END
-ELSE
-  PRINT 'FK_users_roles_program_role not found — skipping drop';
 GO
 
 -- ─── Step 3: Clear and rebuild dbo.program_role ───────────────────────────────
@@ -106,5 +106,5 @@ GROUP  BY pr.id, pr.display_name, pr.sort_order
 ORDER  BY pr.sort_order;
 GO
 
-PRINT '=== Migration 012 complete ===';
+PRINT '=== Migration 013 complete ===';
 GO
