@@ -1,3 +1,5 @@
+USE LegacyLinkApp;
+GO
 -- ============================================================
 -- APP DB — USER SYNC STORED PROCEDURES
 -- Run this file on: LegacyLinkApp (and every tenant App DB)
