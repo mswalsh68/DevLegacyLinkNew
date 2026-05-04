@@ -8,12 +8,12 @@
 //   Global DB SPs  → use 'global' key
 //   App DB SPs     → use 'app' key
 //
-// Schema baseline: post-migration 008 + 009
-//   dbo.players and dbo.alumni are DROPPED.
-//   Everyone is a row in dbo.users (synced from Global) with one or more
-//   rows in dbo.users_roles (user_id × sport_id × program_role_id × status).
-//   status = 'current_player' | 'alumni' | 'removed'
-//   dbo.sports.id is INT (Football = 1) — no more GUIDs.
+// Schema baseline: post-migration 014
+//   dbo.users       — user_id INT PK, program_role_id INT (1-to-1), global_role_id INT
+//   dbo.users_sports — id INT PK, user_id × sport_id (UNIQUE), position/jersey/class/seasons
+//   dbo.sports.id   — INT (Football = 1)
+//   dbo.program_role — 8 roles: 1=AD,2=PA,3=ADir,4=HC,5=Coach,6=Staff,7=Alumni,8=Player
+//   dbo.role_change_log — audit trail for program_role changes
 
 import sql from 'mssql'
 import { dbRequest, type DbKey } from './connection'
@@ -203,7 +203,7 @@ export async function sp_UpsertUser(params: {
 // ─── App DB — Roster / Users Roles ───────────────────────────────────────────
 
 export interface RosterRow {
-  userRoleId:   number
+  userSportId:  number       // users_sports.id (was userRoleId)
   userId:       number
   firstName:    string
   lastName:     string
@@ -216,7 +216,7 @@ export interface RosterRow {
   seasonsPlayed: number | null
   classYear:    number | null
   createdAt:    string
-  updatedAt:    string
+  updatedAt:    string | null
 }
 
 /**
@@ -274,26 +274,29 @@ export async function sp_GetAlumniRoster(params: {
 }
 
 export interface MemberDetailsRow {
-  userId:            number
-  email:             string
-  firstName:         string
-  lastName:          string
-  platformRole:      string
-  lastTeamLogin:     string | null
-  userRoleId:        number | null
-  sportId:           number | null
-  sportName:         string | null
-  sportAbbr:         string | null
-  programRoleId:     number | null
-  programRoleDisplay: string | null
-  status:            string | null
-  positionId:        number | null
-  position:          string | null
-  jerseyNumber:      number | null
-  seasonsPlayed:     number | null
-  classYear:         number | null
-  createdAt:         string | null
-  updatedAt:         string | null
+  userId:             number
+  email:              string
+  firstName:          string
+  lastName:           string
+  platformRole:       string
+  programRoleId:      number
+  programRoleDisplay: string
+  globalRoleId:       number
+  isActive:           boolean
+  lastTeamLogin:      string | null
+  // sport membership columns (NULL when user has no sport rows)
+  userSportId:        number | null
+  sportId:            number | null
+  sportName:          string | null
+  sportAbbr:          string | null
+  positionId:         number | null
+  position:           string | null
+  jerseyNumber:       number | null
+  seasonsPlayed:      number | null
+  classYear:          number | null
+  sportIsActive:      boolean | null
+  createdAt:          string | null
+  updatedAt:          string | null
 }
 
 export interface InteractionRow {
@@ -308,14 +311,14 @@ export interface InteractionRow {
 }
 
 /**
- * Returns a user's profile + all role records + recent interactions.
- * Two result sets: [0] roles (one row per users_roles entry), [1] interactions.
+ * Returns a user's profile + sport memberships + recent interactions.
+ * Result sets: [0] user+role+sport rows (one per sport), [1] interactions.
  * Replaces sp_GetPlayerById and sp_GetAlumniById.
  */
 export async function sp_GetMemberDetails(params: {
   userId: number
 }): Promise<{
-  roles:        MemberDetailsRow[]
+  sportRows:    MemberDetailsRow[]
   interactions: InteractionRow[]
   errorCode:    string | null
 }> {
@@ -324,14 +327,14 @@ export async function sp_GetMemberDetails(params: {
     r.output('ErrorCode', sql.NVarChar(50))
   })
   return {
-    roles:        (recordsets[0] ?? []) as unknown as MemberDetailsRow[],
+    sportRows:    (recordsets[0] ?? []) as unknown as MemberDetailsRow[],
     interactions: (recordsets[1] ?? []) as unknown as InteractionRow[],
     errorCode:    (output.ErrorCode as string | null) ?? null,
   }
 }
 
 /**
- * Adds a new users_roles record for a user (adds them to a sport roster).
+ * Sets a user's program role and upserts their sport membership row.
  * Replaces sp_CreatePlayer / sp_BulkCreatePlayers for the App DB step.
  * Caller must first call sp_UpsertUser + sp_GetOrCreateUser (Global DB).
  */
@@ -339,39 +342,38 @@ export async function sp_AddUserRole(params: {
   userId:        number
   programRoleId: number
   sportId?:      number | null
-  status?:       'current_player' | 'alumni' | 'removed'
   positionId?:   number | null
   jerseyNumber?: number | null
   seasonsPlayed?: number | null
   classYear?:    number | null
   adminUserId:   number
-}): Promise<{ newUserRoleId: number | null; errorCode: string | null }> {
+}): Promise<{ newUserSportId: number | null; errorCode: string | null }> {
   const { output } = await execFull('app', 'sp_AddUserRole', (r) => {
-    r.input ('UserId',        sql.Int,          params.userId)
-    r.input ('ProgramRoleId', sql.Int,          params.programRoleId)
-    r.input ('SportId',       sql.Int,          params.sportId       ?? null)
-    r.input ('Status',        sql.NVarChar(20), params.status        ?? 'current_player')
-    r.input ('PositionId',    sql.Int,          params.positionId    ?? null)
-    r.input ('JerseyNumber',  sql.TinyInt,      params.jerseyNumber  ?? null)
-    r.input ('SeasonsPlayed', sql.TinyInt,      params.seasonsPlayed ?? null)
-    r.input ('ClassYear',     sql.SmallInt,     params.classYear     ?? null)
-    r.input ('AdminUserId',   sql.Int,          params.adminUserId)
-    r.output('NewUserRoleId', sql.Int)
-    r.output('ErrorCode',     sql.NVarChar(50))
+    r.input ('UserId',         sql.Int,     params.userId)
+    r.input ('ProgramRoleId',  sql.Int,     params.programRoleId)
+    r.input ('SportId',        sql.Int,     params.sportId       ?? null)
+    r.input ('PositionId',     sql.Int,     params.positionId    ?? null)
+    r.input ('JerseyNumber',   sql.TinyInt, params.jerseyNumber  ?? null)
+    r.input ('SeasonsPlayed',  sql.TinyInt, params.seasonsPlayed ?? null)
+    r.input ('ClassYear',      sql.SmallInt,params.classYear     ?? null)
+    r.input ('AdminUserId',    sql.Int,     params.adminUserId)
+    r.output('NewUserSportId', sql.Int)
+    r.output('ErrorCode',      sql.NVarChar(50))
   })
   return {
-    newUserRoleId: (output.NewUserRoleId as number | null) ?? null,
-    errorCode:     (output.ErrorCode     as string | null) ?? null,
+    newUserSportId: (output.NewUserSportId as number | null) ?? null,
+    errorCode:      (output.ErrorCode      as string | null) ?? null,
   }
 }
 
 /**
- * Updates mutable fields on a users_roles record.
+ * Updates mutable fields on a users_sports row (identified by userId + sportId).
  * Pass only the fields you want to change — null/undefined = no change.
  * Replaces sp_UpdatePlayer and sp_UpdateAlumni.
  */
 export async function sp_UpdateUserRole(params: {
-  userRoleId:    number
+  userId:        number
+  sportId:       number
   positionId?:   number | null
   jerseyNumber?: number | null
   seasonsPlayed?: number | null
@@ -379,7 +381,8 @@ export async function sp_UpdateUserRole(params: {
   adminUserId:   number
 }): Promise<{ errorCode: string | null }> {
   const { output } = await execFull('app', 'sp_UpdateUserRole', (r) => {
-    r.input ('UserRoleId',   sql.Int,      params.userRoleId)
+    r.input ('UserId',       sql.Int,      params.userId)
+    r.input ('SportId',      sql.Int,      params.sportId)
     r.input ('PositionId',   sql.Int,      params.positionId    ?? null)
     r.input ('JerseyNumber', sql.TinyInt,  params.jerseyNumber  ?? null)
     r.input ('SeasonsPlayed',sql.TinyInt,  params.seasonsPlayed ?? null)
@@ -391,28 +394,48 @@ export async function sp_UpdateUserRole(params: {
 }
 
 /**
- * Transitions a users_roles record's status (e.g. current_player → alumni).
- * Logs the change to dbo.role_transfer_log.
- * Replaces sp_GraduatePlayer and sp_RemovePlayer.
+ * Changes a user's program role (e.g. player → alumni).
+ * Logs the change to dbo.role_change_log.
+ * Replaces sp_GraduatePlayer and the old status-based sp_TransferUserRole.
  */
 export async function sp_TransferUserRole(params: {
-  userRoleId:         number
-  newStatus:          'current_player' | 'alumni' | 'removed'
-  seasonsPlayed?:     number | null
-  classYear?:         number | null
-  adminUserId:        number
-  adminAcknowledged?: boolean
-  notes?:             string | null
+  userId:           number
+  newProgramRoleId: number
+  sportId?:         number | null
+  seasonsPlayed?:   number | null
+  classYear?:       number | null
+  adminUserId:      number
+  notes?:           string | null
 }): Promise<{ errorCode: string | null }> {
   const { output } = await execFull('app', 'sp_TransferUserRole', (r) => {
-    r.input ('UserRoleId',        sql.Int,           params.userRoleId)
-    r.input ('NewStatus',         sql.NVarChar(20),  params.newStatus)
-    r.input ('SeasonsPlayed',     sql.TinyInt,       params.seasonsPlayed     ?? null)
-    r.input ('ClassYear',         sql.SmallInt,      params.classYear         ?? null)
-    r.input ('AdminUserId',       sql.Int,           params.adminUserId)
-    r.input ('AdminAcknowledged', sql.Bit,           params.adminAcknowledged ? 1 : 0)
-    r.input ('Notes',             sql.NVarChar(sql.MAX), params.notes         ?? null)
-    r.output('ErrorCode',         sql.NVarChar(50))
+    r.input ('UserId',           sql.Int,               params.userId)
+    r.input ('NewProgramRoleId', sql.Int,               params.newProgramRoleId)
+    r.input ('SportId',          sql.Int,               params.sportId       ?? null)
+    r.input ('SeasonsPlayed',    sql.TinyInt,           params.seasonsPlayed ?? null)
+    r.input ('ClassYear',        sql.SmallInt,          params.classYear     ?? null)
+    r.input ('AdminUserId',      sql.Int,               params.adminUserId)
+    r.input ('Notes',            sql.NVarChar(sql.MAX), params.notes         ?? null)
+    r.output('ErrorCode',        sql.NVarChar(50))
+  })
+  return { errorCode: (output.ErrorCode as string | null) ?? null }
+}
+
+/**
+ * Soft-removes a user from a sport (is_active = 0 on users_sports).
+ * Logs to role_change_log. Does NOT change the user's program role.
+ */
+export async function sp_DeactivateUserSport(params: {
+  userId:      number
+  sportId:     number
+  adminUserId: number
+  notes?:      string | null
+}): Promise<{ errorCode: string | null }> {
+  const { output } = await execFull('app', 'sp_DeactivateUserSport', (r) => {
+    r.input ('UserId',      sql.Int,               params.userId)
+    r.input ('SportId',     sql.Int,               params.sportId)
+    r.input ('AdminUserId', sql.Int,               params.adminUserId)
+    r.input ('Notes',       sql.NVarChar(sql.MAX), params.notes ?? null)
+    r.output('ErrorCode',   sql.NVarChar(50))
   })
   return { errorCode: (output.ErrorCode as string | null) ?? null }
 }
