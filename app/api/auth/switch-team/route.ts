@@ -88,6 +88,7 @@ export async function POST(req: NextRequest) {
             firstName,
             lastName,
             platformRole: session.role,
+            globalRoleId: session.roleId,
           })
         )
       } catch (upsertErr) {

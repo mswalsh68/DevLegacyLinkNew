@@ -185,18 +185,20 @@ export async function sp_UpdateTeamConfig(params: {
  * Call this before sp_AddUserRole when creating a new member.
  */
 export async function sp_UpsertUser(params: {
-  userId:       number
-  email:        string
-  firstName:    string
-  lastName:     string
+  userId:        number
+  email:         string
+  firstName:     string
+  lastName:      string
   platformRole?: string
+  globalRoleId?: number   // dbo.roles.id — 1=super_admin, 2=support_admin, 3=client
 }): Promise<void> {
   await exec('app', 'sp_UpsertUser', (r) => {
-    r.input('UserId',       sql.Int,           params.userId)
-    r.input('Email',        sql.NVarChar(255),  params.email)
-    r.input('FirstName',    sql.NVarChar(100),  params.firstName)
-    r.input('LastName',     sql.NVarChar(100),  params.lastName)
-    r.input('PlatformRole', sql.NVarChar(50),   params.platformRole ?? 'player')
+    r.input('UserId',       sql.Int,          params.userId)
+    r.input('Email',        sql.NVarChar(255), params.email)
+    r.input('FirstName',    sql.NVarChar(100), params.firstName)
+    r.input('LastName',     sql.NVarChar(100), params.lastName)
+    r.input('PlatformRole', sql.NVarChar(50),  params.platformRole ?? 'player')
+    r.input('GlobalRoleId', sql.Int,           params.globalRoleId ?? 3)
   })
 }
 

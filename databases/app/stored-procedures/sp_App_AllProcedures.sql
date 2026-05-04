@@ -42,27 +42,37 @@ CREATE OR ALTER PROCEDURE dbo.sp_UpsertUser
   @Email        NVARCHAR(255),
   @FirstName    NVARCHAR(100),
   @LastName     NVARCHAR(100),
-  @PlatformRole NVARCHAR(50)  = 'player'
+  @PlatformRole NVARCHAR(50) = 'player',
+  @GlobalRoleId INT          = 3
 AS
 BEGIN
   SET NOCOUNT ON;
 
+  -- Internal LegacyLink staff (global roles 1=super_admin, 2=support_admin) always
+  -- get the top program role (1=Athletic Director) so their App DB record is correct.
+  DECLARE @EffectiveProgramRoleId INT = CASE WHEN @GlobalRoleId IN (1, 2) THEN 1 ELSE NULL END;
+
   IF EXISTS (SELECT 1 FROM dbo.users WHERE user_id = @UserId)
   BEGIN
     UPDATE dbo.users SET
-      email         = @Email,
-      first_name    = @FirstName,
-      last_name     = @LastName,
-      platform_role = ISNULL(@PlatformRole, platform_role),
-      synced_at     = SYSUTCDATETIME()
+      email           = @Email,
+      first_name      = @FirstName,
+      last_name       = @LastName,
+      platform_role   = ISNULL(@PlatformRole, platform_role),
+      global_role_id  = @GlobalRoleId,
+      program_role_id = ISNULL(@EffectiveProgramRoleId, program_role_id),
+      synced_at       = SYSUTCDATETIME()
     WHERE user_id = @UserId;
   END
   ELSE
   BEGIN
-    INSERT INTO dbo.users (user_id, email, first_name, last_name, platform_role)
-    VALUES (@UserId, @Email, @FirstName, @LastName, ISNULL(@PlatformRole, 'player'));
-    -- program_role_id defaults to 8 (player) via column default
-    -- global_role_id  defaults to 3 (client) via column default
+    INSERT INTO dbo.users (user_id, email, first_name, last_name, platform_role, global_role_id, program_role_id)
+    VALUES (
+      @UserId, @Email, @FirstName, @LastName,
+      ISNULL(@PlatformRole, 'player'),
+      @GlobalRoleId,
+      ISNULL(@EffectiveProgramRoleId, 8)
+    );
   END
 END;
 GO
