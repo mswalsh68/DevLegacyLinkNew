@@ -58,19 +58,19 @@ GO
 
 PRINT '── App DB: clearing users other than user_id = 1 ──';
 
--- users_roles: child of users — delete first
+-- role_transfer_log: FK to users_roles (user_role_id) — must go before users_roles
+DELETE FROM dbo.role_transfer_log;
+PRINT CONCAT('Deleted ', @@ROWCOUNT, ' role_transfer_log row(s)');
+GO
+
+-- users_roles: child of users
 DELETE FROM dbo.users_roles WHERE user_id <> 1;
 PRINT CONCAT('Deleted ', @@ROWCOUNT, ' users_roles row(s)');
 GO
 
--- users_sports: child of users — delete first
+-- users_sports: child of users
 DELETE FROM dbo.users_sports WHERE user_id <> 1;
 PRINT CONCAT('Deleted ', @@ROWCOUNT, ' users_sports row(s)');
-GO
-
--- role_transfer_log: references user_id — delete first
-DELETE FROM dbo.role_transfer_log WHERE user_id <> 1;
-PRINT CONCAT('Deleted ', @@ROWCOUNT, ' role_transfer_log row(s)');
 GO
 
 -- interaction_log: delete all (references alumni records)
