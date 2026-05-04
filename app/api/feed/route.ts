@@ -5,12 +5,12 @@ import { sp_GetFeed, sp_CreatePost } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 import { sendCampaignEmailsBackground } from '@/lib/email'
 
-const CAN_POST_ROLES = ['platform_owner', 'app_admin', 'head_coach', 'position_coach', 'alumni_director', 'alumni']
+const CAN_POST_ROLES = ['super_admin', 'support_admin', 'client']
 
 function getRoleGroup(roleId: number): string {
-  if (roleId <= 2) return 'admin'   // platform_owner, app_admin
-  if (roleId <= 5) return 'staff'   // head_coach, position_coach, alumni_director
-  return 'player'                    // player, alumni
+  if (roleId === 1) return 'admin'   // super_admin
+  if (roleId === 2) return 'staff'   // support_admin
+  return 'player'                    // client
 }
 
 export async function GET(req: Request) {
@@ -60,11 +60,6 @@ export async function POST(req: Request) {
 
   if (!CAN_POST_ROLES.includes(session.role)) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
-  }
-
-  // Alumni can only post at Tier 2+
-  if (session.role === 'alumni' && (session.tierId ?? 1) < 2) {
-    return NextResponse.json({ success: false, error: 'Alumni posting requires Tier 2 or higher.' }, { status: 403 })
   }
 
   if (!session.appDb) {

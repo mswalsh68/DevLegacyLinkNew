@@ -43,9 +43,5 @@ export function hasAppAccess(session: UserSession, app: string): boolean {
 }
 
 export function isGlobalAdmin(session: UserSession): boolean {
-  // platform_owner (roleId = 1) is the only truly global admin since migration 018.
-  // Keeping 'global_admin' string check as a legacy alias until all old JWTs expire.
-  return session.roleId === 1
-    || session.role === 'platform_owner'
-    || (session as unknown as Record<string, unknown>).globalRole === 'platform_owner'
+  return session.roleId === 1 || session.role === 'super_admin'
 }

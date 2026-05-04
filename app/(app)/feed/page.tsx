@@ -52,7 +52,7 @@ const AUDIENCE_LABEL: Record<string, string> = {
 
 const PAGE_SIZE = 20
 
-const CAN_POST_ROLES = ['platform_owner', 'app_admin', 'head_coach', 'position_coach', 'alumni_director', 'alumni']
+const CAN_POST_ROLES = ['super_admin', 'support_admin', 'client']
 
 // ─── FeedCard ─────────────────────────────────────────────────────────────────
 
@@ -253,7 +253,7 @@ function FeedCard({
             }}
           />
           {editErr && (
-            <p style={{ fontSize: 12, color: theme.red ?? '#dc2626', marginTop: 4 }}>{editErr}</p>
+            <p style={{ fontSize: 12, color: theme.danger, marginTop: 4 }}>{editErr}</p>
           )}
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
             <Button label={saving ? 'Saving…' : 'Save'} onClick={handleSaveEdit} />
@@ -362,9 +362,7 @@ export default function FeedPage() {
   const canDeleteAny = can(user, 'feed:delete_any')
   const canPin       = can(user, 'feed:pin')
 
-  const isAlumni = user?.role === 'alumni'
-  const canPost  = CAN_POST_ROLES.includes(user?.role ?? '')
-    && !(isAlumni && (user?.tierId ?? 1) < 2)
+  const canPost = CAN_POST_ROLES.includes(user?.role ?? '')
 
   const fetchFeed = useCallback(async (p: number, sport: boolean) => {
     setLoading(true)
