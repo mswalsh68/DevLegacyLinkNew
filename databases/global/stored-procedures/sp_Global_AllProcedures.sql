@@ -1029,7 +1029,7 @@ BEGIN
       'INVITE_PENDING',
       @FirstName,
       @LastName,
-      6
+      3   -- client (migration 028: all external users get role_id=3)
     );
 
     SET @UserId = SCOPE_IDENTITY();
@@ -1048,9 +1048,9 @@ BEGIN
       CAST(@UserId AS NVARCHAR(20)),
       JSON_OBJECT(
         'email':    @Email,
-        'roleId':   '6',
-        'roleName': 'player',
-        'source':   'bulk_import',
+        'roleId':   '3',
+        'roleName': 'client',
+        'source':   'wizard_or_bulk_import',
         'teamId':   ISNULL(CAST(@TeamId AS NVARCHAR(20)), '')
       )
     );
