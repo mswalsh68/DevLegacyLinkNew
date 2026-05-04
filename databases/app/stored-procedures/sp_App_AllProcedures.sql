@@ -48,9 +48,10 @@ AS
 BEGIN
   SET NOCOUNT ON;
 
-  -- Internal LegacyLink staff (global roles 1=super_admin, 2=support_admin) always
-  -- get the top program role (1=Athletic Director) so their App DB record is correct.
-  DECLARE @EffectiveProgramRoleId INT = CASE WHEN @GlobalRoleId IN (1, 2) THEN 1 ELSE NULL END;
+  -- Internal LegacyLink staff (global roles 1=super_admin, 2=support_admin) are above
+  -- the app-level role system and have no program role (NULL). Clients (3) keep their
+  -- existing program_role_id or default to 8 (Player) on first insert.
+  DECLARE @IsInternal BIT = CASE WHEN @GlobalRoleId IN (1, 2) THEN 1 ELSE 0 END;
 
   IF EXISTS (SELECT 1 FROM dbo.users WHERE user_id = @UserId)
   BEGIN
@@ -60,7 +61,7 @@ BEGIN
       last_name       = @LastName,
       platform_role   = ISNULL(@PlatformRole, platform_role),
       global_role_id  = @GlobalRoleId,
-      program_role_id = ISNULL(@EffectiveProgramRoleId, program_role_id),
+      program_role_id = CASE WHEN @IsInternal = 1 THEN NULL ELSE program_role_id END,
       synced_at       = SYSUTCDATETIME()
     WHERE user_id = @UserId;
   END
@@ -71,7 +72,7 @@ BEGIN
       @UserId, @Email, @FirstName, @LastName,
       ISNULL(@PlatformRole, 'player'),
       @GlobalRoleId,
-      ISNULL(@EffectiveProgramRoleId, 8)
+      CASE WHEN @IsInternal = 1 THEN NULL ELSE 8 END
     );
   END
 END;
