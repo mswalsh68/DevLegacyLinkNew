@@ -592,7 +592,7 @@ export function AddMembersWizard({
       {/* ── Staff flow ── */}
       {!isAlumniCreator && !isPlayerCreator && (
         <>
-          {/* Step 1: Select role + sport */}
+          {/* Step 1: Select role */}
           {step === 'select' && (
             <div style={sectionStyle}>
               <Field label="Role" required>
@@ -607,11 +607,6 @@ export function AddMembersWizard({
                   ))}
                 </select>
               </Field>
-
-              {/* Sport picker only for player/alumni roles */}
-              {showSportPicker && selectedRole && selectedRole.memberType !== 'staff' && (
-                <SportPicker />
-              )}
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
                 <Button label="Continue" disabled={!selectedRoleId} onClick={() => selectedRoleId && setStep('action')} />
@@ -658,7 +653,6 @@ export function AddMembersWizard({
 
                   {memberType === 'player' && (
                     <>
-                      {/* Sport picker shown here too if staff picked role before sport */}
                       {showSportPicker && <SportPicker />}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                         <PositionPicker />
