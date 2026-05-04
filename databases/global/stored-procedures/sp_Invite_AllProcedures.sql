@@ -63,6 +63,7 @@ BEGIN
     t.abbr                                                  AS teamAbbr,
     tc.sport,
     ic.role,
+    ic.sport_id                                             AS sportId,
     ic.use_count                                            AS useCount,
     ic.max_uses                                             AS maxUses,
     ic.expires_at                                           AS expiresAt,
@@ -82,12 +83,14 @@ END
 GO
 
 -- ─── sp_CreateInviteCode ──────────────────────────────────────────────────────
--- Creates a new invite code scoped to a team + role.
+-- Creates a new invite code scoped to a team + role, with optional sport scope.
 -- Token is passed in from the caller (UUID generated server-side).
+-- Requires migration 029 (sport_id column on invite_codes).
 
 CREATE OR ALTER PROCEDURE dbo.sp_CreateInviteCode
   @TeamId       INT,
   @Role         NVARCHAR(30),
+  @SportId      INT           = NULL,
   @Token        NVARCHAR(128),
   @CreatedBy    BIGINT,
   @ExpiresAt    DATETIME2     = NULL,
@@ -116,8 +119,8 @@ BEGIN
     RETURN;
   END
 
-  INSERT INTO dbo.invite_codes (team_id, role, token, created_by, expires_at, max_uses)
-  VALUES (@TeamId, @Role, @Token, @CreatedBy, @ExpiresAt, @MaxUses);
+  INSERT INTO dbo.invite_codes (team_id, role, sport_id, token, created_by, expires_at, max_uses)
+  VALUES (@TeamId, @Role, @SportId, @Token, @CreatedBy, @ExpiresAt, @MaxUses);
 
   SET @InviteCodeId = SCOPE_IDENTITY();
 
@@ -127,7 +130,7 @@ BEGIN
     'invite_code_created',
     'invite_code',
     CAST(@InviteCodeId AS NVARCHAR(20)),
-    (SELECT @TeamId AS teamId, @Role AS role FOR JSON PATH, WITHOUT_ARRAY_WRAPPER),
+    (SELECT @TeamId AS teamId, @Role AS role, @SportId AS sportId FOR JSON PATH, WITHOUT_ARRAY_WRAPPER),
     SYSUTCDATETIME()
   );
 END

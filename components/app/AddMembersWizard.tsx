@@ -8,9 +8,10 @@
 //   role 1-6 (staff) — full access: dropdown role picker → create / bulk / invite
 //
 // Global role: every user created here gets role_id=3 (client) automatically.
-// Program role is stored in App DB dbo.users_roles via the server actions.
+// Positions are fetched dynamically per sport from /api/sports/[sportId]/positions.
+// Invite links are sport-scoped.
 
-import { useState, useRef, useTransition } from 'react'
+import { useState, useRef, useEffect, useTransition } from 'react'
 import { Modal }  from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { addPlayerToRoster, bulkAddPlayersToRoster } from '@/app/actions/players'
@@ -19,7 +20,6 @@ import { createCoachStaff, generateInviteCode }     from '@/app/actions/members'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-// Mirrors dbo.program_role — sport-agnostic display names.
 const PROGRAM_ROLES = [
   { id: 1, label: 'Athletic Director', roleKey: 'athletic_director', memberType: 'staff'  as const },
   { id: 2, label: 'Program Admin',     roleKey: 'app_admin',         memberType: 'staff'  as const },
@@ -49,16 +49,20 @@ interface SportOption {
   abbr: string
 }
 
+interface PositionOption {
+  positionId:   number
+  positionName: string
+}
+
 export interface AddMembersWizardProps {
   isOpen:               boolean
   onClose:              () => void
   teamId:               number
   teamName:             string
-  positions:            string[]
   academicYears:        string[]
   userId:               number
   appDb:                string
-  creatorProgramRoleId: number   // dbo.program_role.id (1-8) for gating
+  creatorProgramRoleId: number
   sports:               SportOption[]
 }
 
@@ -150,18 +154,6 @@ function TextInput({ value, onChange, placeholder, type = 'text', required }: {
   )
 }
 
-function SelectInput({ value, onChange, options }: {
-  value: string; onChange: (v: string) => void
-  options: string[]
-}) {
-  return (
-    <select value={value} onChange={e => onChange(e.target.value)} style={{ ...inputStyle, appearance: 'auto' }}>
-      <option value="">Select…</option>
-      {options.map(o => <option key={o} value={o}>{o}</option>)}
-    </select>
-  )
-}
-
 // ─── CSV utilities ────────────────────────────────────────────────────────────
 
 const CSV_TEMPLATES: Record<MemberType, { headers: string[]; example: string[] }> = {
@@ -207,31 +199,48 @@ function parseCSV(text: string): Record<string, string>[] {
 
 export function AddMembersWizard({
   isOpen, onClose,
-  teamId, teamName, positions, academicYears, userId, appDb,
+  teamId, teamName, academicYears, userId, appDb,
   creatorProgramRoleId,
   sports,
 }: AddMembersWizardProps) {
   const showSportPicker = sports.length > 1
 
-  const [step,            setStep]            = useState<WizardStep>('select')
-  const [selectedRoleId,  setSelectedRoleId]  = useState<number | null>(null)
-  const [action,          setAction]          = useState<WizardAction | null>(null)
-  const [result,          setResult]          = useState<WizardResult | null>(null)
-  const [isPending,       startTransition]    = useTransition()
+  const [step,           setStep]           = useState<WizardStep>('select')
+  const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null)
+  const [action,         setAction]         = useState<WizardAction | null>(null)
+  const [result,         setResult]         = useState<WizardResult | null>(null)
+  const [isPending,      startTransition]   = useTransition()
 
-  // ── Create single: form state ─────────────────────────────────────────────
+  // ── Form state ────────────────────────────────────────────────────────────
   const [email,           setEmail]           = useState('')
   const [firstName,       setFirstName]       = useState('')
   const [lastName,        setLastName]        = useState('')
-  const [position,        setPosition]        = useState('')
+  const [positionId,      setPositionId]      = useState<number | null>(null)
   const [academicYear,    setAcademicYear]    = useState('')
   const [recruitingClass, setRecruitingClass] = useState('')
   const [graduationYear,  setGraduationYear]  = useState('')
   const [selSportId,      setSelSportId]      = useState<number | null>(() => sports[0]?.id ?? null)
   const [formError,       setFormError]       = useState('')
 
+  // ── Positions (fetched per sport) ─────────────────────────────────────────
+  const [sportPositions,     setSportPositions]     = useState<PositionOption[]>([])
+  const [positionsLoading,   setPositionsLoading]   = useState(false)
+
+  useEffect(() => {
+    if (!selSportId) { setSportPositions([]); return }
+    setPositionsLoading(true)
+    setPositionId(null)
+    fetch(`/api/sports/${selSportId}/positions`, { credentials: 'include' })
+      .then(r => r.json())
+      .then(res => {
+        if (res.success) setSportPositions(res.data ?? [])
+      })
+      .catch(() => {})
+      .finally(() => setPositionsLoading(false))
+  }, [selSportId])
+
   // ── Bulk upload state ─────────────────────────────────────────────────────
-  const [csvRows,     setCsvRows]     = useState<Record<string, string>[]>([])
+  const [csvRows,    setCsvRows]    = useState<Record<string, string>[]>([])
   const [csvFileName, setCsvFileName] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -240,17 +249,17 @@ export function AddMembersWizard({
   const [inviteMaxUses, setInviteMaxUses] = useState('')
   const [urlCopied,     setUrlCopied]     = useState(false)
 
-  // ── Derived state ─────────────────────────────────────────────────────────
-  const selectedRole = PROGRAM_ROLES.find(r => r.id === selectedRoleId) ?? null
+  // ── Derived ───────────────────────────────────────────────────────────────
+  const selectedRole   = PROGRAM_ROLES.find(r => r.id === selectedRoleId) ?? null
   const memberType: MemberType | null = selectedRole?.memberType ?? null
-
-  // Roles this creator can assign: same level or below (id >= creatorProgramRoleId)
   const assignableRoles = PROGRAM_ROLES.filter(r => r.id >= creatorProgramRoleId)
+  const isAlumniCreator = creatorProgramRoleId === 7
+  const isPlayerCreator = creatorProgramRoleId === 8
 
-  // ── Navigation helpers ────────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────────────────
   function resetWizard() {
     setStep('select'); setSelectedRoleId(null); setAction(null); setResult(null)
-    setEmail(''); setFirstName(''); setLastName(''); setPosition('')
+    setEmail(''); setFirstName(''); setLastName(''); setPositionId(null)
     setAcademicYear(''); setRecruitingClass(''); setGraduationYear('')
     setSelSportId(sports[0]?.id ?? null); setFormError('')
     setCsvRows([]); setCsvFileName('')
@@ -265,30 +274,18 @@ export function AddMembersWizard({
     if (step === 'result')    { resetWizard() }
   }
 
-  function handleRoleContinue() {
-    if (!selectedRoleId) return
-    setStep('action')
-  }
+  function selectAction(a: WizardAction) { setAction(a); setStep('configure') }
 
-  function selectAction(a: WizardAction) {
-    setAction(a)
-    setStep('configure')
-  }
-
-  // ── CSV file handler ──────────────────────────────────────────────────────
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     setCsvFileName(file.name)
     const reader = new FileReader()
-    reader.onload = (ev) => {
-      const text = ev.target?.result as string
-      setCsvRows(parseCSV(text))
-    }
+    reader.onload = ev => setCsvRows(parseCSV(ev.target?.result as string))
     reader.readAsText(file)
   }
 
-  // ── Submit handlers ───────────────────────────────────────────────────────
+  // ── Submit ────────────────────────────────────────────────────────────────
   function handleSubmit() {
     setFormError('')
     if (action === 'create' && (!email || !firstName || !lastName)) {
@@ -296,9 +293,9 @@ export function AddMembersWizard({
       return
     }
     startTransition(async () => {
-      if (action === 'create')  await submitCreate()
-      else if (action === 'bulk')   await submitBulk()
-      else if (action === 'invite') await submitInvite()
+      if (action === 'create')       await submitCreate()
+      else if (action === 'bulk')    await submitBulk()
+      else if (action === 'invite')  await submitInvite()
     })
   }
 
@@ -311,7 +308,7 @@ export function AddMembersWizard({
         globalTeamId:  teamId, teamName,
         programRoleId: 8,
         sportId:       selSportId,
-        positionId:    null,
+        positionId,
         classYear:     recruitingClass ? parseInt(recruitingClass) : null,
         adminUserId:   userId,
       })
@@ -328,7 +325,7 @@ export function AddMembersWizard({
         globalTeamId:  teamId, teamName,
         programRoleId: 7,
         sportId:       selSportId,
-        positionId:    null,
+        positionId,
         classYear:     graduationYear ? parseInt(graduationYear) : null,
         adminUserId:   userId,
       })
@@ -354,18 +351,25 @@ export function AddMembersWizard({
   }
 
   async function submitBulk() {
-    if (csvRows.length === 0) {
-      setFormError('Please upload a CSV file with at least one row.')
-      return
-    }
+    if (csvRows.length === 0) { setFormError('Please upload a CSV file with at least one row.'); return }
     if (!selectedRole) return
+
+    // Resolve position names → IDs from the currently-loaded sportPositions
+    function resolvePositionId(name: string): number | null {
+      if (!name) return null
+      const match = sportPositions.find(
+        p => p.positionName.toLowerCase() === name.toLowerCase()
+      )
+      return match?.positionId ?? null
+    }
 
     if (memberType === 'player') {
       const players = csvRows.map(r => ({
-        email:     r.email,
-        firstName: r.firstName || r.first_name || '',
-        lastName:  r.lastName  || r.last_name  || '',
-        classYear: parseInt(r.recruitingClass || r.recruiting_class || '') || null,
+        email:      r.email,
+        firstName:  r.firstName  || r.first_name  || '',
+        lastName:   r.lastName   || r.last_name   || '',
+        positionId: resolvePositionId(r.position ?? ''),
+        classYear:  parseInt(r.recruitingClass || r.recruiting_class || '') || null,
       }))
       const res = await bulkAddPlayersToRoster({
         appDb, players,
@@ -384,10 +388,11 @@ export function AddMembersWizard({
 
     } else if (memberType === 'alumni') {
       const alumni = csvRows.map(r => ({
-        email:     r.email,
-        firstName: r.firstName || r.first_name || '',
-        lastName:  r.lastName  || r.last_name  || '',
-        classYear: r.graduationYear ? parseInt(r.graduationYear) : null,
+        email:      r.email,
+        firstName:  r.firstName  || r.first_name  || '',
+        lastName:   r.lastName   || r.last_name   || '',
+        positionId: resolvePositionId(r.position ?? ''),
+        classYear:  r.graduationYear ? parseInt(r.graduationYear) : null,
       }))
       const res = await bulkAddAlumni({
         appDb, alumni,
@@ -426,12 +431,14 @@ export function AddMembersWizard({
     }
   }
 
-  async function submitInvite() {
-    if (!selectedRole) return
+  async function submitInvite(overrideRoleKey?: string) {
+    const role = overrideRoleKey ?? selectedRole?.roleKey
+    if (!role) return
     const res = await generateInviteCode({
       teamId,
-      role:      selectedRole.roleKey,
-      expiresAt: inviteExpiry ? new Date(inviteExpiry) : null,
+      role,
+      sportId:   selSportId,
+      expiresAt: inviteExpiry  ? new Date(inviteExpiry)      : null,
       maxUses:   inviteMaxUses ? parseInt(inviteMaxUses) : null,
     })
     if (res.success && res.inviteUrl) {
@@ -449,6 +456,43 @@ export function AddMembersWizard({
     })
   }
 
+  // ── Sport selector (reused in multiple places) ────────────────────────────
+  function SportPicker() {
+    if (!showSportPicker) return null
+    return (
+      <Field label="Sport">
+        <select
+          value={selSportId ?? ''}
+          onChange={e => setSelSportId(parseInt(e.target.value, 10) || null)}
+          style={{ ...inputStyle, appearance: 'auto' }}
+        >
+          {sports.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+      </Field>
+    )
+  }
+
+  // ── Position selector (sport-aware) ──────────────────────────────────────
+  function PositionPicker() {
+    return (
+      <Field label="Position">
+        <select
+          value={positionId ?? ''}
+          onChange={e => setPositionId(parseInt(e.target.value, 10) || null)}
+          style={{ ...inputStyle, appearance: 'auto' }}
+          disabled={positionsLoading || sportPositions.length === 0}
+        >
+          <option value="">
+            {positionsLoading ? 'Loading…' : sportPositions.length === 0 ? 'No positions defined' : 'Select…'}
+          </option>
+          {sportPositions.map(p => (
+            <option key={p.positionId} value={p.positionId}>{p.positionName}</option>
+          ))}
+        </select>
+      </Field>
+    )
+  }
+
   // ── Step titles ───────────────────────────────────────────────────────────
   const stepTitle: Record<WizardStep, string> = {
     select:    'Add Member',
@@ -459,20 +503,11 @@ export function AddMembersWizard({
     result: 'Done',
   }
 
-  // ── Alumni shortcut: invite-only flow ─────────────────────────────────────
-  // Alumni creators skip the step 1 / step 2 UI — they jump straight to
-  // the invite configure screen for the alumni role.
-  const isAlumniCreator = creatorProgramRoleId === 7
-  const isPlayerCreator = creatorProgramRoleId === 8
-
-  // On first open for alumni creators, ensure state is pre-set correctly.
-  // (Handled by the render path below — no selectedRoleId needed.)
-
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <Modal title={stepTitle[step]} onClose={handleClose} isOpen={isOpen} size="md">
 
-      {/* Progress breadcrumb — hidden for alumni invite-only path */}
+      {/* Progress breadcrumb */}
       {step !== 'result' && !isAlumniCreator && !isPlayerCreator && (
         <div style={{ display: 'flex', gap: 6, marginBottom: 24, alignItems: 'center' }}>
           {(['select', 'action', 'configure'] as WizardStep[]).map((s, i) => (
@@ -532,17 +567,7 @@ export function AddMembersWizard({
             </div>
           )}
 
-          {showSportPicker && (
-            <Field label="Sport">
-              <select
-                value={selSportId ?? ''}
-                onChange={e => setSelSportId(parseInt(e.target.value, 10) || null)}
-                style={{ ...inputStyle, appearance: 'auto' }}
-              >
-                {sports.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </Field>
-          )}
+          <SportPicker />
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Field label="Expiry Date (optional)">
@@ -558,21 +583,7 @@ export function AddMembersWizard({
             loading={isPending}
             onClick={() => {
               setFormError('')
-              startTransition(async () => {
-                const alumniRole = PROGRAM_ROLES.find(r => r.id === 7)!
-                const res = await generateInviteCode({
-                  teamId,
-                  role:      alumniRole.roleKey,
-                  expiresAt: inviteExpiry ? new Date(inviteExpiry) : null,
-                  maxUses:   inviteMaxUses ? parseInt(inviteMaxUses) : null,
-                })
-                if (res.success && res.inviteUrl) {
-                  setResult({ success: true, message: 'Invite link generated.', inviteUrl: res.inviteUrl })
-                  setStep('result')
-                } else {
-                  setFormError(res.error ?? 'Failed to generate invite link.')
-                }
-              })
+              startTransition(() => submitInvite('alumni'))
             }}
           />
         </div>
@@ -581,7 +592,7 @@ export function AddMembersWizard({
       {/* ── Staff flow ── */}
       {!isAlumniCreator && !isPlayerCreator && (
         <>
-          {/* ── Step 1: Select role + sport ── */}
+          {/* Step 1: Select role + sport */}
           {step === 'select' && (
             <div style={sectionStyle}>
               <Field label="Role" required>
@@ -597,54 +608,33 @@ export function AddMembersWizard({
                 </select>
               </Field>
 
-              {/* Sport picker shown for player/alumni roles when multi-sport */}
+              {/* Sport picker only for player/alumni roles */}
               {showSportPicker && selectedRole && selectedRole.memberType !== 'staff' && (
-                <Field label="Sport">
-                  <select
-                    value={selSportId ?? ''}
-                    onChange={e => setSelSportId(parseInt(e.target.value, 10) || null)}
-                    style={{ ...inputStyle, appearance: 'auto' }}
-                  >
-                    {sports.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                </Field>
+                <SportPicker />
               )}
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
-                <Button
-                  label="Continue"
-                  disabled={!selectedRoleId}
-                  onClick={handleRoleContinue}
-                />
+                <Button label="Continue" disabled={!selectedRoleId} onClick={() => selectedRoleId && setStep('action')} />
               </div>
             </div>
           )}
 
-          {/* ── Step 2: Action ── */}
+          {/* Step 2: Action */}
           {step === 'action' && (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 24 }}>
-                <ActionTile
-                  icon="✏️" title="Create" description="Add one member"
-                  selected={action === 'create'} onClick={() => selectAction('create')}
-                />
-                <ActionTile
-                  icon="📄" title="Bulk Upload" description="CSV file import"
-                  selected={action === 'bulk'} onClick={() => selectAction('bulk')}
-                />
-                <ActionTile
-                  icon="🔗" title="Invite Link" description="Share a signup link"
-                  selected={action === 'invite'} onClick={() => selectAction('invite')}
-                />
+                <ActionTile icon="✏️" title="Create"      description="Add one member"    selected={action === 'create'} onClick={() => selectAction('create')} />
+                <ActionTile icon="📄" title="Bulk Upload" description="CSV file import"   selected={action === 'bulk'}   onClick={() => selectAction('bulk')} />
+                <ActionTile icon="🔗" title="Invite Link" description="Share a signup link" selected={action === 'invite'} onClick={() => selectAction('invite')} />
               </div>
               <Button label="← Back" variant="ghost" size="sm" onClick={goBack} />
             </>
           )}
 
-          {/* ── Step 3: Configure ── */}
+          {/* Step 3: Configure */}
           {step === 'configure' && (
             <>
-              {/* CREATE SINGLE ─────────────────────────────────────────── */}
+              {/* CREATE SINGLE */}
               {action === 'create' && (
                 <div style={sectionStyle}>
                   {formError && (
@@ -666,15 +656,17 @@ export function AddMembersWizard({
                     <TextInput value={email} onChange={setEmail} placeholder="member@example.com" type="email" />
                   </Field>
 
-                  {/* Player-specific */}
                   {memberType === 'player' && (
                     <>
+                      {/* Sport picker shown here too if staff picked role before sport */}
+                      {showSportPicker && <SportPicker />}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                        <Field label="Position">
-                          <SelectInput value={position} onChange={setPosition} options={positions} />
-                        </Field>
+                        <PositionPicker />
                         <Field label="Academic Year">
-                          <SelectInput value={academicYear} onChange={setAcademicYear} options={academicYears} />
+                          <select value={academicYear} onChange={e => setAcademicYear(e.target.value)} style={{ ...inputStyle, appearance: 'auto' }}>
+                            <option value="">Select…</option>
+                            {academicYears.map(y => <option key={y} value={y}>{y}</option>)}
+                          </select>
                         </Field>
                       </div>
                       <Field label="Recruiting Class (year)">
@@ -683,16 +675,16 @@ export function AddMembersWizard({
                     </>
                   )}
 
-                  {/* Alumni-specific */}
                   {memberType === 'alumni' && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                      <Field label="Position">
-                        <SelectInput value={position} onChange={setPosition} options={positions} />
-                      </Field>
-                      <Field label="Graduation Year">
-                        <TextInput value={graduationYear} onChange={setGraduationYear} placeholder="2019" type="number" />
-                      </Field>
-                    </div>
+                    <>
+                      {showSportPicker && <SportPicker />}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                        <PositionPicker />
+                        <Field label="Graduation Year">
+                          <TextInput value={graduationYear} onChange={setGraduationYear} placeholder="2019" type="number" />
+                        </Field>
+                      </div>
+                    </>
                   )}
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
@@ -702,13 +694,21 @@ export function AddMembersWizard({
                 </div>
               )}
 
-              {/* BULK UPLOAD ───────────────────────────────────────────── */}
+              {/* BULK UPLOAD */}
               {action === 'bulk' && (
                 <div style={sectionStyle}>
                   {formError && (
                     <div style={{ padding: '10px 14px', borderRadius: 8, fontSize: 13, backgroundColor: 'var(--color-danger-light)', color: 'var(--color-danger)' }}>
                       {formError}
                     </div>
+                  )}
+
+                  {memberType !== 'staff' && showSportPicker && <SportPicker />}
+
+                  {memberType !== 'staff' && sportPositions.length > 0 && (
+                    <p style={{ fontSize: 12, color: 'var(--color-gray-500)', margin: 0 }}>
+                      Valid positions for CSV: {sportPositions.map(p => p.positionName).join(', ')}
+                    </p>
                   )}
 
                   <div style={{ backgroundColor: 'var(--color-gray-50)', border: '1px solid var(--color-gray-200)', borderRadius: 8, padding: '12px 16px' }}>
@@ -719,31 +719,16 @@ export function AddMembersWizard({
                   </div>
 
                   <div>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".csv"
-                      style={{ display: 'none' }}
-                      onChange={handleFileChange}
-                    />
+                    <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleFileChange} />
                     <div
                       onClick={() => fileInputRef.current?.click()}
-                      style={{
-                        border:          '2px dashed var(--color-gray-300)',
-                        borderRadius:    10,
-                        padding:         '28px 20px',
-                        textAlign:       'center',
-                        cursor:          'pointer',
-                        backgroundColor: 'var(--color-gray-50)',
-                      }}
+                      style={{ border: '2px dashed var(--color-gray-300)', borderRadius: 10, padding: '28px 20px', textAlign: 'center', cursor: 'pointer', backgroundColor: 'var(--color-gray-50)' }}
                     >
                       {csvFileName ? (
                         <>
                           <div style={{ fontSize: 20, marginBottom: 6 }}>📄</div>
                           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-gray-800)' }}>{csvFileName}</div>
-                          <div style={{ fontSize: 12, color: 'var(--color-gray-500)', marginTop: 4 }}>
-                            {csvRows.length} row(s) ready · Click to change
-                          </div>
+                          <div style={{ fontSize: 12, color: 'var(--color-gray-500)', marginTop: 4 }}>{csvRows.length} row(s) ready · Click to change</div>
                         </>
                       ) : (
                         <>
@@ -756,28 +741,21 @@ export function AddMembersWizard({
 
                   {csvRows.length > 0 && (
                     <div style={{ fontSize: 12, color: 'var(--color-gray-500)' }}>
-                      Previewing first 3 rows of {csvRows.length} total:
+                      Previewing first 3 of {csvRows.length} rows:
                       <div style={{ fontFamily: 'monospace', backgroundColor: 'var(--color-gray-50)', border: '1px solid var(--color-gray-200)', borderRadius: 6, padding: '8px 10px', marginTop: 6, overflowX: 'auto' }}>
-                        {csvRows.slice(0, 3).map((r, i) => (
-                          <div key={i}>{JSON.stringify(r)}</div>
-                        ))}
+                        {csvRows.slice(0, 3).map((r, i) => <div key={i}>{JSON.stringify(r)}</div>)}
                       </div>
                     </div>
                   )}
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
                     <Button label="← Back" variant="ghost" size="sm" onClick={goBack} />
-                    <Button
-                      label={isPending ? 'Uploading…' : `Upload ${csvRows.length || ''} Records`}
-                      loading={isPending}
-                      disabled={csvRows.length === 0}
-                      onClick={handleSubmit}
-                    />
+                    <Button label={isPending ? 'Uploading…' : `Upload ${csvRows.length || ''} Records`} loading={isPending} disabled={csvRows.length === 0} onClick={handleSubmit} />
                   </div>
                 </div>
               )}
 
-              {/* INVITE LINK ───────────────────────────────────────────── */}
+              {/* INVITE LINK */}
               {action === 'invite' && (
                 <div style={sectionStyle}>
                   {formError && (
@@ -794,6 +772,11 @@ export function AddMembersWizard({
                       Anyone with this link can request access. Requests require admin approval.
                     </p>
                   </div>
+
+                  {/* Sport scope for player/alumni invite links */}
+                  {selectedRole && selectedRole.memberType !== 'staff' && showSportPicker && (
+                    <SportPicker />
+                  )}
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                     <Field label="Expiry Date (optional)">
@@ -815,44 +798,25 @@ export function AddMembersWizard({
         </>
       )}
 
-      {/* ── Step 4: Result (all paths) ── */}
+      {/* ── Result (all paths) ── */}
       {step === 'result' && result && (
         <div style={{ textAlign: 'center', padding: '8px 0' }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>{result.success ? '✅' : '❌'}</div>
           <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-gray-900)', margin: '0 0 8px' }}>
             {result.success ? 'Success!' : 'Something went wrong'}
           </h3>
-          <p style={{ fontSize: 14, color: 'var(--color-gray-600)', margin: '0 0 16px' }}>
-            {result.message}
-          </p>
+          <p style={{ fontSize: 14, color: 'var(--color-gray-600)', margin: '0 0 16px' }}>{result.message}</p>
 
           {result.errors && (
-            <p style={{ fontSize: 13, color: 'var(--color-warning)', marginBottom: 16 }}>
-              {result.errors}
-            </p>
+            <p style={{ fontSize: 13, color: 'var(--color-warning)', marginBottom: 16 }}>{result.errors}</p>
           )}
 
           {result.inviteUrl && (
             <div style={{ marginBottom: 20 }}>
-              <div style={{
-                backgroundColor: 'var(--color-gray-50)',
-                border:          '1px solid var(--color-gray-200)',
-                borderRadius:    8,
-                padding:         '10px 14px',
-                fontSize:        13,
-                color:           'var(--color-gray-700)',
-                wordBreak:       'break-all',
-                textAlign:       'left',
-                marginBottom:    10,
-              }}>
+              <div style={{ backgroundColor: 'var(--color-gray-50)', border: '1px solid var(--color-gray-200)', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: 'var(--color-gray-700)', wordBreak: 'break-all', textAlign: 'left', marginBottom: 10 }}>
                 {result.inviteUrl}
               </div>
-              <Button
-                label={urlCopied ? 'Copied!' : 'Copy Invite Link'}
-                variant={urlCopied ? 'secondary' : 'primary'}
-                onClick={() => copyUrl(result.inviteUrl!)}
-                fullWidth
-              />
+              <Button label={urlCopied ? 'Copied!' : 'Copy Invite Link'} variant={urlCopied ? 'secondary' : 'primary'} onClick={() => copyUrl(result.inviteUrl!)} fullWidth />
               <p style={{ fontSize: 12, color: 'var(--color-gray-500)', marginTop: 8 }}>
                 Share this link with the member. They will be prompted to request access, which requires admin approval.
               </p>
@@ -860,9 +824,7 @@ export function AddMembersWizard({
           )}
 
           <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 8 }}>
-            {!isAlumniCreator && (
-              <Button label="Add Another" variant="outline" onClick={resetWizard} />
-            )}
+            {!isAlumniCreator && <Button label="Add Another" variant="outline" onClick={resetWizard} />}
             <Button label="Done" onClick={handleClose} />
           </div>
         </div>
