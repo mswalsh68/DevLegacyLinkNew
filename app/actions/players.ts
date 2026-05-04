@@ -2,27 +2,27 @@
 
 // ─── Player Server Actions ────────────────────────────────────────────────────
 //
-// Schema baseline: post-migration 008
-//   dbo.players is DROPPED. Players are users_roles records with
-//   status = 'current_player'. The primary key for a player's
-//   roster entry is users_roles.user_role_id (referred to as userRoleId).
+// Schema baseline: post-migration 014
+//   Players are dbo.users rows with program_role_id = 8.
+//   Sport memberships live in dbo.users_sports (one row per user × sport).
+//   The primary key for a sport membership is users_sports.id (userSportId).
 //
 // Cross-database coordination:
 //
 //   addPlayerToRoster:
 //     1. Global DB → sp_GetOrCreateUser  (get/create canonical user ID)
 //     2. App DB    → sp_UpsertUser       (sync user record locally)
-//     3. App DB    → sp_AddUserRole      (create users_roles row)
+//     3. App DB    → sp_AddUserRole      (set program_role_id + upsert users_sports)
 //
 //   transferToAlumni:
-//     App DB only → sp_TransferUserRole (current_player → alumni), runs
-//     per-userRoleId; Global DB permission swap handled separately if needed.
+//     App DB only → sp_TransferUserRole (player → alumni, program_role_id = 7)
+//     Runs per { userId, sportId } pair; per-item errors collected without aborting.
 //
 //   updatePlayerRole:
-//     App DB only → sp_UpdateUserRole (positionId, jerseyNumber, etc.)
+//     App DB only → sp_UpdateUserRole (userId + sportId; updates users_sports row)
 //
 //   removeFromRoster:
-//     App DB only → sp_TransferUserRole with status='removed'
+//     App DB only → sp_DeactivateUserSport (sets users_sports.is_active = 0)
 //
 //   bulkAddPlayersToRoster:
 //     Steps 1–3 per row, errors collected per row.
@@ -34,6 +34,7 @@ import {
   sp_AddUserRole,
   sp_UpdateUserRole,
   sp_TransferUserRole,
+  sp_DeactivateUserSport,
   sp_CreateInviteCode,
 } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
@@ -85,7 +86,7 @@ export interface AddPlayerInput {
   lastName:      string
   globalTeamId:  number   // for Global DB user registration
   teamName?:     string   // for invite email subject/body
-  programRoleId: number   // dbo.program_role.id (e.g. "Player" role)
+  programRoleId: number   // dbo.program_role.id (e.g. 8 = Player)
   sportId?:      number | null
   positionId?:   number | null
   jerseyNumber?: number | null
@@ -95,16 +96,17 @@ export interface AddPlayerInput {
 }
 
 export interface TransferPlayersInput {
-  appDb:         string
-  userRoleIds:   number[]   // users_roles.user_role_id values to transfer
-  classYear?:    number | null
-  notes?:        string | null
-  adminUserId:   number
+  appDb:      string
+  transfers:  { userId: number; sportId: number }[]   // one entry per player × sport
+  classYear?: number | null
+  notes?:     string | null
+  adminUserId: number
 }
 
 export interface UpdatePlayerRoleInput {
   appDb:          string
-  userRoleId:     number
+  userId:         number   // dbo.users.user_id
+  sportId:        number   // dbo.users_sports.sport_id
   positionId?:    number | null
   jerseyNumber?:  number | null
   seasonsPlayed?: number | null
@@ -114,7 +116,8 @@ export interface UpdatePlayerRoleInput {
 
 export interface RemovePlayerInput {
   appDb:       string
-  userRoleId:  number
+  userId:      number   // dbo.users.user_id
+  sportId:     number   // dbo.users_sports.sport_id
   notes?:      string | null
   adminUserId: number
 }
@@ -141,11 +144,11 @@ export interface BulkAddPlayersInput {
 
 /**
  * Adds a single user to the current-player roster.
- * Steps: Global user → App user sync → App role row.
+ * Steps: Global user → App user sync → program_role_id set + users_sports upsert.
  */
 export async function addPlayerToRoster(
   input: AddPlayerInput,
-): Promise<{ success: boolean; userId?: number; userRoleId?: number; error?: string }> {
+): Promise<{ success: boolean; userId?: number; userSportId?: number; error?: string }> {
   return appDbContext.run(input.appDb, async () => {
     try {
       // 1. Global DB — get or create canonical user account
@@ -167,12 +170,11 @@ export async function addPlayerToRoster(
         lastName:  input.lastName,
       })
 
-      // 3. App DB — add users_roles entry
-      const { newUserRoleId, errorCode } = await sp_AddUserRole({
+      // 3. App DB — set program role + upsert sport membership
+      const { newUserSportId, errorCode } = await sp_AddUserRole({
         userId,
         programRoleId: input.programRoleId,
         sportId:       input.sportId       ?? null,
-        status:        'current_player',
         positionId:    input.positionId    ?? null,
         jerseyNumber:  input.jerseyNumber  ?? null,
         seasonsPlayed: input.seasonsPlayed ?? null,
@@ -194,7 +196,7 @@ export async function addPlayerToRoster(
         createdBy: input.adminUserId,
       })
 
-      return { success: true, userId, userRoleId: newUserRoleId ?? undefined }
+      return { success: true, userId, userSportId: newUserSportId ?? undefined }
     } catch (err) {
       console.error('[addPlayerToRoster]', err)
       return { success: false, error: 'INTERNAL_ERROR' }
@@ -203,7 +205,7 @@ export async function addPlayerToRoster(
 }
 
 /**
- * Transfers players from current_player → alumni status.
+ * Transfers players from player → alumni (program_role_id 8 → 7).
  * Runs each transfer individually so partial failures are captured.
  */
 export async function transferToAlumni(
@@ -211,36 +213,36 @@ export async function transferToAlumni(
 ): Promise<{
   success:      boolean
   successCount: number
-  failures:     { userRoleId: number; reason: string }[]
+  failures:     { userId: number; sportId: number; reason: string }[]
   error?:       string
 }> {
   return appDbContext.run(input.appDb, async () => {
     try {
       const results = await Promise.allSettled(
-        input.userRoleIds.map((userRoleId) =>
+        input.transfers.map((t) =>
           sp_TransferUserRole({
-            userRoleId,
-            newStatus:          'alumni',
-            classYear:          input.classYear ?? null,
-            adminUserId:        input.adminUserId,
-            adminAcknowledged:  true,
-            notes:              input.notes ?? null,
+            userId:           t.userId,
+            newProgramRoleId: 7,   // alumni
+            sportId:          t.sportId,
+            classYear:        input.classYear ?? null,
+            adminUserId:      input.adminUserId,
+            notes:            input.notes ?? null,
           }),
         ),
       )
 
-      const failures: { userRoleId: number; reason: string }[] = []
+      const failures: { userId: number; sportId: number; reason: string }[] = []
       let successCount = 0
 
       results.forEach((r, i) => {
         if (r.status === 'fulfilled') {
           if (r.value.errorCode) {
-            failures.push({ userRoleId: input.userRoleIds[i], reason: r.value.errorCode })
+            failures.push({ userId: input.transfers[i].userId, sportId: input.transfers[i].sportId, reason: r.value.errorCode })
           } else {
             successCount++
           }
         } else {
-          failures.push({ userRoleId: input.userRoleIds[i], reason: 'INTERNAL_ERROR' })
+          failures.push({ userId: input.transfers[i].userId, sportId: input.transfers[i].sportId, reason: 'INTERNAL_ERROR' })
         }
       })
 
@@ -253,7 +255,7 @@ export async function transferToAlumni(
 }
 
 /**
- * Updates role-level fields for a player (position, jersey, class year, etc.).
+ * Updates sport-membership fields for a player (position, jersey, class year, etc.).
  */
 export async function updatePlayerRole(
   input: UpdatePlayerRoleInput,
@@ -261,7 +263,8 @@ export async function updatePlayerRole(
   return appDbContext.run(input.appDb, async () => {
     try {
       const { errorCode } = await sp_UpdateUserRole({
-        userRoleId:    input.userRoleId,
+        userId:        input.userId,
+        sportId:       input.sportId,
         positionId:    input.positionId    ?? null,
         jerseyNumber:  input.jerseyNumber  ?? null,
         seasonsPlayed: input.seasonsPlayed ?? null,
@@ -278,19 +281,19 @@ export async function updatePlayerRole(
 }
 
 /**
- * Removes a player from the roster (sets status to 'removed').
+ * Soft-removes a player from a sport roster (users_sports.is_active = 0).
+ * Does NOT delete the user or change their program role.
  */
 export async function removeFromRoster(
   input: RemovePlayerInput,
 ): Promise<{ success: boolean; error?: string }> {
   return appDbContext.run(input.appDb, async () => {
     try {
-      const { errorCode } = await sp_TransferUserRole({
-        userRoleId:        input.userRoleId,
-        newStatus:         'removed',
-        adminUserId:       input.adminUserId,
-        adminAcknowledged: true,
-        notes:             input.notes ?? null,
+      const { errorCode } = await sp_DeactivateUserSport({
+        userId:      input.userId,
+        sportId:     input.sportId,
+        adminUserId: input.adminUserId,
+        notes:       input.notes ?? null,
       })
       if (errorCode) return { success: false, error: errorCode }
       return { success: true }
@@ -354,7 +357,6 @@ export async function bulkAddPlayersToRoster(
             userId,
             programRoleId: input.programRoleId,
             sportId:       input.sportId       ?? null,
-            status:        'current_player',
             positionId:    row.positionId    ?? null,
             jerseyNumber:  row.jerseyNumber  ?? null,
             seasonsPlayed: row.seasonsPlayed ?? null,

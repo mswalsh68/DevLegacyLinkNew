@@ -5,15 +5,14 @@ import { appDbContext } from '@/lib/db/connection'
 
 // ─── POST /api/players/transfer ───────────────────────────────────────────────
 // Body: {
-//   userRoleIds:      number[]   — users_roles.user_role_id values to transfer
-//   transferYear?:    number     — becomes classYear on the role record
-//   transferSemester?: string
-//   notes?:           string
+//   transfers:      { userId: number; sportId: number }[]  — player × sport pairs
+//   transferYear?:  number     — becomes classYear on the users_sports row
+//   notes?:         string
 // }
 //
-// For each userRoleId, flips status current_player → alumni and logs to
-// role_transfer_log. Runs in parallel; per-item errors are collected and
-// returned as failures without aborting the whole batch.
+// For each transfer pair, flips program_role_id from 8 (player) → 7 (alumni)
+// and logs to role_change_log. Runs in parallel; per-item errors are collected
+// and returned as failures without aborting the whole batch.
 
 export async function POST(req: Request) {
   const session = await getServerSession()
@@ -22,10 +21,9 @@ export async function POST(req: Request) {
   if (!session.appDb)          return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
 
   let body: {
-    userRoleIds:       number[]
-    transferYear?:     number
-    transferSemester?: string
-    notes?:            string
+    transfers:     { userId: number; sportId: number }[]
+    transferYear?: number
+    notes?:        string
   }
 
   try {
@@ -34,39 +32,39 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { userRoleIds, transferYear, transferSemester, notes } = body
+  const { transfers, transferYear, notes } = body
 
-  if (!Array.isArray(userRoleIds) || userRoleIds.length === 0) {
-    return NextResponse.json({ success: false, error: 'userRoleIds (array) is required' }, { status: 400 })
+  if (!Array.isArray(transfers) || transfers.length === 0) {
+    return NextResponse.json({ success: false, error: 'transfers (array of { userId, sportId }) is required' }, { status: 400 })
   }
 
   return appDbContext.run(session.appDb, async () => {
     try {
       const results = await Promise.allSettled(
-        userRoleIds.map((userRoleId) =>
+        transfers.map((t) =>
           sp_TransferUserRole({
-            userRoleId,
-            newStatus:    'alumni',
-            classYear:    transferYear    ?? null,
-            adminUserId:  session.userId,
-            adminAcknowledged: true,
-            notes:        notes ?? null,
+            userId:           t.userId,
+            newProgramRoleId: 7,   // alumni
+            sportId:          t.sportId,
+            classYear:        transferYear ?? null,
+            adminUserId:      session.userId,
+            notes:            notes ?? null,
           }),
         ),
       )
 
-      const failures: { userRoleId: number; reason: string }[] = []
+      const failures: { userId: number; sportId: number; reason: string }[] = []
       let successCount = 0
 
       results.forEach((r, i) => {
         if (r.status === 'fulfilled') {
           if (r.value.errorCode) {
-            failures.push({ userRoleId: userRoleIds[i], reason: r.value.errorCode })
+            failures.push({ userId: transfers[i].userId, sportId: transfers[i].sportId, reason: r.value.errorCode })
           } else {
             successCount++
           }
         } else {
-          failures.push({ userRoleId: userRoleIds[i], reason: 'INTERNAL_ERROR' })
+          failures.push({ userId: transfers[i].userId, sportId: transfers[i].sportId, reason: 'INTERNAL_ERROR' })
         }
       })
 

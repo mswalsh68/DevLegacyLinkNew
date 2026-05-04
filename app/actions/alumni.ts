@@ -2,24 +2,23 @@
 
 // ─── Alumni Server Actions ────────────────────────────────────────────────────
 //
-// Schema baseline: post-migration 008
-//   dbo.alumni is DROPPED. Alumni are users_roles records with
-//   status = 'alumni'. The primary key is users_roles.user_role_id.
+// Schema baseline: post-migration 014
+//   Alumni are dbo.users rows with program_role_id = 7.
+//   Sport memberships live in dbo.users_sports (one row per user × sport).
+//   The primary key for a sport membership is users_sports.id (userSportId).
 //
 // Cross-database coordination:
 //
 //   addAlumniRecord:
 //     1. Global DB → sp_GetOrCreateUser
 //     2. App DB    → sp_UpsertUser
-//     3. App DB    → sp_AddUserRole (status='alumni')
+//     3. App DB    → sp_AddUserRole (sets program_role_id + upserts users_sports)
 //
 //   updateAlumniRole:
-//     App DB only → sp_UpdateUserRole (positionId, jerseyNumber, classYear, etc.)
-//     NOTE: Rich CRM fields (isDonor, employer, city, etc.) were on dbo.alumni
-//     which was dropped in migration 008. Those fields no longer exist.
+//     App DB only → sp_UpdateUserRole (userId + sportId, updates users_sports row)
 //
 //   logInteraction:
-//     App DB only → sp_LogInteraction (@UserId — not @AlumniId)
+//     App DB only → sp_LogInteraction (@UserId)
 //
 //   bulkAddAlumni:
 //     Steps 1–3 per row, errors collected.
@@ -81,7 +80,7 @@ export interface AddAlumniInput {
   lastName:      string
   globalTeamId:  number
   teamName?:     string   // for invite email
-  programRoleId: number   // dbo.program_role.id (e.g. "Alumni" role)
+  programRoleId: number   // dbo.program_role.id (e.g. 7 = Alumni)
   sportId?:      number | null
   positionId?:   number | null
   classYear?:    number | null
@@ -91,7 +90,8 @@ export interface AddAlumniInput {
 
 export interface UpdateAlumniRoleInput {
   appDb:          string
-  userRoleId:     number
+  userId:         number   // dbo.users.user_id
+  sportId:        number   // dbo.users_sports.sport_id
   positionId?:    number | null
   jerseyNumber?:  number | null
   seasonsPlayed?: number | null
@@ -130,11 +130,11 @@ export interface BulkAddAlumniInput {
 
 /**
  * Adds a single alumni record.
- * Steps: Global user → App user sync → App role row (status='alumni').
+ * Steps: Global user → App user sync → program_role_id set + users_sports upsert.
  */
 export async function addAlumniRecord(
   input: AddAlumniInput,
-): Promise<{ success: boolean; userId?: number; userRoleId?: number; error?: string }> {
+): Promise<{ success: boolean; userId?: number; userSportId?: number; error?: string }> {
   return appDbContext.run(input.appDb, async () => {
     try {
       // 1. Global DB
@@ -156,12 +156,11 @@ export async function addAlumniRecord(
         lastName:  input.lastName,
       })
 
-      // 3. App DB — add alumni role
-      const { newUserRoleId, errorCode } = await sp_AddUserRole({
+      // 3. App DB — set program role + upsert sport membership
+      const { newUserSportId, errorCode } = await sp_AddUserRole({
         userId,
         programRoleId: input.programRoleId,
         sportId:       input.sportId       ?? null,
-        status:        'alumni',
         positionId:    input.positionId    ?? null,
         seasonsPlayed: input.seasonsPlayed ?? null,
         classYear:     input.classYear     ?? null,
@@ -182,7 +181,7 @@ export async function addAlumniRecord(
         createdBy: input.adminUserId,
       })
 
-      return { success: true, userId, userRoleId: newUserRoleId ?? undefined }
+      return { success: true, userId, userSportId: newUserSportId ?? undefined }
     } catch (err) {
       console.error('[addAlumniRecord]', err)
       return { success: false, error: 'INTERNAL_ERROR' }
@@ -191,9 +190,8 @@ export async function addAlumniRecord(
 }
 
 /**
- * Updates role-level fields for an alumni record.
- * (Rich CRM fields like isDonor, employer, etc. were on dbo.alumni
- *  which was dropped in migration 008 — they no longer exist in the schema.)
+ * Updates sport-membership fields for an alumni record.
+ * Identified by userId + sportId (not a legacy userRoleId).
  */
 export async function updateAlumniRole(
   input: UpdateAlumniRoleInput,
@@ -201,7 +199,8 @@ export async function updateAlumniRole(
   return appDbContext.run(input.appDb, async () => {
     try {
       const { errorCode } = await sp_UpdateUserRole({
-        userRoleId:    input.userRoleId,
+        userId:        input.userId,
+        sportId:       input.sportId,
         positionId:    input.positionId    ?? null,
         jerseyNumber:  input.jerseyNumber  ?? null,
         seasonsPlayed: input.seasonsPlayed ?? null,
@@ -290,7 +289,6 @@ export async function bulkAddAlumni(
             userId,
             programRoleId: input.programRoleId,
             sportId:       input.sportId       ?? null,
-            status:        'alumni',
             positionId:    row.positionId    ?? null,
             seasonsPlayed: row.seasonsPlayed ?? null,
             classYear:     row.classYear     ?? null,
