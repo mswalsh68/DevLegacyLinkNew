@@ -68,3 +68,6 @@ export const USER_ROLES = [
   'client',
 ] as const
 export type UserRole = (typeof USER_ROLES)[number]
+
+// Bump this string whenever the community T&C text changes to force re-consent.
+export const COMMUNITY_TC_VERSION = '1.0'

@@ -4,6 +4,10 @@
 import { redirect } from 'next/navigation'
 import { getServerSession } from '@/lib/auth'
 import { AppNav } from '@/components/app/AppNav'
+import { CommunityConsentGate } from './CommunityConsentGate'
+
+// program_role_id 7 = alumni (platform-standard, never customized)
+const ALUMNI_PROGRAM_ROLE_ID = 7
 
 export default async function AppLayout({
   children,
@@ -16,10 +20,15 @@ export default async function AppLayout({
     redirect('/login')
   }
 
+  const isAlumni = session.programRoleId === ALUMNI_PROGRAM_ROLE_ID
+
   return (
     <div style={{ minHeight: '100vh', backgroundColor: 'var(--color-page-bg)' }}>
       {/* Sticky top nav — background is var(--color-primary), updates on team switch */}
       <AppNav />
+
+      {/* Consent gate — renders as an overlay modal for alumni; no-ops for all other roles */}
+      {isAlumni && <CommunityConsentGate />}
 
       {/* Page content — centered, max 1200px, responsive padding via .app-page */}
       <div className="app-page">
