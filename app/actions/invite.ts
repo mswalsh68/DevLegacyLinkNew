@@ -66,8 +66,8 @@ export async function approveAccessRequest(params: {
       const infoReq = db.request()
       infoReq.input('UserId', sql.BigInt, userId)
       infoReq.input('TeamId', sql.Int,    teamId)
-      const infoRes = await infoReq.query<{ firstName: string; lastName: string; appDb: string | null }>(
-        `SELECT u.first_name AS firstName, u.last_name AS lastName, t.app_db AS appDb
+      const infoRes = await infoReq.query<{ email: string; firstName: string; lastName: string; appDb: string | null }>(
+        `SELECT u.email AS email, u.first_name AS firstName, u.last_name AS lastName, t.app_db AS appDb
          FROM dbo.users u CROSS JOIN dbo.teams t
          WHERE u.user_id = @UserId AND t.id = @TeamId`
       )
@@ -76,7 +76,7 @@ export async function approveAccessRequest(params: {
         await appDbContext.run(info.appDb, () =>
           sp_UpsertUser({
             userId:       userId!,
-            email:        params.userEmail,
+            email:        info.email,
             firstName:    info.firstName,
             lastName:     info.lastName,
             platformRole: finalRole ?? 'client',
