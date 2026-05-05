@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
+import { canAsync } from '@/lib/permissions.server'
 import { sp_GetRoster } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 
@@ -15,6 +16,10 @@ import { appDbContext } from '@/lib/db/connection'
 export async function GET(req: Request) {
   const session = await getServerSession()
   if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+
+  if (!(await canAsync(session, 'roster:manage')).allowed) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
+  }
 
   if (!session.appDb) {
     return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
