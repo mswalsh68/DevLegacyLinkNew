@@ -41,7 +41,7 @@ const INTERNAL       = [...SUPER_ADMIN, 'support_admin'] as const
 //   settings:view       ✓            ✓              TBD
 //   settings:requests   ✓            ✓              TBD
 
-type Feature =
+export type Feature =
   | 'roster:view'
   | 'roster:edit'
   | 'roster:transfer'
@@ -49,6 +49,9 @@ type Feature =
   | 'alumni:edit'
   | 'message:players'
   | 'message:alumni'
+  | 'feed:view'
+  | 'feed:like'
+  | 'feed:sport_filter'
   | 'feed:players'
   | 'feed:alumni'
   | 'feed:post'
@@ -65,6 +68,9 @@ const FEATURE_ROLES: Record<Feature, readonly string[]> = {
   'alumni:edit':        [...INTERNAL],
   'message:players':    [...INTERNAL],
   'message:alumni':     [...INTERNAL],
+  'feed:view':          [...INTERNAL],
+  'feed:like':          [...INTERNAL],
+  'feed:sport_filter':  [...INTERNAL],
   'feed:players':       [...INTERNAL],
   'feed:alumni':        [...INTERNAL],
   'feed:post':          [...INTERNAL],
