@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
+import { canAsync } from '@/lib/permissions.server'
 import { sp_GetMemberDetails, sp_UpdateUserRole } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 
 // ─── GET /api/players/[userId] ────────────────────────────────────────────────
 // Returns the user's profile, sport membership rows, and interaction history.
-// sportRows: one entry per users_sports row (user may play multiple sports).
+// Allowed if: roster:manage (staff) OR roster:player_accounts (player viewing any record)
 
 export async function GET(
   _req: Request,
@@ -18,6 +19,15 @@ export async function GET(
   const { userId } = await params
   const uid = parseInt(userId, 10)
 
+  const [managePerm, accountsPerm] = await Promise.all([
+    canAsync(session, 'roster:manage'),
+    canAsync(session, 'roster:player_accounts'),
+  ])
+
+  if (!managePerm.allowed && !accountsPerm.allowed) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
+  }
+
   return appDbContext.run(session.appDb, async () => {
     try {
       const { sportRows, interactions, errorCode } = await sp_GetMemberDetails({ userId: uid })
@@ -26,7 +36,6 @@ export async function GET(
         return NextResponse.json({ success: false, error: 'Player not found.' }, { status: 404 })
       }
 
-      // Surface the base user fields from the first row, then attach all active sport rows
       const base = sportRows[0]
       const data = {
         userId:             base.userId,
@@ -50,7 +59,8 @@ export async function GET(
 
 // ─── PATCH /api/players/[userId] ─────────────────────────────────────────────
 // Body: { sportId, positionId?, jerseyNumber?, seasonsPlayed?, classYear? }
-// userId comes from the URL; sportId identifies which sport membership to update.
+// Allowed if: roster:manage (staff editing anyone) OR
+//             roster:player_accounts AND uid === session.userId (player editing self)
 
 export async function PATCH(
   req: Request,
@@ -62,6 +72,18 @@ export async function PATCH(
 
   const { userId } = await params
   const uid = parseInt(userId, 10)
+
+  const [managePerm, accountsPerm] = await Promise.all([
+    canAsync(session, 'roster:manage'),
+    canAsync(session, 'roster:player_accounts'),
+  ])
+
+  const isSelf  = uid === session.userId
+  const canEdit = managePerm.allowed || (accountsPerm.allowed && isSelf)
+
+  if (!canEdit) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
+  }
 
   let body: Record<string, unknown>
   try {
