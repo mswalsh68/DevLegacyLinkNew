@@ -182,7 +182,7 @@ export async function POST(req: NextRequest) {
       // Fallback: submit an access request so the admin can approve manually
       await sp_SubmitAccessRequest({ userId: activatedId, token }).catch(() => {})
       userId   = activatedId
-      userJson = { email, roleId: 7, role: 'alumni', appPermissions: [], teams: [] }
+      userJson = { email, roleId: 3, role: 'client', appPermissions: [], teams: [] }
     }
 
     // Issue JWT and return — redirect field tells the client where to go
@@ -201,7 +201,8 @@ export async function POST(req: NextRequest) {
 
     const claimResponse = NextResponse.json({
       success:  true,
-      redirect: skipPending ? '/dashboard' : '/pending',
+      // roleId 3 = client (player/alumni) — land on feed; staff land on dashboard.
+      redirect: skipPending ? (userJson.roleId === 3 ? '/feed' : '/dashboard') : '/pending',
       data:     { user: { userId, ...userJson }, accessToken },
     })
     claimResponse.cookies.set('access_token',  accessToken,  { ...cookieBase, maxAge: 15 * 60 })
