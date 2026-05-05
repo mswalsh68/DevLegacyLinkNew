@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
-import { can } from '@/lib/permissions'
+import { canAsync } from '@/lib/permissions.server'
 import { sp_TogglePostLike } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 
@@ -11,7 +11,7 @@ export async function POST(
   const session = await getServerSession()
   if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
 
-  if (!can(session, 'feed:players') && !can(session, 'feed:alumni')) {
+  if (!(await canAsync(session, 'feed:like')).allowed) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
   }
 
