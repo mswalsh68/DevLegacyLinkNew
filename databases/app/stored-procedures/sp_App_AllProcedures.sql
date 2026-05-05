@@ -1882,8 +1882,7 @@ GO
 
 -- ============================================================
 -- sp_GetCommunityConsent
--- Returns the community consent record for a user.
--- If no row exists, returns accepted=0, visible=1 (defaults).
+-- Returns the community consent state for a user from dbo.users.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetCommunityConsent
   @UserId INT
@@ -1892,18 +1891,18 @@ BEGIN
   SET NOCOUNT ON;
 
   SELECT
-    ISNULL(ur.community_consent_accepted,   0) AS consentAccepted,
-    ISNULL(ur.community_consent_tc_version, '') AS consentTcVersion,
-    ur.community_consent_timestamp              AS consentTimestamp,
-    ISNULL(ur.contact_visible, 1)               AS contactVisible
-  FROM (SELECT @UserId AS uid) AS src
-  LEFT JOIN dbo.user_ref ur ON ur.user_id = src.uid;
+    community_consent_accepted                   AS consentAccepted,
+    ISNULL(community_consent_tc_version, '')     AS consentTcVersion,
+    community_consent_timestamp                  AS consentTimestamp,
+    contact_visible                              AS contactVisible
+  FROM dbo.users
+  WHERE id = @UserId;
 END;
 GO
 
 -- ============================================================
 -- sp_UpsertCommunityConsent
--- Inserts or updates the consent row for a user.
+-- Updates consent columns on dbo.users for a user.
 -- Pass @Accepted = 1 to accept, 0 to decline.
 -- @TcVersion should match the app constant COMMUNITY_TC_VERSION.
 -- ============================================================
@@ -1915,31 +1914,18 @@ AS
 BEGIN
   SET NOCOUNT ON;
 
-  IF EXISTS (SELECT 1 FROM dbo.user_ref WHERE user_id = @UserId)
-  BEGIN
-    UPDATE dbo.user_ref
-    SET
-      community_consent_accepted   = @Accepted,
-      community_consent_timestamp  = CASE WHEN @Accepted = 1 THEN SYSUTCDATETIME() ELSE NULL END,
-      community_consent_tc_version = CASE WHEN @Accepted = 1 THEN @TcVersion ELSE NULL END
-    WHERE user_id = @UserId;
-  END
-  ELSE
-  BEGIN
-    INSERT INTO dbo.user_ref
-      (user_id, community_consent_accepted, community_consent_timestamp, community_consent_tc_version, contact_visible)
-    VALUES
-      (@UserId, @Accepted,
-       CASE WHEN @Accepted = 1 THEN SYSUTCDATETIME() ELSE NULL END,
-       CASE WHEN @Accepted = 1 THEN @TcVersion ELSE NULL END,
-       1);
-  END
+  UPDATE dbo.users
+  SET
+    community_consent_accepted   = @Accepted,
+    community_consent_timestamp  = CASE WHEN @Accepted = 1 THEN SYSUTCDATETIME() ELSE NULL END,
+    community_consent_tc_version = CASE WHEN @Accepted = 1 THEN @TcVersion ELSE NULL END
+  WHERE id = @UserId;
 END;
 GO
 
 -- ============================================================
 -- sp_SetContactVisible
--- Flips contact_visible for a user. Upserts the row if absent.
+-- Flips contact_visible on dbo.users for a user.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_SetContactVisible
   @UserId  INT,
@@ -1948,17 +1934,8 @@ AS
 BEGIN
   SET NOCOUNT ON;
 
-  IF EXISTS (SELECT 1 FROM dbo.user_ref WHERE user_id = @UserId)
-  BEGIN
-    UPDATE dbo.user_ref
-    SET contact_visible = @Visible
-    WHERE user_id = @UserId;
-  END
-  ELSE
-  BEGIN
-    INSERT INTO dbo.user_ref
-      (user_id, community_consent_accepted, community_consent_timestamp, community_consent_tc_version, contact_visible)
-    VALUES (@UserId, 0, NULL, NULL, @Visible);
-  END
+  UPDATE dbo.users
+  SET contact_visible = @Visible
+  WHERE id = @UserId;
 END;
 GO
