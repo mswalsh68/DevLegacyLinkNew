@@ -40,6 +40,8 @@ interface AlumniResponse {
   total:   number
 }
 
+interface SportOption { id: number; name: string; abbr: string }
+
 const PAGE_SIZE = 50
 
 const STATUS_OPTIONS = [
@@ -65,6 +67,15 @@ export default function AlumniPage() {
   const [total,    setTotal]   = useState(0)
   const [loading,  setLoading] = useState(true)
   const [error,    setError]   = useState<string | null>(null)
+  const [sports,   setSports]  = useState<SportOption[]>([])
+  const [sportId,  setSportId] = useState<number | null>(null)
+
+  useEffect(() => {
+    fetch('/api/sports', { credentials: 'include' })
+      .then(r => r.json())
+      .then(res => { if (res.success) setSports(res.data ?? []) })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!can(user, 'alumni:view')) return  // don't fetch if no access
@@ -77,6 +88,7 @@ export default function AlumniPage() {
     if (status)   params.set('status',   status)
     if (position) params.set('position', position)
     if (isDonor)  params.set('isDonor',  'true')
+    if (sportId)  params.set('sportId',  String(sportId))
 
     fetch(`/api/alumni?${params}`, { credentials: 'include' })
       .then((r) => r.json() as Promise<AlumniResponse>)
@@ -87,7 +99,12 @@ export default function AlumniPage() {
       })
       .catch(() => setError('Failed to load alumni.'))
       .finally(() => setLoading(false))
-  }, [page, search, status, position, isDonor, user]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [page, search, status, position, isDonor, sportId, user]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const sportOptions = [
+    { value: '', label: 'All Sports' },
+    ...sports.map(s => ({ value: String(s.id), label: s.name })),
+  ]
 
   const positionOptions = [
     { value: '', label: 'All Positions' },
@@ -109,12 +126,19 @@ export default function AlumniPage() {
       alerts={error ? <Alert message={error} variant="error" onClose={() => setError(null)} /> : undefined}
       filters={
         <>
-          <div className="filters-grid-3" style={{ marginBottom: 12 }}>
+          <div className={sports.length > 1 ? 'filters-grid-4' : 'filters-grid-3'} style={{ marginBottom: 12 }}>
             <Input
               value={search}
               onChange={(v) => setFilter('search', v)}
               placeholder="Search name, employer, city..."
             />
+            {sports.length > 1 && (
+              <Select
+                value={sportId ? String(sportId) : ''}
+                onChange={(v) => { setSportId(v ? Number(v) : null); setPage(1) }}
+                options={sportOptions}
+              />
+            )}
             <Select value={status}   onChange={(v) => setFilter('status', v)}   options={STATUS_OPTIONS}   />
             <Select value={position} onChange={(v) => setFilter('position', v)} options={positionOptions}  />
           </div>
