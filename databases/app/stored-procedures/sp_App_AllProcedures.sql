@@ -1896,7 +1896,7 @@ BEGIN
     community_consent_timestamp                  AS consentTimestamp,
     contact_visible                              AS contactVisible
   FROM dbo.users
-  WHERE id = @UserId;
+  WHERE user_id = @UserId;
 END;
 GO
 
@@ -1919,7 +1919,7 @@ BEGIN
     community_consent_accepted   = @Accepted,
     community_consent_timestamp  = CASE WHEN @Accepted = 1 THEN SYSUTCDATETIME() ELSE NULL END,
     community_consent_tc_version = CASE WHEN @Accepted = 1 THEN @TcVersion ELSE NULL END
-  WHERE id = @UserId;
+  WHERE user_id = @UserId;
 END;
 GO
 
@@ -1936,6 +1936,6 @@ BEGIN
 
   UPDATE dbo.users
   SET contact_visible = @Visible
-  WHERE id = @UserId;
+  WHERE user_id = @UserId;
 END;
 GO
