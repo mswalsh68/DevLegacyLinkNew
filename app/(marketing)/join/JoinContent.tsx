@@ -98,12 +98,24 @@ export function JoinContent({ initialCode }: { initialCode: string }) {
       const data = await res.json()
 
       if (!res.ok) {
-        // 409 EMAIL_EXISTS during signup → this is an admin-pre-created account.
-        // Silently switch to claim mode so the user just sets a password.
+        // EMAIL_EXISTS during signup — backend tells us if it's INVITE_PENDING or a real account
         if (res.status === 409 && effectiveMode === 'signup') {
-          setMode('claim')
+          if (data.isPending) {
+            setMode('claim')
+            setError('')
+          } else {
+            setMode('login')
+            setError('You already have an account — sign in below.')
+          }
           setStep('form')
-          setError('')
+          return
+        }
+
+        // NOT_PENDING during claim — account has a real password, just need to sign in
+        if (res.status === 409 && effectiveMode === 'claim') {
+          setMode('login')
+          setError('You already have an active account — sign in below.')
+          setStep('form')
           return
         }
 
@@ -195,7 +207,14 @@ export function JoinContent({ initialCode }: { initialCode: string }) {
             border:          '1px solid rgba(207,196,147,0.30)',
           }}
         >
-          Your account was pre-created by your program. Just set a password to activate it.
+          Your account was pre-created by your program. Just set a password to activate it.{' '}
+          <button
+            type="button"
+            onClick={() => { setMode('login'); setError('') }}
+            style={{ background: 'none', border: 'none', color: '#CFC493', textDecoration: 'underline', cursor: 'pointer', fontSize: 13, padding: 0 }}
+          >
+            Sign in instead →
+          </button>
         </div>
       )}
 

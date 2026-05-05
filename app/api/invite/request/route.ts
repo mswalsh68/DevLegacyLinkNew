@@ -73,17 +73,23 @@ export async function POST(req: NextRequest) {
     })
 
     if (errorCode === 'EMAIL_EXISTS') {
-      return NextResponse.json(
-        { error: 'An account with that email already exists. Please sign in instead.' },
-        { status: 409 },
+      // Tell the UI whether to switch to claim (INVITE_PENDING) or login (real account)
+      const db        = await getPool('global')
+      const checkReq  = db.request()
+      checkReq.input('Email', sql.NVarChar(255), email)
+      const checkRes  = await checkReq.query<{ isPending: number }>(
+        `SELECT CASE WHEN password_hash = 'INVITE_PENDING' THEN 1 ELSE 0 END AS isPending
+         FROM dbo.users WHERE email = @Email`
       )
+      const isPending = (checkRes.recordset[0]?.isPending ?? 0) === 1
+      return NextResponse.json({ error: 'EMAIL_EXISTS', isPending }, { status: 409 })
     }
     if (!newId) {
       return NextResponse.json({ error: 'Failed to create account.' }, { status: 500 })
     }
 
     userId = newId
-    userJson = { email, firstName, lastName, roleId: 7, role: 'alumni', appPermissions: [], teams: [] }
+    userJson = { email, firstName, lastName, roleId: 3, role: 'client', appPermissions: [], teams: [] }
 
   } else {
     // Login flow — call sp_Login directly (same pattern as /api/auth/login)
