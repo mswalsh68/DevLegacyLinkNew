@@ -206,10 +206,11 @@ export default function DashboardContent() {
   const config       = useTeamConfig()
   const tier         = normalizeTier(config.subscriptionTier ?? 'starter')
 
-  const [wizardOpen,          setWizardOpen]          = useState(false)
-  const [sports,              setSports]              = useState<SportOption[]>([])
-  const [sportId,             setSportId]             = useState<number | null>(null)
-  const [creatorProgramRoleId, setCreatorProgramRoleId] = useState<number | null>(null)
+  const [wizardOpen,            setWizardOpen]            = useState(false)
+  const [sports,                setSports]                = useState<SportOption[]>([])
+  const [sportId,               setSportId]               = useState<number | null>(null)
+  const [creatorProgramRoleId,  setCreatorProgramRoleId]  = useState<number | null>(null)
+  const [programRoleDisplay,    setProgramRoleDisplay]    = useState<string | null>(null)
 
   // ── Permission flags ──────────────────────────────────────────────────────
   const canViewRoster = can(user, 'roster:view')
@@ -246,7 +247,10 @@ export default function DashboardContent() {
     fetch('/api/me/role', { credentials: 'include' })
       .then(r => r.json())
       .then(res => {
-        if (res.success && res.data) setCreatorProgramRoleId(res.data.programRoleId)
+        if (res.success && res.data) {
+          setCreatorProgramRoleId(res.data.programRoleId)
+          if (res.data.displayName) setProgramRoleDisplay(res.data.displayName)
+        }
       })
       .catch(() => { /* non-fatal */ })
   }, [user?.appDb])
@@ -275,7 +279,8 @@ export default function DashboardContent() {
   // ── Derived display values ────────────────────────────────────────────────
   const userAny     = user as unknown as Record<string, string | undefined>
   const displayName = userAny?.firstName ?? user?.username ?? user?.email?.split('@')[0] ?? 'Coach'
-  const roleDisplay = (user?.role ?? '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+  const roleDisplay = programRoleDisplay
+    ?? (user?.role ?? '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 
   // Prevent flicker
   if (isLoading) return null
