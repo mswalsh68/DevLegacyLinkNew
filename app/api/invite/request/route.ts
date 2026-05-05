@@ -8,6 +8,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { SignJWT } from 'jose'
 import sql from 'mssql'
+
+function extractAppNames(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  return (raw as Array<Record<string, unknown>>).map(p => String(p.app)).filter(Boolean)
+}
 import { getPool } from '@/lib/db/connection'
 import {
   sp_RegisterUserViaInvite,
@@ -122,6 +127,7 @@ export async function POST(req: NextRequest) {
 
       userId   = output.UserId as number
       userJson = JSON.parse(output.UserJson as string) as Record<string, unknown>
+      userJson.apps = extractAppNames(userJson.appPermissions)
     } catch (err) {
       console.error('[POST /api/invite/request] login error', err)
       return NextResponse.json({ error: 'Login failed.' }, { status: 500 })
@@ -171,6 +177,7 @@ export async function POST(req: NextRequest) {
         if (passwordOk) {
           userId      = loginOut.UserId as number
           userJson    = JSON.parse(loginOut.UserJson as string) as Record<string, unknown>
+          userJson.apps = extractAppNames(userJson.appPermissions)
           skipPending = true
         }
       }
