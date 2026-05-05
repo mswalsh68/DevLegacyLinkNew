@@ -5,6 +5,13 @@ import sql from 'mssql'
 import { getPool } from '@/lib/db/connection'
 import { loginSchema } from '@/lib/validations/auth'
 
+// Extracts app name strings from sp_Login's appPermissions array-of-objects.
+// sp_Login returns [{app:'roster',role:'player',...}]; session.apps must be string[].
+function extractAppNames(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  return (raw as Array<Record<string, unknown>>).map(p => String(p.app)).filter(Boolean)
+}
+
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 function getConfig() {
@@ -81,6 +88,7 @@ export async function POST(req: NextRequest) {
     userId       = Number(output.UserId)
     passwordHash = output.PasswordHash as string
     userJson     = JSON.parse(output.UserJson as string) as Record<string, unknown>
+    userJson.apps = extractAppNames(userJson.appPermissions)
 
   } catch (err) {
     console.error('[/api/auth/login] DB error:', { err, email, timestamp })

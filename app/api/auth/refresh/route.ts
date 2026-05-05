@@ -9,6 +9,11 @@ import { jwtVerify, SignJWT } from 'jose'
 import { getPool } from '@/lib/db/connection'
 import sql from 'mssql'
 
+function extractAppNames(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  return (raw as Array<Record<string, unknown>>).map(p => String(p.app)).filter(Boolean)
+}
+
 function getSecrets() {
   const accessSecret  = process.env.JWT_ACCESS_SECRET
   const refreshSecret = process.env.JWT_REFRESH_SECRET
@@ -61,6 +66,7 @@ export async function POST(req: NextRequest) {
     const { output } = await req2.execute('dbo.sp_GetUserById')
     if (!output.ErrorCode && output.UserJson) {
       userJson = JSON.parse(output.UserJson as string) as Record<string, unknown>
+      userJson.apps = extractAppNames(userJson.appPermissions)
     }
   } catch (err) {
     // DB unavailable — issue token with just the userId (minimal refresh)
