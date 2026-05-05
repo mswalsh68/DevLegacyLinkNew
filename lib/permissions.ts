@@ -45,6 +45,9 @@ export type Feature =
   | 'roster:view'
   | 'roster:edit'
   | 'roster:transfer'
+  | 'roster:manage'
+  | 'roster:player_accounts'
+  | 'roster:promote_to_alumni'
   | 'alumni:view'
   | 'alumni:edit'
   | 'message:players'
@@ -57,14 +60,19 @@ export type Feature =
   | 'feed:post'
   | 'feed:delete_any'
   | 'feed:pin'
+  | 'community:directory_view'
+  | 'community:email_alumni'
   | 'settings:view'
   | 'settings:requests'
 
 const FEATURE_ROLES: Record<Feature, readonly string[]> = {
-  'roster:view':        [...INTERNAL],
-  'roster:edit':        [...INTERNAL],
-  'roster:transfer':    [...INTERNAL],
-  'alumni:view':        [...INTERNAL],
+  'roster:view':              [...INTERNAL],
+  'roster:edit':              [...INTERNAL],
+  'roster:transfer':          [...INTERNAL],
+  'roster:manage':            [...INTERNAL],
+  'roster:player_accounts':   [...INTERNAL],
+  'roster:promote_to_alumni': [...INTERNAL],
+  'alumni:view':              [...INTERNAL],
   'alumni:edit':        [...INTERNAL],
   'message:players':    [...INTERNAL],
   'message:alumni':     [...INTERNAL],
@@ -74,10 +82,12 @@ const FEATURE_ROLES: Record<Feature, readonly string[]> = {
   'feed:players':       [...INTERNAL],
   'feed:alumni':        [...INTERNAL],
   'feed:post':          [...INTERNAL],
-  'feed:delete_any':    [...INTERNAL],
-  'feed:pin':           [...INTERNAL],
-  'settings:view':      [...INTERNAL],
-  'settings:requests':  [...INTERNAL],
+  'feed:delete_any':          [...INTERNAL],
+  'feed:pin':                 [...INTERNAL],
+  'community:directory_view': [...INTERNAL],
+  'community:email_alumni':   [...INTERNAL],
+  'settings:view':            [...INTERNAL],
+  'settings:requests':        [...INTERNAL],
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
