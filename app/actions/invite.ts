@@ -6,8 +6,8 @@
 //
 //   approveAccessRequest:
 //     Global DB → sp_ReviewAccessRequest (approve) — mirrors sp_GetOrCreateUser's
-//     user_teams + app_permissions writes. No App DB write (roster record is
-//     created separately when the user first accesses the roster module).
+//     user_teams + app_permissions writes.
+//     App DB → sp_UpsertUser — syncs the user into the tenant App DB on approval.
 //
 //   denyAccessRequest:
 //     Global DB → sp_ReviewAccessRequest (deny)
@@ -17,11 +17,14 @@
 //
 // Notifications use Resend (same service as /api/contact) via the shared helper below.
 
+import sql from 'mssql'
 import { getServerSession, isGlobalAdmin } from '@/lib/auth'
 import {
   sp_ReviewAccessRequest,
   sp_SendRequestReminder,
+  sp_UpsertUser,
 } from '@/lib/db/procedures'
+import { getPool, appDbContext } from '@/lib/db/connection'
 import { sendTransactionalEmail as sendEmail } from '@/lib/resend'
 
 // ─── Actions ─────────────────────────────────────────────────────────────────
@@ -55,6 +58,34 @@ export async function approveAccessRequest(params: {
         INVALID_ACTION:  'Invalid action.',
       }
       return { success: false, error: messages[errorCode] ?? errorCode }
+    }
+
+    // Sync approved user into tenant App DB
+    try {
+      const db      = await getPool('global')
+      const infoReq = db.request()
+      infoReq.input('UserId', sql.BigInt, userId)
+      infoReq.input('TeamId', sql.Int,    teamId)
+      const infoRes = await infoReq.query<{ firstName: string; lastName: string; appDb: string | null }>(
+        `SELECT u.first_name AS firstName, u.last_name AS lastName, t.app_db AS appDb
+         FROM dbo.users u CROSS JOIN dbo.teams t
+         WHERE u.user_id = @UserId AND t.id = @TeamId`
+      )
+      const info = infoRes.recordset[0]
+      if (info?.appDb) {
+        await appDbContext.run(info.appDb, () =>
+          sp_UpsertUser({
+            userId:       userId!,
+            email:        params.userEmail,
+            firstName:    info.firstName,
+            lastName:     info.lastName,
+            platformRole: finalRole ?? 'client',
+            globalRoleId: 3,
+          })
+        )
+      }
+    } catch (upsertErr) {
+      console.warn('[approveAccessRequest] App DB upsert failed:', (upsertErr as Error).message)
     }
 
     // Notify user
