@@ -1,11 +1,9 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
-import { can } from '@/lib/permissions'
+import { canAsync } from '@/lib/permissions.server'
 import { sp_GetFeed, sp_CreatePost } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 import { sendCampaignEmailsBackground } from '@/lib/email'
-
-const CAN_POST_ROLES = ['super_admin', 'support_admin', 'client']
 
 function getRoleGroup(roleId: number): string {
   if (roleId === 1) return 'admin'   // super_admin
@@ -17,7 +15,8 @@ export async function GET(req: Request) {
   const session = await getServerSession()
   if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
 
-  if (!can(session, 'feed:players') && !can(session, 'feed:alumni')) {
+  const viewPerm = await canAsync(session, 'feed:view')
+  if (!viewPerm.allowed) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
   }
 
@@ -57,7 +56,8 @@ export async function POST(req: Request) {
   const session = await getServerSession()
   if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
 
-  if (!CAN_POST_ROLES.includes(session.role)) {
+  const postPerm = await canAsync(session, 'feed:post')
+  if (!postPerm.allowed) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
   }
 
