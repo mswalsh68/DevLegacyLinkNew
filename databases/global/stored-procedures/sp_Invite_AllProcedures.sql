@@ -265,7 +265,7 @@ BEGIN
   END
 
   SELECT @RoleId = id FROM dbo.roles WHERE role_name = @RoleName;
-  IF @RoleId IS NULL SET @RoleId = 7;
+  IF @RoleId IS NULL SET @RoleId = 3;
 
   INSERT INTO dbo.access_requests
     (user_id, team_id, role_id, invite_code_id, status)
