@@ -23,6 +23,7 @@ import {
   sp_ReviewAccessRequest,
   sp_SendRequestReminder,
   sp_UpsertUser,
+  sp_AddUserRole,
 } from '@/lib/db/procedures'
 import { getPool, appDbContext } from '@/lib/db/connection'
 import { sendTransactionalEmail as sendEmail } from '@/lib/resend'
@@ -60,32 +61,68 @@ export async function approveAccessRequest(params: {
       return { success: false, error: messages[errorCode] ?? errorCode }
     }
 
-    // Sync approved user into tenant App DB
+    // Sync approved user into tenant App DB and create sport membership
     try {
       const db      = await getPool('global')
       const infoReq = db.request()
-      infoReq.input('UserId', sql.BigInt, userId)
-      infoReq.input('TeamId', sql.Int,    teamId)
-      const infoRes = await infoReq.query<{ email: string; firstName: string; lastName: string; appDb: string | null }>(
-        `SELECT u.email AS email, u.first_name AS firstName, u.last_name AS lastName, t.app_db AS appDb
-         FROM dbo.users u CROSS JOIN dbo.teams t
+      infoReq.input('UserId',    sql.BigInt, userId)
+      infoReq.input('TeamId',    sql.Int,    teamId)
+      infoReq.input('RequestId', sql.BigInt, params.requestId)
+      const infoRes = await infoReq.query<{
+        email:      string
+        firstName:  string
+        lastName:   string
+        appDb:      string | null
+        sportId:    number | null
+        inviteRole: string | null
+      }>(
+        `SELECT
+           u.email          AS email,
+           u.first_name     AS firstName,
+           u.last_name      AS lastName,
+           t.app_db         AS appDb,
+           ic.sport_id      AS sportId,
+           ic.role          AS inviteRole
+         FROM dbo.users u
+         CROSS JOIN dbo.teams t
+         LEFT JOIN dbo.access_requests ar ON ar.id = @RequestId
+         LEFT JOIN dbo.invite_codes    ic ON ic.id  = ar.invite_code_id
          WHERE u.user_id = @UserId AND t.id = @TeamId`
       )
       const info = infoRes.recordset[0]
       if (info?.appDb) {
-        await appDbContext.run(info.appDb, () =>
-          sp_UpsertUser({
+        await appDbContext.run(info.appDb, async () => {
+          await sp_UpsertUser({
             userId:       userId!,
             email:        info.email,
             firstName:    info.firstName,
             lastName:     info.lastName,
-            platformRole: finalRole ?? 'client',
+            platformRole: info.inviteRole ?? 'client',
             globalRoleId: 3,
           })
-        )
+
+          // Look up programRoleId from the invite code's role name
+          if (info.inviteRole) {
+            const appDb   = await getPool('app')
+            const roleReq = appDb.request()
+            roleReq.input('RoleName', sql.NVarChar(50), info.inviteRole)
+            const roleRes = await roleReq.query<{ id: number }>(
+              `SELECT id FROM dbo.program_role WHERE role_name = @RoleName`
+            )
+            const programRoleId = roleRes.recordset[0]?.id ?? null
+            if (programRoleId) {
+              await sp_AddUserRole({
+                userId:       userId!,
+                programRoleId,
+                sportId:      info.sportId ?? null,
+                adminUserId:  session.userId,
+              })
+            }
+          }
+        })
       }
     } catch (upsertErr) {
-      console.warn('[approveAccessRequest] App DB upsert failed:', (upsertErr as Error).message)
+      console.warn('[approveAccessRequest] App DB sync failed:', (upsertErr as Error).message)
     }
 
     // Notify user
