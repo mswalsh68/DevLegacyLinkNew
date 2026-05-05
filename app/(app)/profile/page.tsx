@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/providers/AuthProvider'
 import type { TeamConfig } from '@/types'
 
+const ALUMNI_PROGRAM_ROLE_ID = 7
+
 type TeamItem = TeamConfig & { teamId: number }
 
 // ─── Section wrapper ──────────────────────────────────────────────────────────
@@ -136,6 +138,11 @@ export default function ProfilePage() {
   const [settingTeam, setSettingTeam] = useState<number | null>(null)
   const [teamMsg,     setTeamMsg]     = useState('')
 
+  // ── Community visibility (alumni only) ───────────────────
+  const [contactVisible,    setContactVisible]    = useState(true)
+  const [visibilityLoading, setVisibilityLoading] = useState(false)
+  const [visibilityMsg,     setVisibilityMsg]     = useState('')
+
   // ── Load on mount ─────────────────────────────────────────
   useEffect(() => {
     if (user) {
@@ -162,6 +169,16 @@ export default function ProfilePage() {
         if (success && Array.isArray(data)) setTeams(data)
       })
       .catch(() => {})
+
+    // Fetch community consent / visibility for alumni
+    if (user?.programRoleId === ALUMNI_PROGRAM_ROLE_ID) {
+      fetch('/api/community/consent', { credentials: 'include' })
+        .then((r) => r.json())
+        .then(({ success, data }) => {
+          if (success && data) setContactVisible(Boolean(data.contactVisible))
+        })
+        .catch(() => {})
+    }
   }, [user])
 
   // ── Handlers ──────────────────────────────────────────────
@@ -287,6 +304,26 @@ export default function ProfilePage() {
       }
     } catch { /* ignore */ }
     setSettingTeam(null)
+  }
+
+  const handleToggleVisibility = async () => {
+    const next = !contactVisible
+    setVisibilityLoading(true)
+    setVisibilityMsg('')
+    try {
+      const res = await fetch('/api/profile/visibility', {
+        method:      'PATCH',
+        headers:     { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body:        JSON.stringify({ visible: next }),
+      })
+      if (res.ok) {
+        setContactVisible(next)
+        setVisibilityMsg(next ? 'Profile visible to community members.' : 'Profile hidden from community members.')
+        setTimeout(() => setVisibilityMsg(''), 3000)
+      }
+    } catch { /* ignore */ }
+    setVisibilityLoading(false)
   }
 
   const displayName = [firstName, lastName].filter(Boolean).join(' ')
@@ -451,6 +488,53 @@ export default function ProfilePage() {
                 </div>
               )
             })}
+          </div>
+        </Section>
+      )}
+
+      {/* ── Community Visibility (alumni only) ────────────── */}
+      {user?.programRoleId === ALUMNI_PROGRAM_ROLE_ID && (
+        <Section
+          title="Community visibility"
+          description="Control whether other verified alumni and staff can see your contact details in the alumni directory."
+        >
+          {visibilityMsg && (
+            <p style={{ fontSize: 13, color: 'var(--color-success)', marginBottom: 12 }}>{visibilityMsg}</p>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <button
+              role="switch"
+              aria-checked={contactVisible}
+              onClick={handleToggleVisibility}
+              disabled={visibilityLoading}
+              style={{
+                position:        'relative',
+                width:           44,
+                height:          24,
+                borderRadius:    12,
+                border:          'none',
+                backgroundColor: contactVisible ? 'var(--color-primary)' : 'var(--color-gray-300)',
+                cursor:          visibilityLoading ? 'default' : 'pointer',
+                flexShrink:      0,
+                transition:      'background-color 0.2s',
+                padding:         0,
+              }}
+            >
+              <span style={{
+                position:        'absolute',
+                top:             3,
+                left:            contactVisible ? 23 : 3,
+                width:           18,
+                height:          18,
+                borderRadius:    '50%',
+                backgroundColor: '#fff',
+                transition:      'left 0.2s',
+                boxShadow:       '0 1px 3px rgba(0,0,0,0.2)',
+              }} />
+            </button>
+            <span style={{ fontSize: 14, color: 'var(--color-gray-700)' }}>
+              {contactVisible ? 'Visible to community members' : 'Hidden from community members'}
+            </span>
           </div>
         </Section>
       )}

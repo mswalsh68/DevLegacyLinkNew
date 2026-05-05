@@ -1368,3 +1368,49 @@ export async function sp_SetPreferredTeam(params: {
   })
   return { errorCode: (output.ErrorCode as string | null) ?? null }
 }
+
+// ─── Community Consent ────────────────────────────────────────────────────────
+
+export interface CommunityConsentRecord {
+  consentAccepted:   boolean
+  consentTcVersion:  string
+  consentTimestamp:  Date | null
+  contactVisible:    boolean
+}
+
+export async function sp_GetCommunityConsent(params: {
+  userId: number
+}): Promise<CommunityConsentRecord> {
+  const { recordset } = await execFull('app', 'sp_GetCommunityConsent', (r) => {
+    r.input('UserId', sql.Int, params.userId)
+  })
+  const row = (recordset as unknown as Record<string, unknown>[])[0] ?? {}
+  return {
+    consentAccepted:  Boolean(row.consentAccepted),
+    consentTcVersion: (row.consentTcVersion as string) ?? '',
+    consentTimestamp: (row.consentTimestamp as Date | null) ?? null,
+    contactVisible:   row.contactVisible !== undefined ? Boolean(row.contactVisible) : true,
+  }
+}
+
+export async function sp_UpsertCommunityConsent(params: {
+  userId:    number
+  accepted:  boolean
+  tcVersion: string
+}): Promise<void> {
+  await execFull('app', 'sp_UpsertCommunityConsent', (r) => {
+    r.input('UserId',    sql.Int,          params.userId)
+    r.input('Accepted',  sql.Bit,          params.accepted ? 1 : 0)
+    r.input('TcVersion', sql.NVarChar(20), params.tcVersion)
+  })
+}
+
+export async function sp_SetContactVisible(params: {
+  userId:  number
+  visible: boolean
+}): Promise<void> {
+  await execFull('app', 'sp_SetContactVisible', (r) => {
+    r.input('UserId',  sql.Int, params.userId)
+    r.input('Visible', sql.Bit, params.visible ? 1 : 0)
+  })
+}
