@@ -17,6 +17,8 @@ export interface UserSession {
   email: string
   roleId: number          // dbo.roles.id (1 = super_admin, 2 = support_admin, 3 = client) — see migration 028
   role: UserRole          // dbo.roles.role_name — used by permissions.ts can()
+  programRoleId?: number  // App DB dbo.program_role.id — only set for client users (roleId === 3)
+  levelId?: number        // dbo.teams.level_id for current team (1=college, 2=high_school, 3=club)
   accountClaimed: boolean // true after first login; gates who may edit the user record
   apps: string[]
   exp: number

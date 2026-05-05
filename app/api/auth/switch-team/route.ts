@@ -8,9 +8,10 @@
 // Copied from the original project's switch-team pattern.
 import { NextRequest, NextResponse } from 'next/server'
 import { SignJWT } from 'jose'
+import sql from 'mssql'
 import { getServerSession, isGlobalAdmin } from '@/lib/auth'
 import { sp_SwitchTeam, sp_UpsertUser } from '@/lib/db/procedures'
-import { appDbContext } from '@/lib/db/connection'
+import { getPool, appDbContext } from '@/lib/db/connection'
 
 function getConfig() {
   const jwtSecret = process.env.JWT_ACCESS_SECRET
@@ -98,16 +99,36 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Re-issue the access token with currentTeamId and tierId updated.
+    // Re-fetch programRoleId from the new team's App DB for client users.
+    // programRoleId may differ between teams if the user has different roles per team.
+    let programRoleId: number | undefined = session.programRoleId
+    if (session.roleId === 3 && appDb) {
+      try {
+        programRoleId = await appDbContext.run(appDb, async () => {
+          const appPool = await getPool('app')
+          const result  = await appPool
+            .request()
+            .input('UserId', sql.BigInt, session.userId)
+            .query('SELECT program_role_id FROM dbo.users WHERE user_id = @UserId')
+          return result.recordset[0]?.program_role_id as number | undefined
+        })
+      } catch (err) {
+        console.warn('[switch-team] Could not fetch programRoleId:', (err as Error).message)
+      }
+    }
+
+    // Re-issue the access token with currentTeamId, tierId, levelId, and programRoleId updated.
     // Spread the existing session claims so username, role, apps etc. are preserved.
     const { userId: _uid, exp: _exp, iat: _iat, ...restClaims } = session
     const newAccessToken = await new SignJWT({
       sub:           String(session.userId),
       userId:        session.userId,
       ...restClaims,
-      currentTeamId: teamId,
-      tierId:        (teamData.tierId as number | undefined) ?? session.tierId,
-      replyToEmail:  (teamData.replyToEmail as string | undefined) ?? session.replyToEmail,
+      currentTeamId:  teamId,
+      tierId:         (teamData.tierId  as number | undefined) ?? session.tierId,
+      levelId:        (teamData.levelId as number | undefined) ?? session.levelId,
+      replyToEmail:   (teamData.replyToEmail as string | undefined) ?? session.replyToEmail,
+      programRoleId,
     })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()

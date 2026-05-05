@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { SignJWT } from 'jose'
 import sql from 'mssql'
-import { getPool } from '@/lib/db/connection'
+import { getPool, appDbContext } from '@/lib/db/connection'
 import { loginSchema } from '@/lib/validations/auth'
 
 // Extracts app name strings from sp_Login's appPermissions array-of-objects.
@@ -93,6 +93,26 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error('[/api/auth/login] DB error:', { err, email, timestamp })
     return NextResponse.json({ error: 'Login failed. Please try again.' }, { status: 500 })
+  }
+
+  // ── Fetch programRoleId from App DB for client users ─────────────────────
+  // Internal users (roleId 1/2) have no program role — skip the App DB lookup.
+  if (userJson.roleId === 3 && userJson.appDb && userId) {
+    try {
+      const appDb = userJson.appDb as string
+      const programRoleId = await appDbContext.run(appDb, async () => {
+        const appPool = await getPool('app')
+        const result  = await appPool
+          .request()
+          .input('UserId', sql.BigInt, userId)
+          .query('SELECT program_role_id FROM dbo.users WHERE user_id = @UserId')
+        return result.recordset[0]?.program_role_id as number | undefined
+      })
+      if (programRoleId != null) userJson.programRoleId = programRoleId
+    } catch (err) {
+      // Non-fatal: permission checks will default to denied for missing programRoleId
+      console.warn('[/api/auth/login] Could not fetch programRoleId:', (err as Error).message)
+    }
   }
 
   // ── Verify password ──────────────────────────────────────────────────────

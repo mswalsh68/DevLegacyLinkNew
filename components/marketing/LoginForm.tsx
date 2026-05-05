@@ -73,9 +73,21 @@ export function LoginForm() {
 
       // Full reload instead of router.push — AuthProvider useEffect only runs on
       // mount, so a client-side navigation leaves user=null and blanks the dashboard.
-      // roleId 3 = client (player/alumni) — land on feed; staff land on dashboard.
-      const roleId = (body.data?.user as Record<string, unknown>)?.roleId
-      window.location.href = roleId === 3 ? '/feed' : '/dashboard'
+      //
+      // Routing rules:
+      //   roleId 1/2 (internal)                    → /dashboard
+      //   roleId 3, programRoleId 1-6 (staff/admin) → /dashboard
+      //   roleId 3, programRoleId 7-8 (player-tier) → /feed
+      const loginUser     = body.data?.user as Record<string, unknown> | undefined
+      const roleId        = loginUser?.roleId        as number | undefined
+      const programRoleId = loginUser?.programRoleId as number | undefined
+
+      const destination =
+        roleId === 3 && programRoleId != null && programRoleId >= 7
+          ? '/feed'
+          : '/dashboard'
+
+      window.location.href = destination
     } catch {
       setError('Network error. Please check your connection and try again.')
       setStatus('idle')

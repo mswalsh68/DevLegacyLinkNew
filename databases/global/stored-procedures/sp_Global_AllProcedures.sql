@@ -176,6 +176,7 @@ BEGIN
       @AppDb                                AS appDb,
       @TierId                               AS tierId,
       @TierName                             AS tierName,
+      (SELECT level_id FROM dbo.teams WHERE id = @CurrentTeamId) AS levelId,
       JSON_QUERY(@TeamsJson)                AS teams,
       (
         SELECT
@@ -494,6 +495,7 @@ BEGIN
       t.app_db               AS appDb,
       t.tier_id              AS tierId,
       tr.name                AS tierName,
+      t.level_id             AS levelId,
       tc.logo_url            AS logoUrl,
       tc.color_primary       AS colorPrimary,
       tc.color_primary_dark  AS colorPrimaryDark,
@@ -1274,5 +1276,44 @@ BEGIN
     @UserId, 'set_preferred_team', 'team', CAST(@TeamId AS NVARCHAR(20)),
     JSON_OBJECT('teamId': CAST(@TeamId AS NVARCHAR(20)))
   );
+END;
+GO
+
+-- ============================================================
+-- sp_GetFeaturePermission
+-- Returns is_allowed and scope for a given feature + user context.
+-- level_id-specific rows take precedence over NULL (all-levels) rows.
+-- Internal roles (super_admin, support_admin) bypass this in app code —
+-- this SP is only called for client users (role_id = 3).
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_GetFeaturePermission
+    @FeatureKey     NVARCHAR(100),
+    @ProgramRoleId  INT,
+    @TierId         INT,
+    @LevelId        INT           = NULL,
+    @IsAllowed      BIT           OUTPUT,
+    @Scope          NVARCHAR(50)  OUTPUT,
+    @ErrorCode      NVARCHAR(50)  OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SET @IsAllowed = NULL;
+    SET @Scope     = NULL;
+    SET @ErrorCode = NULL;
+
+    SELECT TOP 1
+        @IsAllowed = fp.is_allowed,
+        @Scope     = fp.scope
+    FROM   dbo.feature_permissions fp
+    WHERE  fp.feature_key     = @FeatureKey
+      AND  fp.program_role_id = @ProgramRoleId
+      AND  fp.tier_id         = @TierId
+      AND  (fp.level_id IS NULL OR fp.level_id = @LevelId)
+    ORDER BY fp.level_id DESC;  -- specific level_id row wins over NULL
+
+    -- No matching row = denied by default
+    IF @IsAllowed IS NULL
+        SET @IsAllowed = 0;
 END;
 GO
