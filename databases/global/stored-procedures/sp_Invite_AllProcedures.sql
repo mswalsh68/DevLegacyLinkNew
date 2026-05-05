@@ -29,9 +29,9 @@ BEGIN
     RETURN;
   END
 
-  -- role_id = 7 (alumni) — lowest privilege, placeholder until request is approved
+  -- role_id = 3 (client) — lowest privilege global role, program role assigned on approval
   INSERT INTO dbo.users (email, password_hash, first_name, last_name, role_id, is_active)
-  VALUES (@Email, @PasswordHash, @FirstName, @LastName, 7, 1);
+  VALUES (@Email, @PasswordHash, @FirstName, @LastName, 3, 1);
 
   SET @UserId = SCOPE_IDENTITY();
 
