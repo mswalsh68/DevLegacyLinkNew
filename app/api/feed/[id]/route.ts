@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
-import { can } from '@/lib/permissions'
+import { canAsync } from '@/lib/permissions.server'
 import { sp_GetFeedPost, sp_SoftDeletePost, sp_EditPost } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 
@@ -11,7 +11,7 @@ export async function GET(
   const session = await getServerSession()
   if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
 
-  if (!can(session, 'feed:players') && !can(session, 'feed:alumni')) {
+  if (!(await canAsync(session, 'feed:view')).allowed) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
   }
 
@@ -96,7 +96,7 @@ export async function DELETE(
   }
 
   const { id } = await params
-  const canDeleteAny = can(session, 'feed:delete_any')
+  const canDeleteAny = (await canAsync(session, 'feed:delete_any')).allowed
 
   return appDbContext.run(session.appDb, async () => {
     try {

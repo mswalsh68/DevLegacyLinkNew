@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
-import { can } from '@/lib/permissions'
+import { canAsync } from '@/lib/permissions.server'
 import { sp_GetCampaigns, sp_CreateCampaign } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 
@@ -10,7 +10,7 @@ export async function GET(req: Request) {
   const session = await getServerSession()
   if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
 
-  if (!can(session, 'feed:alumni') && !can(session, 'feed:players')) {
+  if (!(await canAsync(session, 'feed:view')).allowed) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
   }
 
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
   const session = await getServerSession()
   if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
 
-  if (!can(session, 'feed:alumni') && !can(session, 'feed:players')) {
+  if (!(await canAsync(session, 'feed:post')).allowed) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
   }
 
