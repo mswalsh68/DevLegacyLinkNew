@@ -1,6 +1,7 @@
 'use client'
 
 import { useTeamConfig } from '@/providers/ThemeProvider'
+import { resolvePostTokens } from '@/lib/feedTokens'
 
 interface Props {
   title:      string | null
@@ -11,7 +12,10 @@ interface Props {
 }
 
 export function WelcomePopupModal({ title, bodyHtml, imageUrl, onDismiss, submitting }: Props) {
-  const { teamName } = useTeamConfig()
+  const teamConfig        = useTeamConfig()
+  const { teamName }      = teamConfig
+  const resolvedBodyHtml  = resolvePostTokens(bodyHtml, teamConfig)
+  const resolvedTitle     = title ? resolvePostTokens(title, teamConfig) : null
 
   return (
     <div style={{
@@ -44,14 +48,14 @@ export function WelcomePopupModal({ title, bodyHtml, imageUrl, onDismiss, submit
         }}>
           {imageUrl && (
             <img
-              src={imageUrl}
+              src={resolvePostTokens(imageUrl, teamConfig)}
               alt={teamName}
               style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }}
             />
           )}
           <div>
             <h2 style={{ fontSize: 20, fontWeight: 700, color: '#fff', margin: 0 }}>
-              {title ?? `Welcome to ${teamName}`}
+              {resolvedTitle ?? `Welcome to ${teamName}`}
             </h2>
             <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.75)', margin: '4px 0 0' }}>
               {teamName} Alumni
@@ -62,7 +66,7 @@ export function WelcomePopupModal({ title, bodyHtml, imageUrl, onDismiss, submit
         {/* Body — trusted system HTML from dbo.feed_posts */}
         <div
           style={{ padding: '24px 28px', maxHeight: '60vh', overflowY: 'auto' }}
-          dangerouslySetInnerHTML={{ __html: bodyHtml }}
+          dangerouslySetInnerHTML={{ __html: resolvedBodyHtml }}
         />
 
         {/* Footer */}
