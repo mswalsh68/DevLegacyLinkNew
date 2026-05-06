@@ -16,7 +16,7 @@ import { Pagination }    from '@/components/ui/Pagination'
 import { AccessDenied }  from '@/components/ui/AccessDenied'
 import { can, roleLabel, requiredRoleLabel } from '@/lib/permissions'
 import { theme } from '@/lib/theme'
-import { resendInvite, notifyTeamAdded } from '@/app/actions/members'
+import { resendInvite, notifyTeamAdded, generateInviteCode } from '@/app/actions/members'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -32,7 +32,8 @@ interface Player {
   major?:         string
 }
 
-type RowActionState = 'idle' | 'sending' | 'sent' | 'error'
+type RowActionState  = 'idle' | 'sending' | 'sent' | 'error'
+type CopyLinkState   = 'idle' | 'copying' | 'copied' | 'error'
 
 interface PlayersResponse {
   success: boolean
@@ -63,7 +64,8 @@ export default function RosterPage() {
   const [error,      setError]      = useState<string | null>(null)
   const [sports,     setSports]     = useState<SportOption[]>([])
   const [sportId,    setSportId]    = useState<number | null>(null)
-  const [rowActions, setRowActions] = useState<Record<string, RowActionState>>({})
+  const [rowActions,  setRowActions]  = useState<Record<string, RowActionState>>({})
+  const [copyStates,  setCopyStates]  = useState<Record<string, CopyLinkState>>({})
 
   const setRowAction = (userId: string, state: RowActionState) =>
     setRowActions(prev => ({ ...prev, [userId]: state }))
@@ -80,6 +82,27 @@ export default function RosterPage() {
     })
     setRowAction(player.userId, result.success ? 'sent' : 'error')
     if (result.success) setTimeout(() => setRowAction(player.userId, 'idle'), 3000)
+  }
+
+  const handleCopyLink = async (player: Player) => {
+    if (!user?.currentTeamId) return
+    setCopyStates(prev => ({ ...prev, [player.userId]: 'copying' }))
+    const result = await generateInviteCode({
+      teamId:  user.currentTeamId,
+      role:    'player',
+      maxUses: 1,
+    })
+    if (result.success && result.inviteUrl) {
+      try {
+        await navigator.clipboard.writeText(result.inviteUrl)
+        setCopyStates(prev => ({ ...prev, [player.userId]: 'copied' }))
+        setTimeout(() => setCopyStates(prev => ({ ...prev, [player.userId]: 'idle' })), 2500)
+      } catch {
+        setCopyStates(prev => ({ ...prev, [player.userId]: 'error' }))
+      }
+    } else {
+      setCopyStates(prev => ({ ...prev, [player.userId]: 'error' }))
+    }
   }
 
   const handleNotify = async (player: Player) => {
@@ -261,6 +284,17 @@ export default function RosterPage() {
                           : rowActions[player.userId] === 'sent'    ? '✓ Sent'
                           : rowActions[player.userId] === 'error'   ? 'Error'
                           : 'Resend Invite'}
+                      </button>
+                      <button
+                        disabled={copyStates[player.userId] === 'copying'}
+                        onClick={() => handleCopyLink(player)}
+                        title="Copy invite link"
+                        style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: '1px solid var(--color-card-border)', backgroundColor: 'var(--color-card-bg)', color: theme.gray600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                      >
+                        {copyStates[player.userId] === 'copying' ? '…'
+                          : copyStates[player.userId] === 'copied'  ? '✓ Copied'
+                          : copyStates[player.userId] === 'error'   ? 'Error'
+                          : '🔗 Copy Link'}
                       </button>
                     </div>
                   )}

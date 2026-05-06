@@ -16,7 +16,7 @@ import { AccessDenied }  from '@/components/ui/AccessDenied'
 import { alumniStatusBadge } from '@/lib/statusMappings'
 import { can, roleLabel, requiredRoleLabel } from '@/lib/permissions'
 import { theme } from '@/lib/theme'
-import { resendInvite, notifyTeamAdded } from '@/app/actions/members'
+import { resendInvite, notifyTeamAdded, generateInviteCode } from '@/app/actions/members'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,7 +37,8 @@ interface AlumniRecord {
   accountClaimed:     boolean
 }
 
-type RowActionState = 'idle' | 'sending' | 'sent' | 'error'
+type RowActionState  = 'idle' | 'sending' | 'sent' | 'error'
+type CopyLinkState   = 'idle' | 'copying' | 'copied' | 'error'
 
 interface AlumniResponse {
   success: boolean
@@ -74,7 +75,8 @@ export default function AlumniPage() {
   const [error,      setError]      = useState<string | null>(null)
   const [sports,     setSports]     = useState<SportOption[]>([])
   const [sportId,    setSportId]    = useState<number | null>(null)
-  const [rowActions, setRowActions] = useState<Record<string, RowActionState>>({})
+  const [rowActions,  setRowActions]  = useState<Record<string, RowActionState>>({})
+  const [copyStates,  setCopyStates]  = useState<Record<string, CopyLinkState>>({})
 
   const setRowAction = (userId: string, state: RowActionState) =>
     setRowActions(prev => ({ ...prev, [userId]: state }))
@@ -91,6 +93,27 @@ export default function AlumniPage() {
     })
     setRowAction(a.userId, result.success ? 'sent' : 'error')
     if (result.success) setTimeout(() => setRowAction(a.userId, 'idle'), 3000)
+  }
+
+  const handleCopyLink = async (a: AlumniRecord) => {
+    if (!user?.currentTeamId) return
+    setCopyStates(prev => ({ ...prev, [a.userId]: 'copying' }))
+    const result = await generateInviteCode({
+      teamId:  user.currentTeamId,
+      role:    'alumni',
+      maxUses: 1,
+    })
+    if (result.success && result.inviteUrl) {
+      try {
+        await navigator.clipboard.writeText(result.inviteUrl)
+        setCopyStates(prev => ({ ...prev, [a.userId]: 'copied' }))
+        setTimeout(() => setCopyStates(prev => ({ ...prev, [a.userId]: 'idle' })), 2500)
+      } catch {
+        setCopyStates(prev => ({ ...prev, [a.userId]: 'error' }))
+      }
+    } else {
+      setCopyStates(prev => ({ ...prev, [a.userId]: 'error' }))
+    }
   }
 
   const handleNotify = async (a: AlumniRecord) => {
@@ -287,16 +310,29 @@ export default function AlumniPage() {
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <Badge label="Unclaimed" variant="warning" />
-                      <button
-                        disabled={rowActions[a.userId] === 'sending'}
-                        onClick={() => handleResend(a)}
-                        style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: '1px solid var(--color-card-border)', backgroundColor: 'var(--color-card-bg)', color: theme.gray600, cursor: 'pointer', whiteSpace: 'nowrap', alignSelf: 'flex-start' }}
-                      >
-                        {rowActions[a.userId] === 'sending' ? '…'
-                          : rowActions[a.userId] === 'sent'    ? '✓ Sent'
-                          : rowActions[a.userId] === 'error'   ? 'Error'
-                          : 'Resend Invite'}
-                      </button>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                          disabled={rowActions[a.userId] === 'sending'}
+                          onClick={() => handleResend(a)}
+                          style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: '1px solid var(--color-card-border)', backgroundColor: 'var(--color-card-bg)', color: theme.gray600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          {rowActions[a.userId] === 'sending' ? '…'
+                            : rowActions[a.userId] === 'sent'    ? '✓ Sent'
+                            : rowActions[a.userId] === 'error'   ? 'Error'
+                            : 'Resend Invite'}
+                        </button>
+                        <button
+                          disabled={copyStates[a.userId] === 'copying'}
+                          onClick={() => handleCopyLink(a)}
+                          title="Copy invite link"
+                          style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: '1px solid var(--color-card-border)', backgroundColor: 'var(--color-card-bg)', color: theme.gray600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          {copyStates[a.userId] === 'copying' ? '…'
+                            : copyStates[a.userId] === 'copied'  ? '✓ Copied'
+                            : copyStates[a.userId] === 'error'   ? 'Error'
+                            : '🔗 Copy Link'}
+                        </button>
+                      </div>
                     </div>
                   )}
                 </td>
