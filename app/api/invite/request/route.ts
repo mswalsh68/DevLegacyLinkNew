@@ -167,7 +167,6 @@ export async function POST(req: NextRequest) {
       const db        = await getPool('global')
       const loginReq  = db.request()
       loginReq.input ('Email',         sql.NVarChar(255),     email)
-      loginReq.input ('CurrentTeamId', sql.Int,               null)
       loginReq.input ('IpAddress',     sql.NVarChar(100),     req.headers.get('x-forwarded-for') ?? null)
       loginReq.input ('DeviceInfo',    sql.NVarChar(255),     req.headers.get('user-agent')      ?? null)
       loginReq.output('UserId',        sql.BigInt)
