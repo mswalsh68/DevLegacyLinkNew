@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getServerSession } from '@/lib/auth'
+import { requireSession } from '@/lib/auth'
 import { sp_GetUserProfile, sp_UpdateUserProfile } from '@/lib/db/procedures'
 
 const patchSchema = z.object({
@@ -10,10 +10,8 @@ const patchSchema = z.object({
 
 // GET /api/profile — returns full profile for the authenticated user
 export async function GET() {
-  const session = await getServerSession()
-  if (!session) {
-    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-  }
+  const { session, error } = await requireSession({ appDb: false })
+  if (error) return error
 
   try {
     const profile = await sp_GetUserProfile(session.userId)
@@ -29,10 +27,8 @@ export async function GET() {
 
 // PATCH /api/profile — update display name
 export async function PATCH(req: NextRequest) {
-  const session = await getServerSession()
-  if (!session) {
-    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-  }
+  const { session, error: authErr } = await requireSession({ appDb: false })
+  if (authErr) return authErr
 
   let body: unknown
   try { body = await req.json() } catch {

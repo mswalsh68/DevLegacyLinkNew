@@ -25,16 +25,14 @@ const isAzure =
 // ─── Logical DB identifiers → actual database names ───────────────────────────
 
 // 'global' — shared Global DB (users, auth, team config)
-// 'app' / 'roster' / 'alumni' — per-tenant App DB; actual name resolved at
-//   request time from appDbContext (falls back to APP_DB_NAME env var for local dev)
-export type DbKey = 'global' | 'app' | 'roster' | 'alumni'
+// 'app'    — per-tenant App DB; actual name resolved at request time from
+//            appDbContext (falls back to APP_DB_NAME env var for local dev)
+export type DbKey = 'global' | 'app'
 
 const DB_NAMES: Record<DbKey, string> = {
   global: process.env.GLOBAL_DB_NAME ?? 'LegacyLinkGlobal',
   // App DB fallback — only used in local dev. Production reads from JWT appDb.
   app:    process.env.APP_DB_NAME    ?? '',
-  roster: process.env.APP_DB_NAME    ?? '',
-  alumni: process.env.APP_DB_NAME    ?? '',
 }
 
 // ─── Per-request App DB context ───────────────────────────────────────────────
@@ -77,7 +75,7 @@ function buildBaseConfig(database: string): sql.config {
 }
 
 // ─── Connection pools ─────────────────────────────────────────────────────────
-// Global pool: keyed by DbKey (only 'global' in practice)
+// Global pool: keyed by DbKey ('global')
 // App pools: keyed by actual database name (one pool per tenant DB)
 
 const globalPool = new Map<DbKey, sql.ConnectionPool>()
@@ -99,9 +97,9 @@ async function createPool(dbName: string): Promise<sql.ConnectionPool> {
 }
 
 export async function getPool(db: DbKey): Promise<sql.ConnectionPool> {
-  // App-family keys: resolve database name from per-request context first,
+  // App key: resolve database name from per-request context first,
   // then fall back to env var (useful for local dev without JWT).
-  if (db === 'app' || db === 'roster' || db === 'alumni') {
+  if (db === 'app') {
     const dbName = appDbContext.getStore() ?? DB_NAMES[db]
 
     if (!dbName) {

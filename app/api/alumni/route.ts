@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from '@/lib/auth'
+import { requireSession } from '@/lib/auth'
+import { can } from '@/lib/permissions'
 import { sp_GetAlumniRoster } from '@/lib/db/procedures'
-import { appDbContext, getPool } from '@/lib/db/connection'
+import { appDbContext } from '@/lib/db/connection'
+import { fetchAccountClaimedMap } from '@/lib/db/globalLookup'
 
 // ─── GET /api/alumni ──────────────────────────────────────────────────────────
 // Query params:
@@ -13,12 +15,14 @@ import { appDbContext, getPool } from '@/lib/db/connection'
 //   pageSize   INT (default 50)
 
 export async function GET(req: Request) {
-  const session = await getServerSession()
-  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+  const { session, error } = await requireSession()
+  if (error) return error
 
-  if (!session.appDb) {
-    return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
+  if (!can(session, 'alumni:view')) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
   }
+
+  const canManage = can(session, 'alumni:edit')
 
   const { searchParams } = new URL(req.url)
 
@@ -44,25 +48,13 @@ export async function GET(req: Request) {
         pageSize,
       })
 
-      // Batch-fetch account_claimed from Global DB for all returned users.
-      const accountClaimedMap = new Map<number, boolean>()
-      if (alumni.length > 0) {
-        try {
-          const globalDb = await getPool('global')
-          const ids = alumni.map(a => a.userId).join(',')
-          const { recordset } = await globalDb.request()
-            .query(`SELECT user_id, account_claimed FROM dbo.users WHERE user_id IN (${ids})`)
-          for (const row of recordset as { user_id: number; account_claimed: boolean }[]) {
-            accountClaimedMap.set(row.user_id, Boolean(row.account_claimed))
-          }
-        } catch (err) {
-          console.warn('[GET /api/alumni] Could not fetch account_claimed:', err)
-        }
-      }
+      const accountClaimedMap = canManage
+        ? await fetchAccountClaimedMap(alumni.map(a => a.userId))
+        : new Map<number, boolean>()
 
       const enriched = alumni.map(a => ({
         ...a,
-        accountClaimed: accountClaimedMap.get(a.userId) ?? false,
+        ...(canManage ? { accountClaimed: accountClaimedMap.get(a.userId) ?? false } : {}),
       }))
 
       return NextResponse.json({ success: true, data: enriched, total: totalCount })

@@ -2,14 +2,12 @@
 // Returns the current user's access requests. Authenticated.
 // Used by /pending for status polling and routing decisions.
 import { NextResponse } from 'next/server'
-import { getServerSession } from '@/lib/auth'
+import { requireSession } from '@/lib/auth'
 import { sp_GetMyAccessRequests } from '@/lib/db/procedures'
 
 export async function GET() {
-  const session = await getServerSession()
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 })
-  }
+  const { session, error } = await requireSession({ appDb: false })
+  if (error) return error
 
   try {
     const rows = await sp_GetMyAccessRequests({ userId: session.userId })

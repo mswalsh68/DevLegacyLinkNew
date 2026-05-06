@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from '@/lib/auth'
+import { requireSession } from '@/lib/auth'
 import { canAsync } from '@/lib/permissions.server'
 import { sp_GetFeed, sp_CreatePost } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
@@ -12,16 +12,12 @@ function getRoleGroup(roleId: number): string {
 }
 
 export async function GET(req: Request) {
-  const session = await getServerSession()
-  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+  const { session, error } = await requireSession()
+  if (error) return error
 
   const viewPerm = await canAsync(session, 'feed:view')
   if (!viewPerm.allowed) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
-  }
-
-  if (!session.appDb) {
-    return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
   }
 
   const { searchParams } = new URL(req.url)
@@ -53,16 +49,12 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await getServerSession()
-  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+  const { session, error } = await requireSession()
+  if (error) return error
 
   const postPerm = await canAsync(session, 'feed:post')
   if (!postPerm.allowed) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
-  }
-
-  if (!session.appDb) {
-    return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
   }
 
   let body: {

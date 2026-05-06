@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from '@/lib/auth'
+import { requireSession } from '@/lib/auth'
 import { sp_GetPendingWelcomePopup, sp_MarkWelcomePopupShown } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 
@@ -15,9 +15,8 @@ const TIER_GROUP: Record<number, string> = {
 // Returns { pending: false } when none — never hard-errors, best-effort.
 
 export async function GET() {
-  const session = await getServerSession()
-  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-  if (!session.appDb) return NextResponse.json({ success: false, error: 'App DB not configured' }, { status: 503 })
+  const { session, error } = await requireSession()
+  if (error) return error
 
   const tierGroup = TIER_GROUP[session.tierId ?? 0]
   if (!tierGroup) return NextResponse.json({ success: true, data: { pending: false } })
@@ -53,9 +52,8 @@ export async function GET() {
 // Marks popup_shown = 1 on the specified role_change_log row.
 
 export async function POST(req: Request) {
-  const session = await getServerSession()
-  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-  if (!session.appDb) return NextResponse.json({ success: false, error: 'App DB not configured' }, { status: 503 })
+  const { session, error } = await requireSession()
+  if (error) return error
 
   let body: { logId: number }
   try {

@@ -10,7 +10,7 @@
 // route works whether the SP is from the old project or a future refactor.
 import { NextRequest, NextResponse } from 'next/server'
 import { sp_GetTeamConfig, sp_UpdateTeamConfig } from '@/lib/db/procedures'
-import { getServerSession, isGlobalAdmin } from '@/lib/auth'
+import { getServerSession, requireSession, isGlobalAdmin } from '@/lib/auth'
 import type { TeamConfig } from '@/types'
 
 // ─── Flexible column pickers ──────────────────────────────────────────────────
@@ -196,10 +196,8 @@ export async function GET(req: NextRequest) {
 const HEX_RE = /^#[0-9a-fA-F]{6}$/
 
 export async function PATCH(req: NextRequest) {
-  const session = await getServerSession()
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 })
-  }
+  const { session, error } = await requireSession({ appDb: false })
+  if (error) return error
   if (!isGlobalAdmin(session)) {
     return NextResponse.json({ error: 'Forbidden. Global admin required.' }, { status: 403 })
   }

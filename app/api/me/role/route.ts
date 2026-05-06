@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getServerSession, isGlobalAdmin } from '@/lib/auth'
+import { requireSession, isGlobalAdmin } from '@/lib/auth'
 import { sp_GetUserProgramRole } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 
@@ -8,8 +8,8 @@ import { appDbContext } from '@/lib/db/connection'
 // Global admins (super_admin / support_admin) have no users_roles record — they
 // receive programRoleId=1 (Athletic Director) so they get full wizard access.
 export async function GET() {
-  const session = await getServerSession()
-  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+  const { session, error } = await requireSession({ appDb: false })
+  if (error) return error
 
   if (isGlobalAdmin(session)) {
     const globalRole = (session as unknown as Record<string, unknown>).role as string | undefined

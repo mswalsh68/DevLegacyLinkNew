@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from '@/lib/auth'
+import { requireSession } from '@/lib/auth'
 import { canAsync } from '@/lib/permissions.server'
 import { sp_TransferUserRole, sp_TransferPlayerToAlumni } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
@@ -16,14 +16,12 @@ import { appDbContext } from '@/lib/db/connection'
 // and returned as failures without aborting the whole batch.
 
 export async function POST(req: Request) {
-  const session = await getServerSession()
-  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+  const { session, error } = await requireSession()
+  if (error) return error
 
   if (!(await canAsync(session, 'roster:promote_to_alumni')).allowed) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
   }
-
-  if (!session.appDb) return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
 
   let body: {
     transfers:     { userId: number; sportId: number }[]

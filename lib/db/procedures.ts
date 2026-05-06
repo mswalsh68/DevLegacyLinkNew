@@ -440,27 +440,6 @@ export async function sp_DeactivateUserSport(params: {
   return { errorCode: (output.ErrorCode as string | null) ?? null }
 }
 
-/** Summary stats: total current players, alumni, earliest / latest class year. */
-export async function sp_GetRosterStats(params: {
-  sportId?: number | null
-}): Promise<{
-  totalCurrentPlayers: number
-  totalAlumni:         number
-  earliestClass:       number | null
-  latestClass:         number | null
-}> {
-  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetRosterStats', (r) => {
-    r.input('SportId', sql.Int, params.sportId ?? null)
-  })
-  const row = rows[0] ?? {}
-  return {
-    totalCurrentPlayers: (row.totalCurrentPlayers as number) ?? 0,
-    totalAlumni:         (row.totalAlumni         as number) ?? 0,
-    earliestClass:       (row.earliestClass        as number | null) ?? null,
-    latestClass:         (row.latestClass          as number | null) ?? null,
-  }
-}
-
 // ─── App DB — Interactions ────────────────────────────────────────────────────
 
 /**
@@ -545,17 +524,12 @@ export async function sp_GetSportsPositions(params: {
   }))
 }
 
-/**
- * Returns sports for a user (or all sports if userId is null, i.e. admin/platform_owner).
- * @TenantId is accepted for convention but unused (single-tenant App DB).
- */
+/** Returns sports for a user (or all sports if userId is null, i.e. admin/platform_owner). */
 export async function sp_GetUserSports(params: {
-  tenantId: number
-  userId?:  number | null
+  userId?: number | null
 }): Promise<SportOption[]> {
   const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetUserSports', (r) => {
-    r.input('TenantId', sql.Int, params.tenantId)
-    r.input('UserId',   sql.Int, params.userId ?? null)
+    r.input('UserId', sql.Int, params.userId ?? null)
   })
   return rows.map(r => ({
     id:   r.id   as number,
@@ -1022,12 +996,10 @@ export interface AlumniDashboardMetrics {
 }
 
 export async function sp_GetDashboardMetrics_Alumni(params: {
-  tenantId: number
-  sportId?: number | null   // INT — was UNIQUEIDENTIFIER
+  sportId?: number | null
 }): Promise<AlumniDashboardMetrics> {
   const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetDashboardMetrics_Alumni', (r) => {
-    r.input('TenantId', sql.Int, params.tenantId)
-    r.input('SportId',  sql.Int, params.sportId ?? null)
+    r.input('SportId', sql.Int, params.sportId ?? null)
   })
   const row = rows[0] ?? {}
   return {
@@ -1050,12 +1022,10 @@ export interface PlayerDashboardMetrics {
 }
 
 export async function sp_GetDashboardMetrics_Players(params: {
-  tenantId: number
-  sportId?: number | null   // INT
+  sportId?: number | null
 }): Promise<PlayerDashboardMetrics> {
   const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetDashboardMetrics_Players', (r) => {
-    r.input('TenantId', sql.Int, params.tenantId)
-    r.input('SportId',  sql.Int, params.sportId ?? null)
+    r.input('SportId', sql.Int, params.sportId ?? null)
   })
   const row = rows[0] ?? {}
   return {
@@ -1079,12 +1049,10 @@ export interface AllEngagementMetrics {
 }
 
 export async function sp_GetDashboardMetrics_All(params: {
-  tenantId: number
-  sportId?: number | null   // INT
+  sportId?: number | null
 }): Promise<AllEngagementMetrics> {
   const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('app', 'sp_GetDashboardMetrics_All', (r) => {
-    r.input('TenantId', sql.Int, params.tenantId)
-    r.input('SportId',  sql.Int, params.sportId ?? null)
+    r.input('SportId', sql.Int, params.sportId ?? null)
   })
   const row = rows[0] ?? {}
   return {

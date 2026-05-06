@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from '@/lib/auth'
+import { requireSession } from '@/lib/auth'
 import { canAsync } from '@/lib/permissions.server'
 import { sp_GetFeedPost, sp_SoftDeletePost, sp_EditPost } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
@@ -8,15 +8,11 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getServerSession()
-  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+  const { session, error } = await requireSession()
+  if (error) return error
 
   if (!(await canAsync(session, 'feed:view')).allowed) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
-  }
-
-  if (!session.appDb) {
-    return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
   }
 
   const { id } = await params
@@ -45,12 +41,8 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getServerSession()
-  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-
-  if (!session.appDb) {
-    return NextResponse.json({ success: false, error: 'App DB not configured.' }, { status: 503 })
-  }
+  const { session, error: authErr } = await requireSession()
+  if (authErr) return authErr
 
   const { id } = await params
 
@@ -88,12 +80,8 @@ export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getServerSession()
-  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-
-  if (!session.appDb) {
-    return NextResponse.json({ success: false, error: 'App DB not configured.' }, { status: 503 })
-  }
+  const { session, error: authErr2 } = await requireSession()
+  if (authErr2) return authErr2
 
   const { id } = await params
   const canDeleteAny = (await canAsync(session, 'feed:delete_any')).allowed

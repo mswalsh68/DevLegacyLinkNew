@@ -1,16 +1,12 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from '@/lib/auth'
+import { requireSession } from '@/lib/auth'
 import { sp_GetCommunityConsent, sp_UpsertCommunityConsent } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 import { COMMUNITY_TC_VERSION } from '@/lib/constants'
 
 export async function GET(_req: Request) {
-  const session = await getServerSession()
-  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-
-  if (!session.appDb) {
-    return NextResponse.json({ success: false, error: 'App DB not configured.' }, { status: 503 })
-  }
+  const { session, error } = await requireSession()
+  if (error) return error
 
   return appDbContext.run(session.appDb, async () => {
     try {
@@ -24,12 +20,8 @@ export async function GET(_req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await getServerSession()
-  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-
-  if (!session.appDb) {
-    return NextResponse.json({ success: false, error: 'App DB not configured.' }, { status: 503 })
-  }
+  const { session, error } = await requireSession()
+  if (error) return error
 
   let accepted: boolean
   try {

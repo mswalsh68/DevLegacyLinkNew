@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from '@/lib/auth'
+import { requireSession } from '@/lib/auth'
 import { sp_GetSportsPositions } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 
@@ -10,12 +10,8 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ sportId: string }> },
 ) {
-  const session = await getServerSession()
-  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-
-  if (!session.appDb) {
-    return NextResponse.json({ success: false, error: 'App DB not configured.' }, { status: 503 })
-  }
+  const { session, error } = await requireSession()
+  if (error) return error
 
   const { sportId: sportIdParam } = await params
   const sportId = parseInt(sportIdParam, 10)

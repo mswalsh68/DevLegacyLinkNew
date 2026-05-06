@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
-import { getServerSession } from '@/lib/auth'
+import { requireSession } from '@/lib/auth'
 import { sp_GetPasswordHash, sp_ChangePassword } from '@/lib/db/procedures'
 
 const schema = z.object({
@@ -12,10 +12,8 @@ const schema = z.object({
 // PATCH /api/profile/password — change password (requires current password)
 // On success: clears auth cookies and returns requireRelogin: true.
 export async function PATCH(req: NextRequest) {
-  const session = await getServerSession()
-  if (!session) {
-    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-  }
+  const { session, error } = await requireSession({ appDb: false })
+  if (error) return error
 
   let body: unknown
   try { body = await req.json() } catch {

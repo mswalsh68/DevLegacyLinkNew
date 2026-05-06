@@ -1,14 +1,14 @@
 // PATCH /api/invite/codes/[id] — deactivate an invite code (global_admin only)
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession, isGlobalAdmin } from '@/lib/auth'
+import { requireSession, isGlobalAdmin } from '@/lib/auth'
 import { sp_DeactivateInviteCode } from '@/lib/db/procedures'
 
 export async function PATCH(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getServerSession()
-  if (!session)              return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 })
+  const { session, error } = await requireSession({ appDb: false })
+  if (error) return error
   if (!isGlobalAdmin(session)) return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
 
   const { id } = await params

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from '@/lib/auth'
+import { requireSession } from '@/lib/auth'
+import { can } from '@/lib/permissions'
 import { sp_GetMemberDetails, sp_UpdateUserRole } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 
@@ -11,9 +12,12 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ userId: string }> },
 ) {
-  const session = await getServerSession()
-  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-  if (!session.appDb) return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
+  const { session, error } = await requireSession()
+  if (error) return error
+
+  if (!can(session, 'alumni:view')) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
+  }
 
   const { userId } = await params
   const uid = parseInt(userId, 10)
@@ -33,7 +37,7 @@ export async function GET(
         firstName:     base.firstName,
         lastName:      base.lastName,
         lastTeamLogin: base.lastTeamLogin,
-        sportRows:          sportRows.filter(r => r.sportIsActive !== false),
+        sportRows:     sportRows.filter(r => r.sportIsActive !== false),
       }
 
       return NextResponse.json({ success: true, data, interactions })
@@ -52,9 +56,12 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ userId: string }> },
 ) {
-  const session = await getServerSession()
-  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-  if (!session.appDb) return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
+  const { session, error } = await requireSession()
+  if (error) return error
+
+  if (!can(session, 'alumni:edit')) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
+  }
 
   const { userId } = await params
   const uid = parseInt(userId, 10)

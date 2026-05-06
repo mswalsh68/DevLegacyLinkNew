@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getServerSession } from '@/lib/auth'
+import { requireSession } from '@/lib/auth'
 import { sp_UpsertUserContact } from '@/lib/db/procedures'
 
 const urlOrEmpty = z.string().max(500).optional().nullable()
@@ -18,10 +18,8 @@ const patchSchema = z.object({
 
 // PATCH /api/profile/social — update social links for the authenticated user
 export async function PATCH(req: NextRequest) {
-  const session = await getServerSession()
-  if (!session) {
-    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-  }
+  const { session, error } = await requireSession({ appDb: false })
+  if (error) return error
 
   let body: unknown
   try { body = await req.json() } catch {

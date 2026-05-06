@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from '@/lib/auth'
+import { requireSession } from '@/lib/auth'
 import { can } from '@/lib/permissions'
 import { canAsync } from '@/lib/permissions.server'
 import { sp_GetMemberDetails, sp_UpdateUserRole, sp_GetUserProfile } from '@/lib/db/procedures'
@@ -13,9 +13,8 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ userId: string }> },
 ) {
-  const session = await getServerSession()
-  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-  if (!session.appDb) return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
+  const { session, error } = await requireSession()
+  if (error) return error
 
   const { userId } = await params
   const uid = parseInt(userId, 10)
@@ -85,9 +84,8 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ userId: string }> },
 ) {
-  const session = await getServerSession()
-  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-  if (!session.appDb) return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
+  const { session, error } = await requireSession()
+  if (error) return error
 
   const { userId } = await params
   const uid = parseInt(userId, 10)
