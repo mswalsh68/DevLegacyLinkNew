@@ -1323,6 +1323,34 @@ export async function sp_UpdateUserProfile(params: {
   return { errorCode: (output.ErrorCode as string | null) ?? null }
 }
 
+export async function sp_UpsertUserContact(params: {
+  targetUserId: number
+  actorId:      number
+  twitter?:     string | null
+  instagram?:   string | null
+  facebook?:    string | null
+  linkedIn?:    string | null
+  website?:     string | null
+  otherLink1?:  string | null
+  otherLink2?:  string | null
+  otherLink3?:  string | null
+}): Promise<{ errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_UpsertUserContact', (r) => {
+    r.input ('TargetUserId', sql.BigInt,        params.targetUserId)
+    r.input ('ActorId',      sql.BigInt,        params.actorId)
+    r.input ('Twitter',      sql.NVarChar(100), params.twitter    ?? null)
+    r.input ('Instagram',    sql.NVarChar(100), params.instagram  ?? null)
+    r.input ('Facebook',     sql.NVarChar(100), params.facebook   ?? null)
+    r.input ('LinkedIn',     sql.NVarChar(255), params.linkedIn   ?? null)
+    r.input ('Website',      sql.NVarChar(500), params.website    ?? null)
+    r.input ('OtherLink1',   sql.NVarChar(500), params.otherLink1 ?? null)
+    r.input ('OtherLink2',   sql.NVarChar(500), params.otherLink2 ?? null)
+    r.input ('OtherLink3',   sql.NVarChar(500), params.otherLink3 ?? null)
+    r.output('ErrorCode',    sql.NVarChar(50))
+  })
+  return { errorCode: (output.ErrorCode as string | null) ?? null }
+}
+
 export async function sp_GetPasswordHash(userId: number): Promise<string | null> {
   const { output } = await execFull('global', 'sp_GetPasswordHash', (r) => {
     r.input ('UserId',       sql.BigInt,       userId)

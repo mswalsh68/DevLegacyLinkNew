@@ -138,6 +138,19 @@ export default function ProfilePage() {
   const [settingTeam, setSettingTeam] = useState<number | null>(null)
   const [teamMsg,     setTeamMsg]     = useState('')
 
+  // ── Social links ─────────────────────────────────────────
+  const [twitter,       setTwitter]       = useState('')
+  const [instagram,     setInstagram]     = useState('')
+  const [facebook,      setFacebook]      = useState('')
+  const [linkedIn,      setLinkedIn]      = useState('')
+  const [website,       setWebsite]       = useState('')
+  const [otherLink1,    setOtherLink1]    = useState('')
+  const [otherLink2,    setOtherLink2]    = useState('')
+  const [otherLink3,    setOtherLink3]    = useState('')
+  const [socialLoading, setSocialLoading] = useState(false)
+  const [socialSuccess, setSocialSuccess] = useState(false)
+  const [socialError,   setSocialError]   = useState('')
+
   // ── Community visibility (alumni only) ───────────────────
   const [contactVisible,    setContactVisible]    = useState(true)
   const [visibilityLoading, setVisibilityLoading] = useState(false)
@@ -159,6 +172,14 @@ export default function ProfilePage() {
         if (data?.email)     setEmail(data.email)
         if (data?.firstName) setFirstName(data.firstName)
         if (data?.lastName)  setLastName(data.lastName)
+        setTwitter(data?.twitter    ?? '')
+        setInstagram(data?.instagram ?? '')
+        setFacebook(data?.facebook  ?? '')
+        setLinkedIn(data?.linkedIn  ?? '')
+        setWebsite(data?.website    ?? '')
+        setOtherLink1(data?.otherLink1 ?? '')
+        setOtherLink2(data?.otherLink2 ?? '')
+        setOtherLink3(data?.otherLink3 ?? '')
       })
       .catch(() => {})
 
@@ -326,6 +347,37 @@ export default function ProfilePage() {
     setVisibilityLoading(false)
   }
 
+  const handleSaveSocial = async () => {
+    setSocialLoading(true)
+    setSocialError('')
+    setSocialSuccess(false)
+    try {
+      const res  = await fetch('/api/profile/social', {
+        method:      'PATCH',
+        headers:     { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          twitter:    twitter.trim()    || null,
+          instagram:  instagram.trim()  || null,
+          facebook:   facebook.trim()   || null,
+          linkedIn:   linkedIn.trim()   || null,
+          website:    website.trim()    || null,
+          otherLink1: otherLink1.trim() || null,
+          otherLink2: otherLink2.trim() || null,
+          otherLink3: otherLink3.trim() || null,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) { setSocialError(json.error ?? 'Failed to save'); return }
+      setSocialSuccess(true)
+      setTimeout(() => setSocialSuccess(false), 3000)
+    } catch {
+      setSocialError('Network error — please try again')
+    } finally {
+      setSocialLoading(false)
+    }
+  }
+
   const displayName = [firstName, lastName].filter(Boolean).join(' ')
   const initials    = firstName[0] && lastName[0]
     ? (firstName[0] + lastName[0]).toUpperCase()
@@ -372,6 +424,40 @@ export default function ProfilePage() {
         {nameSuccess && <p style={{ fontSize: 13, color: 'var(--color-success)', marginTop: 10 }}>Name saved.</p>}
         <div style={{ marginTop: 16 }}>
           <Btn label={nameLoading ? 'Saving…' : 'Save name'} onClick={handleSaveName} disabled={nameLoading} />
+        </div>
+      </Section>
+
+      {/* ── Social Links ───────────────────────────────────── */}
+      <Section title="Social links" description="Add links to your profiles and website. All fields are optional.">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 560 }}>
+          <Field label="X / Twitter">
+            <TextInput value={twitter}   onChange={setTwitter}   placeholder="https://x.com/yourhandle" />
+          </Field>
+          <Field label="Instagram">
+            <TextInput value={instagram} onChange={setInstagram} placeholder="https://instagram.com/yourhandle" />
+          </Field>
+          <Field label="Facebook">
+            <TextInput value={facebook}  onChange={setFacebook}  placeholder="https://facebook.com/yourprofile" />
+          </Field>
+          <Field label="LinkedIn">
+            <TextInput value={linkedIn}  onChange={setLinkedIn}  placeholder="https://linkedin.com/in/yourprofile" />
+          </Field>
+          <Field label="Personal website">
+            <TextInput value={website}   onChange={setWebsite}   placeholder="https://yoursite.com" />
+          </Field>
+          <div style={{ borderTop: '1px solid var(--color-card-border)', paddingTop: 14 }}>
+            <p style={{ fontSize: 12, color: 'var(--color-gray-400)', margin: '0 0 12px' }}>Other links (up to 3)</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <TextInput value={otherLink1} onChange={setOtherLink1} placeholder="https://…" />
+              <TextInput value={otherLink2} onChange={setOtherLink2} placeholder="https://…" />
+              <TextInput value={otherLink3} onChange={setOtherLink3} placeholder="https://…" />
+            </div>
+          </div>
+        </div>
+        {socialError   && <p style={{ fontSize: 13, color: 'var(--color-danger)',  marginTop: 12 }}>{socialError}</p>}
+        {socialSuccess && <p style={{ fontSize: 13, color: 'var(--color-success)', marginTop: 12 }}>Links saved.</p>}
+        <div style={{ marginTop: 16 }}>
+          <Btn label={socialLoading ? 'Saving…' : 'Save links'} onClick={handleSaveSocial} disabled={socialLoading} />
         </div>
       </Section>
 

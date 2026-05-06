@@ -47,6 +47,10 @@ BEGIN
     uc.instagram,
     uc.facebook,
     uc.linked_in                 AS linkedIn,
+    uc.website,
+    uc.other_link_1              AS otherLink1,
+    uc.other_link_2              AS otherLink2,
+    uc.other_link_3              AS otherLink3,
     uc.updated_date              AS contactUpdatedDate
   FROM dbo.users u
   JOIN dbo.roles r ON r.id = u.role_id
@@ -79,6 +83,10 @@ CREATE OR ALTER PROCEDURE dbo.sp_UpsertUserContact
   @Instagram                 NVARCHAR(100)  = NULL,
   @Facebook                  NVARCHAR(100)  = NULL,
   @LinkedIn                  NVARCHAR(255)  = NULL,
+  @Website                   NVARCHAR(500)  = NULL,
+  @OtherLink1                NVARCHAR(500)  = NULL,
+  @OtherLink2                NVARCHAR(500)  = NULL,
+  @OtherLink3                NVARCHAR(500)  = NULL,
   @ErrorCode                 NVARCHAR(50)   OUTPUT
 AS
 BEGIN
@@ -128,6 +136,10 @@ BEGIN
     instagram                 = CASE WHEN @Instagram              IS NULL THEN instagram                 WHEN @Instagram              = '' THEN NULL ELSE @Instagram              END,
     facebook                  = CASE WHEN @Facebook               IS NULL THEN facebook                 WHEN @Facebook               = '' THEN NULL ELSE @Facebook               END,
     linked_in                 = CASE WHEN @LinkedIn               IS NULL THEN linked_in                 WHEN @LinkedIn               = '' THEN NULL ELSE @LinkedIn               END,
+    website                   = CASE WHEN @Website                IS NULL THEN website                   WHEN @Website                = '' THEN NULL ELSE @Website                END,
+    other_link_1              = CASE WHEN @OtherLink1             IS NULL THEN other_link_1              WHEN @OtherLink1             = '' THEN NULL ELSE @OtherLink1             END,
+    other_link_2              = CASE WHEN @OtherLink2             IS NULL THEN other_link_2              WHEN @OtherLink2             = '' THEN NULL ELSE @OtherLink2             END,
+    other_link_3              = CASE WHEN @OtherLink3             IS NULL THEN other_link_3              WHEN @OtherLink3             = '' THEN NULL ELSE @OtherLink3             END,
     updated_date              = SYSUTCDATETIME()
   WHERE user_id = @TargetUserId;
 END;
