@@ -44,6 +44,10 @@ export interface UserContact {
   instagram:               string | null
   facebook:                string | null
   linkedIn:                string | null
+  website:                 string | null
+  otherLink1:              string | null
+  otherLink2:              string | null
+  otherLink3:              string | null
   contactUpdatedDate:      string | null
 }
 
