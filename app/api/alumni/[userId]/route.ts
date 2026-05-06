@@ -28,14 +28,11 @@ export async function GET(
 
       const base = sportRows[0]
       const data = {
-        userId:             base.userId,
-        email:              base.email,
-        firstName:          base.firstName,
-        lastName:           base.lastName,
-        platformRole:       base.platformRole,
-        programRoleId:      base.programRoleId,
-        programRoleDisplay: base.programRoleDisplay,
-        lastTeamLogin:      base.lastTeamLogin,
+        userId:        base.userId,
+        email:         base.email,
+        firstName:     base.firstName,
+        lastName:      base.lastName,
+        lastTeamLogin: base.lastTeamLogin,
         sportRows:          sportRows.filter(r => r.sportIsActive !== false),
       }
 
