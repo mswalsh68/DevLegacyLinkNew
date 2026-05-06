@@ -1411,3 +1411,49 @@ export async function sp_SetContactVisible(params: {
     r.input('Visible', sql.Bit, params.visible ? 1 : 0)
   })
 }
+
+// ─── Welcome Popup ────────────────────────────────────────────────────────────
+
+export interface PendingWelcomePopup {
+  logId:     number
+  postId:    string
+  title:     string | null
+  bodyHtml:  string
+  imageUrl:  string | null
+  tierGroup: string
+  roleGroup: string
+}
+
+export async function sp_GetPendingWelcomePopup(params: {
+  userId:    number
+  tierGroup: string
+}): Promise<PendingWelcomePopup | null> {
+  const { recordset } = await execFull('app', 'sp_GetPendingWelcomePopup', (r) => {
+    r.input('UserId',    sql.Int,          params.userId)
+    r.input('TierGroup', sql.NVarChar(20), params.tierGroup)
+  })
+  const rows = recordset as unknown as Record<string, unknown>[]
+  const row = rows[0]
+  if (!row) return null
+  return {
+    logId:     row.log_id    as number,
+    postId:    row.post_id   as string,
+    title:     (row.title    as string | null) ?? null,
+    bodyHtml:  row.body_html as string,
+    imageUrl:  (row.image_url as string | null) ?? null,
+    tierGroup: row.tier_group as string,
+    roleGroup: row.role_group as string,
+  }
+}
+
+export async function sp_MarkWelcomePopupShown(params: {
+  logId:  number
+  userId: number
+}): Promise<{ errorCode: string | null }> {
+  const { output } = await execFull('app', 'sp_MarkWelcomePopupShown', (r) => {
+    r.input ('LogId',     sql.Int,          params.logId)
+    r.input ('UserId',    sql.Int,          params.userId)
+    r.output('ErrorCode', sql.NVarChar(50))
+  })
+  return { errorCode: (output.ErrorCode as string | null) ?? null }
+}
