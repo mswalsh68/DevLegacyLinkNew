@@ -10,7 +10,7 @@
 --
 -- @SportId INT = NULL filters to a specific sport; NULL = all.
 --
--- Role IDs: program_role_id = 8 (player), 7 (alumni)
+-- Role IDs: program_role_id = 8 (player), 7 (alumni) — stored on users_sports, not users
 -- ============================================================
 
 USE [$(AppDb)]
@@ -35,12 +35,14 @@ BEGIN
     @MonthInteractions = SUM(CASE WHEN il.logged_at >= DATEADD(DAY, -30, SYSUTCDATETIME()) THEN 1 ELSE 0 END)
   FROM dbo.interaction_log il
   JOIN dbo.users u ON u.user_id = il.user_id
-  WHERE u.program_role_id = 7   -- alumni
-    AND u.is_active = 1
-    AND (@SportId IS NULL OR EXISTS (
+  WHERE u.is_active = 1
+    AND EXISTS (
       SELECT 1 FROM dbo.users_sports us
-      WHERE us.user_id = u.user_id AND us.sport_id = @SportId AND us.is_active = 1
-    ));
+      WHERE us.user_id = u.user_id
+        AND us.program_role_id = 7   -- alumni
+        AND us.is_active = 1
+        AND (@SportId IS NULL OR us.sport_id = @SportId)
+    );
 
   -- ── Email counts + open rate for alumni recipients ───────────────────────
   DECLARE @TotalEmailsSent  INT          = 0;
@@ -55,12 +57,14 @@ BEGIN
     @TotalOpened     = SUM(CASE WHEN om.opened_at IS NOT NULL THEN 1 ELSE 0 END)
   FROM dbo.outreach_messages om
   JOIN dbo.users u ON u.user_id = om.user_id
-  WHERE u.program_role_id = 7   -- alumni
-    AND u.is_active = 1
-    AND (@SportId IS NULL OR EXISTS (
+  WHERE u.is_active = 1
+    AND EXISTS (
       SELECT 1 FROM dbo.users_sports us
-      WHERE us.user_id = u.user_id AND us.sport_id = @SportId AND us.is_active = 1
-    ));
+      WHERE us.user_id = u.user_id
+        AND us.program_role_id = 7   -- alumni
+        AND us.is_active = 1
+        AND (@SportId IS NULL OR us.sport_id = @SportId)
+    );
 
   SET @EmailOpenRatePct = CASE
     WHEN @TotalEmailsSent = 0 THEN 0
@@ -72,13 +76,15 @@ BEGIN
 
   SELECT @AlumniLogins = COUNT(DISTINCT u.user_id)
   FROM   dbo.users u
-  WHERE  u.program_role_id = 7
-    AND  u.is_active = 1
+  WHERE  u.is_active = 1
     AND  u.last_team_login >= DATEADD(DAY, -30, SYSUTCDATETIME())
-    AND  (@SportId IS NULL OR EXISTS (
+    AND  EXISTS (
       SELECT 1 FROM dbo.users_sports us
-      WHERE us.user_id = u.user_id AND us.sport_id = @SportId AND us.is_active = 1
-    ));
+      WHERE us.user_id = u.user_id
+        AND us.program_role_id = 7   -- alumni
+        AND us.is_active = 1
+        AND (@SportId IS NULL OR us.sport_id = @SportId)
+    );
 
   -- ── Feed post counts (alumni-visible: all + alumni_only) ──────────────────
   DECLARE @TotalFeedPosts INT = 0;
@@ -123,12 +129,14 @@ BEGIN
                                  AND om.sent_at >= DATEADD(DAY, -30, SYSUTCDATETIME()) THEN 1 ELSE 0 END)
   FROM dbo.outreach_messages om
   JOIN dbo.users u ON u.user_id = om.user_id
-  WHERE u.program_role_id = 8   -- player
-    AND u.is_active = 1
-    AND (@SportId IS NULL OR EXISTS (
+  WHERE u.is_active = 1
+    AND EXISTS (
       SELECT 1 FROM dbo.users_sports us
-      WHERE us.user_id = u.user_id AND us.sport_id = @SportId AND us.is_active = 1
-    ));
+      WHERE us.user_id = u.user_id
+        AND us.program_role_id = 8   -- player
+        AND us.is_active = 1
+        AND (@SportId IS NULL OR us.sport_id = @SportId)
+    );
 
   -- ── Feed post counts (player-visible) ────────────────────────────────────
   DECLARE @TotalFeedPosts INT = 0;
@@ -168,12 +176,14 @@ BEGIN
     @MonthInteractions = SUM(CASE WHEN il.logged_at >= DATEADD(DAY, -30, SYSUTCDATETIME()) THEN 1 ELSE 0 END)
   FROM dbo.interaction_log il
   JOIN dbo.users u ON u.user_id = il.user_id
-  WHERE u.program_role_id = 7
-    AND u.is_active = 1
-    AND (@SportId IS NULL OR EXISTS (
+  WHERE u.is_active = 1
+    AND EXISTS (
       SELECT 1 FROM dbo.users_sports us
-      WHERE us.user_id = u.user_id AND us.sport_id = @SportId AND us.is_active = 1
-    ));
+      WHERE us.user_id = u.user_id
+        AND us.program_role_id = 7   -- alumni
+        AND us.is_active = 1
+        AND (@SportId IS NULL OR us.sport_id = @SportId)
+    );
 
   -- ── Alumni email counts ───────────────────────────────────────────────────
   DECLARE @AlumniEmailsTotal INT = 0;
@@ -185,25 +195,29 @@ BEGIN
                                    AND om.sent_at >= DATEADD(DAY, -30, SYSUTCDATETIME()) THEN 1 ELSE 0 END)
   FROM dbo.outreach_messages om
   JOIN dbo.users u ON u.user_id = om.user_id
-  WHERE u.program_role_id = 7
-    AND u.is_active = 1
-    AND (@SportId IS NULL OR EXISTS (
+  WHERE u.is_active = 1
+    AND EXISTS (
       SELECT 1 FROM dbo.users_sports us
-      WHERE us.user_id = u.user_id AND us.sport_id = @SportId AND us.is_active = 1
-    ));
+      WHERE us.user_id = u.user_id
+        AND us.program_role_id = 7   -- alumni
+        AND us.is_active = 1
+        AND (@SportId IS NULL OR us.sport_id = @SportId)
+    );
 
   -- ── Alumni logins last 30 days ─────────────────────────────────────────────
   DECLARE @AlumniLogins INT = 0;
 
   SELECT @AlumniLogins = COUNT(DISTINCT u.user_id)
   FROM   dbo.users u
-  WHERE  u.program_role_id = 7
-    AND  u.is_active = 1
+  WHERE  u.is_active = 1
     AND  u.last_team_login >= DATEADD(DAY, -30, SYSUTCDATETIME())
-    AND  (@SportId IS NULL OR EXISTS (
+    AND  EXISTS (
       SELECT 1 FROM dbo.users_sports us
-      WHERE us.user_id = u.user_id AND us.sport_id = @SportId AND us.is_active = 1
-    ));
+      WHERE us.user_id = u.user_id
+        AND us.program_role_id = 7   -- alumni
+        AND us.is_active = 1
+        AND (@SportId IS NULL OR us.sport_id = @SportId)
+    );
 
   -- ── Player email counts ───────────────────────────────────────────────────
   DECLARE @PlayerEmailsTotal INT = 0;
@@ -215,12 +229,14 @@ BEGIN
                                    AND om.sent_at >= DATEADD(DAY, -30, SYSUTCDATETIME()) THEN 1 ELSE 0 END)
   FROM dbo.outreach_messages om
   JOIN dbo.users u ON u.user_id = om.user_id
-  WHERE u.program_role_id = 8
-    AND u.is_active = 1
-    AND (@SportId IS NULL OR EXISTS (
+  WHERE u.is_active = 1
+    AND EXISTS (
       SELECT 1 FROM dbo.users_sports us
-      WHERE us.user_id = u.user_id AND us.sport_id = @SportId AND us.is_active = 1
-    ));
+      WHERE us.user_id = u.user_id
+        AND us.program_role_id = 8   -- player
+        AND us.is_active = 1
+        AND (@SportId IS NULL OR us.sport_id = @SportId)
+    );
 
   -- ── Feed post counts ──────────────────────────────────────────────────────
   DECLARE @TotalFeedPosts INT = 0;
