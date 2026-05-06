@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { jwtVerify, SignJWT } from 'jose'
-import { getPool } from '@/lib/db/connection'
+import { getPool, appDbContext } from '@/lib/db/connection'
 import sql from 'mssql'
 
 function extractAppNames(raw: unknown): string[] {
@@ -56,28 +56,54 @@ export async function POST(req: NextRequest) {
   // ── Fetch fresh user data from DB ──────────────────────────────────────────
   let userJson: Record<string, unknown> = { userId }
 
+  // Read currentTeamId from body so sp_GetUserSession resolves the right team.
+  let currentTeamId: number | undefined
+  try {
+    const body = await req.json() as { currentTeamId?: number }
+    if (body?.currentTeamId) currentTeamId = body.currentTeamId
+  } catch { /* no body / not JSON — ignore */ }
+
   try {
     const db   = await getPool('global')
     const req2 = db.request()
-    req2.input ('UserId',    sql.BigInt,            userId)
-    req2.output('UserJson',  sql.NVarChar(sql.MAX))
-    req2.output('ErrorCode', sql.NVarChar(50))
+    req2.input ('UserId',        sql.BigInt,            userId)
+    req2.input ('CurrentTeamId', sql.Int,               currentTeamId ?? null)
+    req2.output('UserJson',      sql.NVarChar(sql.MAX))
+    req2.output('ErrorCode',     sql.NVarChar(50))
 
-    const { output } = await req2.execute('dbo.sp_GetUserById')
+    const { output } = await req2.execute('dbo.sp_GetUserSession')
     if (!output.ErrorCode && output.UserJson) {
       userJson = JSON.parse(output.UserJson as string) as Record<string, unknown>
       userJson.apps = extractAppNames(userJson.appPermissions)
     }
   } catch (err) {
-    // DB unavailable — issue token with just the userId (minimal refresh)
     console.warn('[/api/auth/refresh] DB unavailable, issuing minimal token:', err)
   }
 
-  // ── Preserve currentTeamId from request body ───────────────────────────────
-  try {
-    const body = await req.json() as { currentTeamId?: number }
-    if (body?.currentTeamId) userJson.currentTeamId = body.currentTeamId
-  } catch { /* no body / not JSON — ignore */ }
+  // ── Override apps from App DB programRoleId (client users only) ────────────
+  if (userJson.roleId === 3 && userJson.appDb && userId) {
+    try {
+      const appDb = userJson.appDb as string
+      const programRoleId = await appDbContext.run(appDb, async () => {
+        const appPool = await getPool('app')
+        const result  = await appPool
+          .request()
+          .input('UserId', sql.BigInt, userId)
+          .query('SELECT MIN(program_role_id) AS program_role_id FROM dbo.users_sports WHERE user_id = @UserId AND is_active = 1')
+        return result.recordset[0]?.program_role_id as number | undefined
+      })
+      if (programRoleId != null) {
+        userJson.programRoleId = programRoleId
+        if (programRoleId === 7)      userJson.apps = ['alumni']
+        else if (programRoleId === 8) userJson.apps = ['roster']
+        else                          userJson.apps = ['roster', 'alumni']
+      }
+    } catch (err) {
+      console.warn('[/api/auth/refresh] Could not fetch programRoleId:', (err as Error).message)
+    }
+  }
+
+  if (currentTeamId) userJson.currentTeamId = currentTeamId
 
   // ── Sign new access token ──────────────────────────────────────────────────
   const accessToken = await new SignJWT({ sub: String(userId), userId, ...userJson })
