@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getServerSession, isGlobalAdmin } from '@/lib/auth'
+import { requireSession, isGlobalAdmin } from '@/lib/auth'
 import { sp_GetUserSports } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 
@@ -8,12 +8,8 @@ import { appDbContext } from '@/lib/db/connection'
 // Global admins get all active sports; regular staff get only their linked sports.
 
 export async function GET() {
-  const session = await getServerSession()
-  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-
-  if (!session.appDb) {
-    return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
-  }
+  const { session, error } = await requireSession()
+  if (error) return error
 
   if (!session.currentTeamId) {
     return NextResponse.json({ success: false, error: 'No active team. Please switch teams and try again.' }, { status: 400 })
@@ -24,10 +20,7 @@ export async function GET() {
 
   return appDbContext.run(session.appDb, async () => {
     try {
-      const sports = await sp_GetUserSports({
-        tenantId: session.currentTeamId!,
-        userId,
-      })
+      const sports = await sp_GetUserSports({ userId })
       return NextResponse.json({ success: true, data: sports })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from '@/lib/auth'
+import { requireSession } from '@/lib/auth'
 import { canAsync } from '@/lib/permissions.server'
 import { sp_GetCampaigns, sp_CreateCampaign } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
@@ -7,15 +7,11 @@ import { appDbContext } from '@/lib/db/connection'
 // ─── GET /api/campaigns ───────────────────────────────────────────────────────
 
 export async function GET(req: Request) {
-  const session = await getServerSession()
-  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+  const { session, error } = await requireSession()
+  if (error) return error
 
   if (!(await canAsync(session, 'feed:view')).allowed) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
-  }
-
-  if (!session.appDb) {
-    return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
   }
 
   const { searchParams } = new URL(req.url)
@@ -37,15 +33,11 @@ export async function GET(req: Request) {
 // ─── POST /api/campaigns ──────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
-  const session = await getServerSession()
-  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+  const { session, error: authErr } = await requireSession()
+  if (authErr) return authErr
 
   if (!(await canAsync(session, 'feed:post')).allowed) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
-  }
-
-  if (!session.appDb) {
-    return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
   }
 
   let body: {

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from '@/lib/auth'
+import { requireSession } from '@/lib/auth'
 import { sp_GetUserSportAssociations } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 
@@ -7,12 +7,8 @@ import { appDbContext } from '@/lib/db/connection'
 // Returns the sport associations for the current user.
 // Used by the new-post page to restrict alumni sport selection.
 export async function GET() {
-  const session = await getServerSession()
-  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-
-  if (!session.appDb) {
-    return NextResponse.json({ success: false, error: 'App DB not configured.' }, { status: 503 })
-  }
+  const { session, error } = await requireSession()
+  if (error) return error
 
   return appDbContext.run(session.appDb, async () => {
     try {

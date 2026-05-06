@@ -2,12 +2,12 @@
 // POST /api/invite/codes               — create a new invite code (global_admin only)
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
-import { getServerSession, isGlobalAdmin } from '@/lib/auth'
+import { requireSession, isGlobalAdmin } from '@/lib/auth'
 import { sp_ListInviteCodes, sp_CreateInviteCode } from '@/lib/db/procedures'
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession()
-  if (!session)         return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 })
+  const { session, error } = await requireSession({ appDb: false })
+  if (error) return error
   if (!isGlobalAdmin(session)) return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
 
   const teamIdStr = req.nextUrl.searchParams.get('teamId')
@@ -24,8 +24,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession()
-  if (!session)         return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 })
+  const { session, error: authErr } = await requireSession({ appDb: false })
+  if (authErr) return authErr
   if (!isGlobalAdmin(session)) return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
 
   let body: Record<string, unknown>

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getServerSession, isGlobalAdmin } from '@/lib/auth'
+import { requireSession, isGlobalAdmin } from '@/lib/auth'
 import { sp_UpdateSportsPosition, sp_DeleteSportsPosition } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 
@@ -10,10 +10,9 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getServerSession()
-  if (!session)                return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!isGlobalAdmin(session)) return NextResponse.json({ error: 'Forbidden' },   { status: 403 })
-  if (!session.appDb)          return NextResponse.json({ error: 'App DB not configured.' }, { status: 503 })
+  const { session, error } = await requireSession()
+  if (error) return error
+  if (!isGlobalAdmin(session)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { id } = await params
   const positionId = parseInt(id, 10)
@@ -47,10 +46,9 @@ export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getServerSession()
-  if (!session)                return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!isGlobalAdmin(session)) return NextResponse.json({ error: 'Forbidden' },   { status: 403 })
-  if (!session.appDb)          return NextResponse.json({ error: 'App DB not configured.' }, { status: 503 })
+  const { session, error: authErr } = await requireSession()
+  if (authErr) return authErr
+  if (!isGlobalAdmin(session)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { id } = await params
   const positionId = parseInt(id, 10)

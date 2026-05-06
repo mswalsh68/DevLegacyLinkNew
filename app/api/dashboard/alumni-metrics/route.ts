@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from '@/lib/auth'
+import { requireSession } from '@/lib/auth'
 import { can } from '@/lib/permissions'
 import { sp_GetDashboardMetrics_Alumni } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
@@ -9,15 +9,11 @@ import { featuresForTier, normalizeTier } from '@/lib/features'
 // Optional query param: ?sportId=<int>
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession()
-  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+  const { session, error } = await requireSession()
+  if (error) return error
 
   if (!can(session, 'alumni:view')) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
-  }
-
-  if (!session.appDb) {
-    return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
   }
 
   if (!session.currentTeamId) {
@@ -29,10 +25,7 @@ export async function GET(req: NextRequest) {
 
   return appDbContext.run(session.appDb, async () => {
     try {
-      const metrics = await sp_GetDashboardMetrics_Alumni({
-        tenantId: session.currentTeamId!,
-        sportId,
-      })
+      const metrics = await sp_GetDashboardMetrics_Alumni({ sportId })
       const tier = normalizeTier(null)
       return NextResponse.json({
         success:            true,

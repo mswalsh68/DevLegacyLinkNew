@@ -8,8 +8,6 @@
 --   sp_GetDashboardMetrics_Players — player comms KPIs
 --   sp_GetDashboardMetrics_All     — combined engagement KPIs
 --
--- @TenantId is accepted for convention / future sharding but
--- is unused here — each tenant has its own App DB.
 -- @SportId INT = NULL filters to a specific sport; NULL = all.
 --
 -- Role IDs: program_role_id = 8 (player), 7 (alumni)
@@ -23,8 +21,7 @@ GO
 -- Returns alumni-side engagement KPIs.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetDashboardMetrics_Alumni
-  @TenantId INT,
-  @SportId  INT = NULL
+  @SportId INT = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -111,8 +108,7 @@ GO
 -- Returns player-comms KPIs.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetDashboardMetrics_Players
-  @TenantId INT,
-  @SportId  INT = NULL
+  @SportId INT = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -158,8 +154,7 @@ GO
 -- Combined alumni + player engagement KPIs.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetDashboardMetrics_All
-  @TenantId INT,
-  @SportId  INT = NULL
+  @SportId INT = NULL
 AS
 BEGIN
   SET NOCOUNT ON;

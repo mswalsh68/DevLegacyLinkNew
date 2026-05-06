@@ -360,13 +360,13 @@ BEGIN
     ELSE
     BEGIN
       INSERT INTO dbo.users_sports (
-        user_id, sport_id, username,
+        user_id, sport_id,
         program_role_id, position_id, jersey_number, seasons_played, class_year
       )
-      SELECT
-        @UserId, @SportId, u.first_name + N' ' + u.last_name,
+      VALUES (
+        @UserId, @SportId,
         @ProgramRoleId, @PositionId, @JerseyNumber, @SeasonsPlayed, @ClassYear
-      FROM dbo.users u WHERE u.user_id = @UserId;
+      );
 
       SET @NewUserSportId = SCOPE_IDENTITY();
     END
@@ -652,8 +652,7 @@ GO
 -- Non-null = sports from dbo.users_sports (active rows only).
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetUserSports
-  @TenantId INT,
-  @UserId   INT = NULL
+  @UserId INT = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -741,29 +740,6 @@ BEGIN
   WHERE il.user_id = @UserId
   ORDER BY il.logged_at DESC
   OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;
-END;
-GO
-
--- ============================================================
--- sp_GetRosterStats
--- Summary stats for a sport's roster and alumni.
--- ============================================================
-CREATE OR ALTER PROCEDURE dbo.sp_GetRosterStats
-  @SportId INT = NULL
-AS
-BEGIN
-  SET NOCOUNT ON;
-
-  SELECT
-    COUNT(CASE WHEN us.program_role_id = 8 THEN 1 END) AS totalCurrentPlayers,
-    COUNT(CASE WHEN us.program_role_id = 7 THEN 1 END) AS totalAlumni,
-    MIN(CASE WHEN us.program_role_id = 7 THEN us.class_year END) AS earliestClass,
-    MAX(CASE WHEN us.program_role_id = 7 THEN us.class_year END) AS latestClass
-  FROM dbo.users u
-  JOIN dbo.users_sports us ON us.user_id = u.user_id AND us.is_active = 1
-  WHERE u.is_active = 1
-    AND us.program_role_id IN (7, 8)
-    AND (@SportId IS NULL OR us.sport_id = @SportId);
 END;
 GO
 

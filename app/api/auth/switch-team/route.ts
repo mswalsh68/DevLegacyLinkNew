@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { SignJWT } from 'jose'
 import sql from 'mssql'
-import { getServerSession, isGlobalAdmin } from '@/lib/auth'
+import { requireSession, isGlobalAdmin } from '@/lib/auth'
 import { sp_SwitchTeam, sp_UpsertUser } from '@/lib/db/procedures'
 import { getPool, appDbContext } from '@/lib/db/connection'
 
@@ -23,10 +23,8 @@ function getConfig() {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession()
-  if (!session?.userId) {
-    return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 })
-  }
+  const { session, error } = await requireSession({ appDb: false })
+  if (error) return error
 
   let teamId: number | undefined
   try {

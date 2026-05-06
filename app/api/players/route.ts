@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from '@/lib/auth'
+import { requireSession } from '@/lib/auth'
 import { can } from '@/lib/permissions'
 import { sp_GetRoster } from '@/lib/db/procedures'
-import { appDbContext, getPool } from '@/lib/db/connection'
+import { appDbContext } from '@/lib/db/connection'
+import { fetchAccountClaimedMap } from '@/lib/db/globalLookup'
 
 // ─── GET /api/players ─────────────────────────────────────────────────────────
 // Query params:
@@ -14,18 +15,14 @@ import { appDbContext, getPool } from '@/lib/db/connection'
 //   pageSize   INT (default 50)
 
 export async function GET(req: Request) {
-  const session = await getServerSession()
-  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+  const { session, error } = await requireSession()
+  if (error) return error
 
   if (!can(session, 'roster:view')) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
   }
 
   const canManage = can(session, 'roster:manage')
-
-  if (!session.appDb) {
-    return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
-  }
 
   const { searchParams } = new URL(req.url)
 
@@ -51,21 +48,9 @@ export async function GET(req: Request) {
         pageSize,
       })
 
-      // Batch-fetch account_claimed from Global DB — only needed for managers.
-      const accountClaimedMap = new Map<number, boolean>()
-      if (canManage && roster.length > 0) {
-        try {
-          const globalDb = await getPool('global')
-          const ids = roster.map(r => r.userId).join(',')
-          const { recordset } = await globalDb.request()
-            .query(`SELECT user_id, account_claimed FROM dbo.users WHERE user_id IN (${ids})`)
-          for (const row of recordset as { user_id: number; account_claimed: boolean }[]) {
-            accountClaimedMap.set(row.user_id, Boolean(row.account_claimed))
-          }
-        } catch (err) {
-          console.warn('[GET /api/players] Could not fetch account_claimed:', err)
-        }
-      }
+      const accountClaimedMap = canManage
+        ? await fetchAccountClaimedMap(roster.map(r => r.userId))
+        : new Map<number, boolean>()
 
       const enriched = roster.map(r => ({
         ...r,

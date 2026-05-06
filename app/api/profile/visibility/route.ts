@@ -1,15 +1,11 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from '@/lib/auth'
+import { requireSession } from '@/lib/auth'
 import { sp_SetContactVisible } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 
 export async function PATCH(req: Request) {
-  const session = await getServerSession()
-  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-
-  if (!session.appDb) {
-    return NextResponse.json({ success: false, error: 'App DB not configured.' }, { status: 503 })
-  }
+  const { session, error } = await requireSession()
+  if (error) return error
 
   let visible: boolean
   try {
