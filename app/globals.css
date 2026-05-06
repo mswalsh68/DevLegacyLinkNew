@@ -25,25 +25,25 @@
 
 :root {
   /* ─── Primary brand color ─────────────────────────────── */
-  --color-primary:        #006747;   /* USF Green  — PMS 342  */
-  --color-primary-dark:   #005432;   /* Evergreen  — PMS 3435 */
-  --color-primary-light:  #E0F0EA;   /* Light green surface   */
-  --color-primary-hover:  #00855A;   /* Hover state           */
+  --color-primary:        #000000;
+  --color-primary-dark:   #0a0a0a;
+  --color-primary-light:  #2c2c2c;
+  --color-primary-hover:  #1a1a1a;
 
   /* ─── Accent / secondary brand color ──────────────────── */
-  --color-accent:         #CFC493;   /* USF Gold   — PMS 4535 */
-  --color-accent-dark:    #A89C6A;   /* Darker gold for text  */
-  --color-accent-light:   #EDEBD1;   /* Sand — light gold bg  */
+  --color-accent:         #d4af37;
+  --color-accent-dark:    #b8972e;
+  --color-accent-light:   #e8d38a;
 
   /* ─── Semantic status colors ──────────────────────────── */
-  --color-success:        #006747;
-  --color-success-light:  #E0F0EA;
+  --color-success:        #000000;
+  --color-success-light:  #2c2c2c;
   --color-warning:        #A89C6A;
   --color-warning-light:  #F5F2E4;
   --color-danger:         #C0392B;
   --color-danger-light:   #FDECEA;
-  --color-info:           #005432;
-  --color-info-light:     #E0EDE8;
+  --color-info:           #0a0a0a;
+  --color-info-light:     #2c2c2c;
 
   /* ─── Neutral grays ───────────────────────────────────── */
   --color-gray-50:        #F9FAFB;
