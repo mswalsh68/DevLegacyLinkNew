@@ -13,7 +13,7 @@ function extractAppNames(raw: unknown): string[] {
   if (!Array.isArray(raw)) return []
   return (raw as Array<Record<string, unknown>>).map(p => String(p.app)).filter(Boolean)
 }
-import { getPool } from '@/lib/db/connection'
+import { getPool, appDbContext } from '@/lib/db/connection'
 import {
   sp_RegisterUserViaInvite,
   sp_SubmitAccessRequest,
@@ -178,10 +178,34 @@ export async function POST(req: NextRequest) {
       if (!loginOut.ErrorCode && loginOut.UserJson && loginOut.PasswordHash) {
         const passwordOk = await bcrypt.compare(password, loginOut.PasswordHash as string)
         if (passwordOk) {
-          userId        = loginOut.UserId as number
-          userJson      = JSON.parse(loginOut.UserJson as string) as Record<string, unknown>
+          userId   = loginOut.UserId as number
+          userJson = JSON.parse(loginOut.UserJson as string) as Record<string, unknown>
           userJson.apps = extractAppNames(userJson.appPermissions)
-          skipPending   = true
+
+          // Derive apps from App DB programRoleId (same as /api/auth/login).
+          // Admin-created accounts may have no global app_permissions yet.
+          if (userJson.roleId === 3 && userJson.appDb && userId) {
+            try {
+              const programRoleId = await appDbContext.run(userJson.appDb as string, async () => {
+                const appPool = await getPool('app')
+                const r = await appPool
+                  .request()
+                  .input('UserId', sql.BigInt, userId)
+                  .query('SELECT MIN(program_role_id) AS program_role_id FROM dbo.users_sports WHERE user_id = @UserId AND is_active = 1')
+                return r.recordset[0]?.program_role_id as number | undefined
+              })
+              if (programRoleId != null) {
+                userJson.programRoleId = programRoleId
+                if (programRoleId === 7)      userJson.apps = ['alumni']
+                else if (programRoleId === 8) userJson.apps = ['roster']
+                else                          userJson.apps = ['roster', 'alumni']
+              }
+            } catch (appErr) {
+              console.warn('[invite/claim] Could not fetch programRoleId:', appErr)
+            }
+          }
+
+          skipPending = true
         }
       }
     } catch (loginErr) {
