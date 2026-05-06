@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
 import { canAsync } from '@/lib/permissions.server'
-import { sp_TransferUserRole } from '@/lib/db/procedures'
+import { sp_TransferUserRole, sp_TransferPlayerToAlumni } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 
 // ─── POST /api/players/transfer ───────────────────────────────────────────────
@@ -60,6 +60,7 @@ export async function POST(req: Request) {
 
       const failures: { userId: number; sportId: number; reason: string }[] = []
       let successCount = 0
+      const promotedUserIds = new Set<number>()
 
       results.forEach((r, i) => {
         if (r.status === 'fulfilled') {
@@ -67,11 +68,20 @@ export async function POST(req: Request) {
             failures.push({ userId: transfers[i].userId, sportId: transfers[i].sportId, reason: r.value.errorCode })
           } else {
             successCount++
+            promotedUserIds.add(transfers[i].userId)
           }
         } else {
           failures.push({ userId: transfers[i].userId, sportId: transfers[i].sportId, reason: 'INTERNAL_ERROR' })
         }
       })
+
+      // Update Global DB app permissions: swap roster → alumni for each promoted user.
+      // Best-effort — App DB transfer already succeeded; don't fail the response over this.
+      await Promise.allSettled(
+        [...promotedUserIds].map((userId) =>
+          sp_TransferPlayerToAlumni({ userId, grantedBy: session.userId }),
+        ),
+      )
 
       return NextResponse.json({
         success: true,
