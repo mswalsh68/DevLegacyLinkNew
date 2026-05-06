@@ -1326,6 +1326,11 @@ export async function sp_UpdateUserProfile(params: {
 export async function sp_UpsertUserContact(params: {
   targetUserId: number
   actorId:      number
+  phone?:       string | null
+  address?:     string | null
+  city?:        string | null
+  state?:       string | null
+  zipcode?:     string | null
   twitter?:     string | null
   instagram?:   string | null
   facebook?:    string | null
@@ -1338,6 +1343,11 @@ export async function sp_UpsertUserContact(params: {
   const { output } = await execFull('global', 'sp_UpsertUserContact', (r) => {
     r.input ('TargetUserId', sql.BigInt,        params.targetUserId)
     r.input ('ActorId',      sql.BigInt,        params.actorId)
+    r.input ('Phone',        sql.NVarChar(20),  params.phone      ?? null)
+    r.input ('Address',      sql.NVarChar(255), params.address    ?? null)
+    r.input ('City',         sql.NVarChar(100), params.city       ?? null)
+    r.input ('State',        sql.NVarChar(100), params.state      ?? null)
+    r.input ('Zipcode',      sql.NVarChar(20),  params.zipcode    ?? null)
     r.input ('Twitter',      sql.NVarChar(100), params.twitter    ?? null)
     r.input ('Instagram',    sql.NVarChar(100), params.instagram  ?? null)
     r.input ('Facebook',     sql.NVarChar(100), params.facebook   ?? null)

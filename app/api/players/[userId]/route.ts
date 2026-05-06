@@ -47,7 +47,7 @@ export async function GET(
         lastName:      base.lastName,
         lastTeamLogin: base.lastTeamLogin,
         sportRows:     sportRows.filter(r => r.sportIsActive !== false),
-        // Global DB social/contact — always shown; phone/emergency only for managers
+        // Social + phone/email — always shown
         twitter:       profile?.twitter    ?? null,
         instagram:     profile?.instagram  ?? null,
         facebook:      profile?.facebook   ?? null,
@@ -56,8 +56,9 @@ export async function GET(
         otherLink1:    profile?.otherLink1 ?? null,
         otherLink2:    profile?.otherLink2 ?? null,
         otherLink3:    profile?.otherLink3 ?? null,
+        phone:         profile?.phone      ?? null,
+        // Emergency/parent contact — managers only
         ...(canManage ? {
-          phone:                  profile?.phone                  ?? null,
           emergencyContactName1:  profile?.emergencyContactName1  ?? null,
           emergencyContactPhone1: profile?.emergencyContactPhone1 ?? null,
           emergencyContactEmail1: profile?.emergencyContactEmail1 ?? null,
