@@ -43,5 +43,5 @@ export function hasAppAccess(session: UserSession, app: string): boolean {
 }
 
 export function isGlobalAdmin(session: UserSession): boolean {
-  return session.roleId === 1 || session.role === 'super_admin'
+  return session.roleId === 1 || session.roleId === 2 || session.role === 'super_admin' || session.role === 'support_admin'
 }

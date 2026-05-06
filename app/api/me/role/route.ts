@@ -12,9 +12,13 @@ export async function GET() {
   if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
 
   if (isGlobalAdmin(session)) {
+    const globalRole = (session as unknown as Record<string, unknown>).role as string | undefined
+    const displayName = (globalRole ?? 'Admin')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase())
     return NextResponse.json({
       success: true,
-      data: { programRoleId: 1, roleName: 'athletic_director', displayName: 'Athletic Director' },
+      data: { programRoleId: 1, roleName: globalRole ?? 'admin', displayName },
     })
   }
 
