@@ -57,8 +57,8 @@ export async function POST(req: NextRequest) {
   const cookieBase = { httpOnly: true, secure: isProd, sameSite: 'lax' as const, path: '/' }
 
   // ── Resolve userId and build JWT payload ──────────────────────────────────
-  let userId:   number
-  let userJson: Record<string, unknown>
+  let userId:   number                    = 0
+  let userJson: Record<string, unknown>  = {}
 
   if (mode === 'signup') {
     const password  = typeof body.password  === 'string' ? body.password  : ''
@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
     userId = newId
     userJson = { email, firstName, lastName, roleId: 3, role: 'client', appPermissions: [], teams: [] }
 
-  } else {
+  } else if (mode === 'login') {
     // Login flow — call sp_Login directly (same pattern as /api/auth/login)
     const password = typeof body.password === 'string' ? body.password : ''
     if (!password) {
@@ -156,6 +156,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to activate account.' }, { status: 500 })
     }
 
+    // Default — overwritten below if login succeeds.
+    userId   = activatedId
+    userJson = { email, roleId: 3, role: 'client', appPermissions: [], teams: [] }
+
     // Try a full login — directly-added users already have team access and can
     // skip the /pending queue and go straight to /dashboard.
     let skipPending = false
@@ -175,10 +179,10 @@ export async function POST(req: NextRequest) {
       if (!loginOut.ErrorCode && loginOut.UserJson && loginOut.PasswordHash) {
         const passwordOk = await bcrypt.compare(password, loginOut.PasswordHash as string)
         if (passwordOk) {
-          userId      = loginOut.UserId as number
-          userJson    = JSON.parse(loginOut.UserJson as string) as Record<string, unknown>
+          userId        = loginOut.UserId as number
+          userJson      = JSON.parse(loginOut.UserJson as string) as Record<string, unknown>
           userJson.apps = extractAppNames(userJson.appPermissions)
-          skipPending = true
+          skipPending   = true
         }
       }
     } catch (loginErr) {
@@ -186,10 +190,8 @@ export async function POST(req: NextRequest) {
     }
 
     if (!skipPending) {
-      // Fallback: submit an access request so the admin can approve manually
+      // Fallback: submit an access request so the admin can approve manually.
       await sp_SubmitAccessRequest({ userId: activatedId, token }).catch(() => {})
-      userId   = activatedId
-      userJson = { email, roleId: 3, role: 'client', appPermissions: [], teams: [] }
     }
 
     // Issue JWT and return — redirect field tells the client where to go
