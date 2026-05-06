@@ -53,6 +53,7 @@ export default function RosterPage() {
   const { user, isLoading } = useAuth()
 
   const canTransfer = can(user, 'roster:promote_to_alumni')
+  const canManage   = can(user, 'roster:manage')
 
   // All hooks must be called unconditionally before any early return.
   const { filters: { search, position, year }, setFilter, page, setPage } =
@@ -207,15 +208,15 @@ export default function RosterPage() {
               <th scope="col" className="sticky-name-th" style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Name</th>
               <th scope="col" style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Position</th>
               <th scope="col" style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Year</th>
-              <th scope="col" style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Status</th>
+              {canManage && <th scope="col" style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Status</th>}
               <th scope="col" style={{ padding: '12px 20px' }}><span className="sr-only">View</span></th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} style={{ textAlign: 'center', padding: 48, color: theme.gray400 }}>Loading...</td></tr>
+              <tr><td colSpan={canManage ? 6 : 5} style={{ textAlign: 'center', padding: 48, color: theme.gray400 }}>Loading...</td></tr>
             ) : players.length === 0 ? (
-              <tr><td colSpan={6} style={{ textAlign: 'center', padding: 48, color: theme.gray400 }}>No players found</td></tr>
+              <tr><td colSpan={canManage ? 6 : 5} style={{ textAlign: 'center', padding: 48, color: theme.gray400 }}>No players found</td></tr>
             ) : players.map((player, i) => (
               <TableRow
                 key={player.userId}
@@ -257,49 +258,51 @@ export default function RosterPage() {
                   {player.academicYear ?? '—'}
                 </td>
 
-                {/* Status + invite action */}
-                <td style={{ padding: '12px 20px' }} onClick={e => e.stopPropagation()}>
-                  {player.accountClaimed ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <Badge label="Active" variant="green" />
-                      <button
-                        disabled={rowActions[player.userId] === 'sending'}
-                        onClick={() => handleNotify(player)}
-                        style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: '1px solid var(--color-card-border)', backgroundColor: 'var(--color-card-bg)', color: theme.gray600, cursor: 'pointer', whiteSpace: 'nowrap' }}
-                      >
-                        {rowActions[player.userId] === 'sending' ? '…'
-                          : rowActions[player.userId] === 'sent'    ? '✓ Sent'
-                          : rowActions[player.userId] === 'error'   ? 'Error'
-                          : 'Notify'}
-                      </button>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <Badge label="Unclaimed" variant="warning" />
-                      <button
-                        disabled={rowActions[player.userId] === 'sending'}
-                        onClick={() => handleResend(player)}
-                        style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: '1px solid var(--color-card-border)', backgroundColor: 'var(--color-card-bg)', color: theme.gray600, cursor: 'pointer', whiteSpace: 'nowrap' }}
-                      >
-                        {rowActions[player.userId] === 'sending' ? '…'
-                          : rowActions[player.userId] === 'sent'    ? '✓ Sent'
-                          : rowActions[player.userId] === 'error'   ? 'Error'
-                          : 'Resend Invite'}
-                      </button>
-                      <button
-                        disabled={copyStates[player.userId] === 'copying'}
-                        onClick={() => handleCopyLink(player)}
-                        title="Copy invite link"
-                        style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: '1px solid var(--color-card-border)', backgroundColor: 'var(--color-card-bg)', color: theme.gray600, cursor: 'pointer', whiteSpace: 'nowrap' }}
-                      >
-                        {copyStates[player.userId] === 'copying' ? '…'
-                          : copyStates[player.userId] === 'copied'  ? '✓ Copied'
-                          : copyStates[player.userId] === 'error'   ? 'Error'
-                          : '🔗 Copy Link'}
-                      </button>
-                    </div>
-                  )}
-                </td>
+                {/* Status + invite action — managers only */}
+                {canManage && (
+                  <td style={{ padding: '12px 20px' }} onClick={e => e.stopPropagation()}>
+                    {player.accountClaimed ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Badge label="Active" variant="green" />
+                        <button
+                          disabled={rowActions[player.userId] === 'sending'}
+                          onClick={() => handleNotify(player)}
+                          style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: '1px solid var(--color-card-border)', backgroundColor: 'var(--color-card-bg)', color: theme.gray600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          {rowActions[player.userId] === 'sending' ? '…'
+                            : rowActions[player.userId] === 'sent'    ? '✓ Sent'
+                            : rowActions[player.userId] === 'error'   ? 'Error'
+                            : 'Notify'}
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Badge label="Unclaimed" variant="warning" />
+                        <button
+                          disabled={rowActions[player.userId] === 'sending'}
+                          onClick={() => handleResend(player)}
+                          style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: '1px solid var(--color-card-border)', backgroundColor: 'var(--color-card-bg)', color: theme.gray600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          {rowActions[player.userId] === 'sending' ? '…'
+                            : rowActions[player.userId] === 'sent'    ? '✓ Sent'
+                            : rowActions[player.userId] === 'error'   ? 'Error'
+                            : 'Resend Invite'}
+                        </button>
+                        <button
+                          disabled={copyStates[player.userId] === 'copying'}
+                          onClick={() => handleCopyLink(player)}
+                          title="Copy invite link"
+                          style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: '1px solid var(--color-card-border)', backgroundColor: 'var(--color-card-bg)', color: theme.gray600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          {copyStates[player.userId] === 'copying' ? '…'
+                            : copyStates[player.userId] === 'copied'  ? '✓ Copied'
+                            : copyStates[player.userId] === 'error'   ? 'Error'
+                            : '🔗 Copy Link'}
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                )}
 
                 {/* Arrow */}
                 <td style={{ padding: '12px 20px', color: theme.gray300, fontSize: 18 }}>›</td>

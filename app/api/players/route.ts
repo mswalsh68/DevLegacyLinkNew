@@ -17,9 +17,11 @@ export async function GET(req: Request) {
   const session = await getServerSession()
   if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
 
-  if (!(await canAsync(session, 'roster:manage')).allowed) {
+  if (!(await canAsync(session, 'roster:view')).allowed) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
   }
+
+  const canManage = (await canAsync(session, 'roster:manage')).allowed
 
   if (!session.appDb) {
     return NextResponse.json({ success: false, error: 'App DB not configured. Please sign out and sign back in.' }, { status: 503 })
@@ -49,9 +51,9 @@ export async function GET(req: Request) {
         pageSize,
       })
 
-      // Batch-fetch account_claimed from Global DB for all returned users.
+      // Batch-fetch account_claimed from Global DB — only needed for managers.
       const accountClaimedMap = new Map<number, boolean>()
-      if (roster.length > 0) {
+      if (canManage && roster.length > 0) {
         try {
           const globalDb = await getPool('global')
           const ids = roster.map(r => r.userId).join(',')
@@ -67,7 +69,7 @@ export async function GET(req: Request) {
 
       const enriched = roster.map(r => ({
         ...r,
-        accountClaimed: accountClaimedMap.get(r.userId) ?? false,
+        ...(canManage ? { accountClaimed: accountClaimedMap.get(r.userId) ?? false } : {}),
       }))
 
       return NextResponse.json({ success: true, data: enriched, total: totalCount })
