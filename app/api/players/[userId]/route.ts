@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
+import { can } from '@/lib/permissions'
 import { canAsync } from '@/lib/permissions.server'
-import { sp_GetMemberDetails, sp_UpdateUserRole } from '@/lib/db/procedures'
+import { sp_GetMemberDetails, sp_UpdateUserRole, sp_GetUserProfile } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 
 // ─── GET /api/players/[userId] ────────────────────────────────────────────────
@@ -19,18 +20,20 @@ export async function GET(
   const { userId } = await params
   const uid = parseInt(userId, 10)
 
-  const [managePerm, accountsPerm] = await Promise.all([
-    canAsync(session, 'roster:manage'),
-    canAsync(session, 'roster:player_accounts'),
-  ])
-
-  if (!managePerm.allowed && !accountsPerm.allowed) {
+  if (!can(session, 'roster:view')) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
   }
 
+  const canManage = can(session, 'roster:manage')
+
   return appDbContext.run(session.appDb, async () => {
     try {
-      const { sportRows, interactions, errorCode } = await sp_GetMemberDetails({ userId: uid })
+      const [memberResult, profile] = await Promise.all([
+        sp_GetMemberDetails({ userId: uid }),
+        sp_GetUserProfile(uid),
+      ])
+
+      const { sportRows, interactions, errorCode } = memberResult
 
       if (errorCode === 'USER_NOT_FOUND' || sportRows.length === 0) {
         return NextResponse.json({ success: false, error: 'Player not found.' }, { status: 404 })
@@ -43,7 +46,25 @@ export async function GET(
         firstName:     base.firstName,
         lastName:      base.lastName,
         lastTeamLogin: base.lastTeamLogin,
-        sportRows:          sportRows.filter(r => r.sportIsActive !== false),
+        sportRows:     sportRows.filter(r => r.sportIsActive !== false),
+        // Global DB social/contact — always shown; phone/emergency only for managers
+        twitter:       profile?.twitter    ?? null,
+        instagram:     profile?.instagram  ?? null,
+        facebook:      profile?.facebook   ?? null,
+        linkedIn:      profile?.linkedIn   ?? null,
+        website:       profile?.website    ?? null,
+        otherLink1:    profile?.otherLink1 ?? null,
+        otherLink2:    profile?.otherLink2 ?? null,
+        otherLink3:    profile?.otherLink3 ?? null,
+        ...(canManage ? {
+          phone:                  profile?.phone                  ?? null,
+          emergencyContactName1:  profile?.emergencyContactName1  ?? null,
+          emergencyContactPhone1: profile?.emergencyContactPhone1 ?? null,
+          emergencyContactEmail1: profile?.emergencyContactEmail1 ?? null,
+          emergencyContactName2:  profile?.emergencyContactName2  ?? null,
+          emergencyContactPhone2: profile?.emergencyContactPhone2 ?? null,
+          emergencyContactEmail2: profile?.emergencyContactEmail2 ?? null,
+        } : {}),
       }
 
       return NextResponse.json({ success: true, data, interactions })
@@ -76,7 +97,7 @@ export async function PATCH(
   ])
 
   const isSelf  = uid === session.userId
-  const canEdit = managePerm.allowed || (accountsPerm.allowed && isSelf)
+  const canEdit = managePerm.allowed || (accountsPerm.allowed && isSelf) || (can(session, 'roster:manage') && isSelf)
 
   if (!canEdit) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
