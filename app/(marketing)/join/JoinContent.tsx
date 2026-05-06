@@ -4,11 +4,14 @@
 // Step 1: Enter invite code → validate → show team preview card.
 // Step 2: Choose login (existing account), signup (new account), or
 //         claim (admin pre-created account — just set a password).
-// Step 3: Submit → redirect to /pending or /dashboard.
+// Step 3: Submit → redirect based on mode.
+//
+// When initialEmail is provided (personal claim link), the form skips straight
+// to a minimal password-only form and redirects to /login on success.
 
-import { useState, type FormEvent } from 'react'
+import { useState, useEffect, type FormEvent } from 'react'
 
-type Step = 'code' | 'form' | 'submitting'
+type Step = 'code' | 'form' | 'submitting' | 'claimed'
 type FormMode = 'signup' | 'login' | 'claim'
 
 interface TeamPreview {
@@ -26,21 +29,39 @@ const inputClass = `
 
 const labelClass = 'block text-white/60 text-xs uppercase tracking-widest mb-2'
 
-export function JoinContent({ initialCode }: { initialCode: string }) {
-  const [step,      setStep]      = useState<Step>(initialCode ? 'code' : 'code')
+export function JoinContent({ initialCode, initialEmail }: { initialCode: string; initialEmail?: string }) {
+  const isClaim = Boolean(initialCode && initialEmail)
+
+  const [step,      setStep]      = useState<Step>('code')
   const [code,      setCode]      = useState(initialCode)
   const [preview,   setPreview]   = useState<TeamPreview | null>(null)
-  const [mode,      setMode]      = useState<FormMode>('signup')
+  const [mode,      setMode]      = useState<FormMode>(isClaim ? 'claim' : 'signup')
   const [error,     setError]     = useState('')
   const [checking,  setChecking]  = useState(false)
 
   // Form fields
-  const [email,     setEmail]     = useState('')
-  const [password,  setPassword]  = useState('')
-  const [firstName, setFirstName] = useState('')
-  const [lastName,  setLastName]  = useState('')
+  const [email,           setEmail]           = useState('')
+  const [password,        setPassword]        = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [firstName,       setFirstName]       = useState('')
+  const [lastName,        setLastName]        = useState('')
 
   const loading = step === 'submitting'
+
+  // Auto-validate code for personal claim links
+  useEffect(() => {
+    if (!isClaim) return
+    setChecking(true)
+    fetch(`/api/invite/${encodeURIComponent(initialCode.trim())}`)
+      .then(r => r.json())
+      .then(body => {
+        if (body.data) setPreview(body.data as TeamPreview)
+        setStep('form')
+      })
+      .catch(() => setStep('form'))
+      .finally(() => setChecking(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // ── Step 1: validate code ─────────────────────────────────────────────────
   async function handleCheckCode(e: FormEvent) {
@@ -62,7 +83,44 @@ export function JoinContent({ initialCode }: { initialCode: string }) {
     }
   }
 
-  // ── Step 2: submit request ────────────────────────────────────────────────
+  // ── Claim submit (personal link — password only) ─────────────────────────
+  async function handleClaimSubmit(e: FormEvent) {
+    e.preventDefault()
+    setError('')
+
+    if (!password || password.length < 8) {
+      setError('Password must be at least 8 characters.')
+      return
+    }
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.')
+      return
+    }
+
+    setStep('submitting')
+    try {
+      const res  = await fetch('/api/invite/request', {
+        method:      'POST',
+        credentials: 'include',
+        headers:     { 'Content-Type': 'application/json' },
+        body:        JSON.stringify({ token: code.trim(), mode: 'claim', email: initialEmail, password }),
+      })
+      const data = await res.json()
+
+      if (!res.ok) {
+        setError(data.error ?? 'Activation failed. Please try again.')
+        setStep('form')
+        return
+      }
+
+      setStep('claimed')
+    } catch {
+      setError('Network error. Please try again.')
+      setStep('form')
+    }
+  }
+
+  // ── Step 2: submit request (signup / login) ───────────────────────────────
   async function handleSubmit(e: FormEvent, overrideMode?: FormMode) {
     e.preventDefault()
     setError('')
@@ -75,7 +133,7 @@ export function JoinContent({ initialCode }: { initialCode: string }) {
       setError('First and last name are required.')
       return
     }
-    if ((effectiveMode === 'signup' || effectiveMode === 'claim') && password.length < 8) {
+    if (effectiveMode === 'signup' && password.length < 8) {
       setError('Password must be at least 8 characters.')
       return
     }
@@ -129,13 +187,119 @@ export function JoinContent({ initialCode }: { initialCode: string }) {
         localStorage.setItem('cfb_user', JSON.stringify(data.data.user))
       }
 
-      // Use redirect field from response — claim mode goes to /dashboard if
-      // the user already has team access, otherwise /pending.
       window.location.href = data.redirect ?? '/pending'
     } catch {
       setError('Network error. Please try again.')
       setStep('form')
     }
+  }
+
+  // ── Render: loading (auto-validating personal claim link) ────────────────
+  if (isClaim && step === 'code') {
+    return (
+      <p style={{ textAlign: 'center', color: 'rgba(255,255,255,0.4)', fontSize: 14, padding: '24px 0' }}>
+        Loading…
+      </p>
+    )
+  }
+
+  // ── Render: personal claim link — password-only form ─────────────────────
+  if (isClaim && step !== 'claimed') {
+    return (
+      <form onSubmit={handleClaimSubmit} className="space-y-5" noValidate>
+        {preview && (
+          <div
+            style={{
+              backgroundColor: 'rgba(207,196,147,0.08)',
+              border:          '1px solid rgba(207,196,147,0.25)',
+              borderRadius:    8,
+              padding:         '12px 16px',
+              marginBottom:    4,
+            }}
+          >
+            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>
+              You&apos;re joining
+            </p>
+            <p style={{ fontSize: 15, fontWeight: 700, color: '#fff', margin: 0 }}>
+              {preview.teamName}
+            </p>
+            <p style={{ fontSize: 12, color: 'rgba(207,196,147,0.7)', margin: '2px 0 0' }}>
+              {preview.sport} · {preview.role}
+            </p>
+          </div>
+        )}
+
+        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', margin: 0 }}>
+          Your account has been set up. Create a password to activate it.
+        </p>
+
+        {error && <ErrorBanner message={error} />}
+
+        <div>
+          <label className={labelClass}>Password</label>
+          <input
+            type="password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            placeholder="••••••••••"
+            autoComplete="new-password"
+            autoFocus
+            disabled={loading}
+            className={inputClass}
+          />
+          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>
+            Minimum 8 characters
+          </p>
+        </div>
+
+        <div>
+          <label className={labelClass}>Confirm Password</label>
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={e => setConfirmPassword(e.target.value)}
+            placeholder="••••••••••"
+            autoComplete="new-password"
+            disabled={loading}
+            className={inputClass}
+          />
+        </div>
+
+        <SubmitButton loading={loading} label="Set Password" loadingLabel="Activating…" />
+      </form>
+    )
+  }
+
+  // ── Render: claimed success ───────────────────────────────────────────────
+  if (step === 'claimed') {
+    return (
+      <div style={{ textAlign: 'center', padding: '8px 0 16px' }}>
+        <p style={{ fontSize: 32, marginBottom: 12 }}>✓</p>
+        <p style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 8 }}>
+          Password set!
+        </p>
+        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 24 }}>
+          Your account is ready. Sign in to get started.
+        </p>
+        <a
+          href="/login"
+          style={{
+            display:         'inline-block',
+            backgroundColor: '#CFC493',
+            color:           '#0D0D0D',
+            fontWeight:      700,
+            fontSize:        13,
+            padding:         '10px 28px',
+            borderRadius:    8,
+            textDecoration:  'none',
+            letterSpacing:   '0.05em',
+            textTransform:   'uppercase',
+          }}
+        >
+          Sign In
+        </a>
+      </div>
+    )
   }
 
   // ── Render: code entry ────────────────────────────────────────────────────
@@ -195,32 +359,9 @@ export function JoinContent({ initialCode }: { initialCode: string }) {
         </div>
       )}
 
-      {/* Claim mode banner */}
-      {mode === 'claim' && (
-        <div
-          style={{
-            padding:         '10px 14px',
-            borderRadius:    8,
-            fontSize:        13,
-            backgroundColor: 'rgba(207,196,147,0.10)',
-            color:           '#CFC493',
-            border:          '1px solid rgba(207,196,147,0.30)',
-          }}
-        >
-          Your account was pre-created by your program. Just set a password to activate it.{' '}
-          <button
-            type="button"
-            onClick={() => { setMode('login'); setError('') }}
-            style={{ background: 'none', border: 'none', color: '#CFC493', textDecoration: 'underline', cursor: 'pointer', fontSize: 13, padding: 0 }}
-          >
-            Sign in instead →
-          </button>
-        </div>
-      )}
-
       {error && <ErrorBanner message={error} />}
 
-      {/* Mode toggle — hidden in claim mode */}
+      {/* Mode toggle */}
       {mode !== 'claim' && (
         <div style={{ display: 'flex', gap: 8 }}>
           {(['signup', 'login'] as const).map(m => (
@@ -299,7 +440,7 @@ export function JoinContent({ initialCode }: { initialCode: string }) {
           disabled={loading}
           className={inputClass}
         />
-        {(mode === 'signup' || mode === 'claim') && (
+        {mode === 'signup' && (
           <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>
             Minimum 8 characters
           </p>
@@ -308,11 +449,7 @@ export function JoinContent({ initialCode }: { initialCode: string }) {
 
       <SubmitButton
         loading={loading}
-        label={
-          mode === 'claim'  ? 'Activate Account' :
-          mode === 'signup' ? 'Request Access' :
-                              'Sign In & Request Access'
-        }
+        label={mode === 'signup' ? 'Request Access' : 'Sign In & Request Access'}
         loadingLabel="Submitting…"
       />
 

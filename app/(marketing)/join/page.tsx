@@ -10,9 +10,9 @@ export const metadata: Metadata = { title: 'Request Access — LegacyLink' }
 export default async function JoinPage({
   searchParams,
 }: {
-  searchParams: Promise<{ code?: string }>
+  searchParams: Promise<{ code?: string; e?: string }>
 }) {
-  const { code } = await searchParams
+  const { code, e } = await searchParams
 
   return (
     <div className="relative min-h-screen flex items-center justify-center px-4 py-12">
@@ -55,7 +55,7 @@ export default async function JoinPage({
           <h2 className="text-base font-semibold mb-6 tracking-wide text-white/65">
             Request access to your program
           </h2>
-          <JoinContent initialCode={code ?? ''} />
+          <JoinContent initialCode={code ?? ''} initialEmail={e ?? ''} />
         </div>
 
       </div>

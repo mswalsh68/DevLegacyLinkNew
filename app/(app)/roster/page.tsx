@@ -94,7 +94,8 @@ export default function RosterPage() {
     })
     if (result.success && result.inviteUrl) {
       try {
-        await navigator.clipboard.writeText(result.inviteUrl)
+        const claimUrl = `${result.inviteUrl}&e=${encodeURIComponent(player.email)}`
+        await navigator.clipboard.writeText(claimUrl)
         setCopyStates(prev => ({ ...prev, [player.userId]: 'copied' }))
         setTimeout(() => setCopyStates(prev => ({ ...prev, [player.userId]: 'idle' })), 2500)
       } catch {
