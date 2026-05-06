@@ -17,7 +17,7 @@
 import { randomUUID } from 'crypto'
 import { getServerSession } from '@/lib/auth'
 import { sp_CreateTeamMember, sp_CreateInviteCode } from '@/lib/db/procedures'
-import { sendTransactionalEmail, buildInviteEmailHtml } from '@/lib/resend'
+import { sendTransactionalEmail, buildInviteEmailHtml, buildTeamAddedEmailHtml } from '@/lib/resend'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -203,6 +203,43 @@ export async function resendInvite(
     return { success: true }
   } catch (err) {
     console.error('[resendInvite]', err)
+    return { success: false, error: 'INTERNAL_ERROR' }
+  }
+}
+
+export interface NotifyTeamAddedInput {
+  email:     string
+  firstName: string
+  teamName?: string
+}
+
+/**
+ * Sends a "you've been added to [team]" notification to an existing user.
+ * No invite code — the user already has an account and just needs to log in.
+ */
+export async function notifyTeamAdded(
+  input: NotifyTeamAddedInput,
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const session = await getServerSession()
+    if (!session) return { success: false, error: 'Unauthorized' }
+
+    const baseUrl  = process.env.NEXT_PUBLIC_APP_URL ?? ''
+    const loginUrl = `${baseUrl}/login`
+
+    await sendTransactionalEmail(
+      input.email,
+      `You've been added to ${input.teamName ?? 'your program'} — LegacyLink`,
+      buildTeamAddedEmailHtml({
+        firstName: input.firstName,
+        teamName:  input.teamName ?? 'your program',
+        loginUrl,
+      }),
+    )
+
+    return { success: true }
+  } catch (err) {
+    console.error('[notifyTeamAdded]', err)
     return { success: false, error: 'INTERNAL_ERROR' }
   }
 }

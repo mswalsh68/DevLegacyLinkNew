@@ -39,6 +39,53 @@ export async function sendTransactionalEmail(
 }
 
 /**
+ * Builds the HTML for a "you've been added to [team]" notification email.
+ * Sent to existing users (account already claimed) when added to a new team.
+ */
+export function buildTeamAddedEmailHtml(params: {
+  firstName: string
+  teamName:  string
+  loginUrl:  string
+}): string {
+  const { firstName, teamName, loginUrl } = params
+  return `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family:sans-serif;color:#1a1a1a;max-width:560px;margin:0 auto;padding:32px 24px">
+  <p style="font-size:18px;font-weight:700;margin:0 0 16px">${teamName} — LegacyLink</p>
+
+  <p>Hi ${firstName},</p>
+
+  <p>
+    You've been added to <strong>${teamName}</strong> on LegacyLink.
+  </p>
+
+  <p>Log in to your account to access your team:</p>
+
+  <p style="margin:24px 0">
+    <a
+      href="${loginUrl}"
+      style="background:#1d4ed8;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block"
+    >Log in to LegacyLink</a>
+  </p>
+
+  <p style="font-size:13px;color:#6b7280">
+    Or copy this link into your browser:<br>
+    <span style="word-break:break-all">${loginUrl}</span>
+  </p>
+
+  <hr style="border:none;border-top:1px solid #e5e7eb;margin:32px 0">
+
+  <p style="font-size:12px;color:#9ca3af;margin:0">
+    You're receiving this because a program administrator added you to ${teamName}.
+    If you weren't expecting this, you can ignore this email.
+  </p>
+</body>
+</html>`
+}
+
+/**
  * Builds the HTML for a member invite email.
  */
 export function buildInviteEmailHtml(params: {

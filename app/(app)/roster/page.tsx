@@ -14,22 +14,25 @@ import { Alert }         from '@/components/ui/Alert'
 import { TableRow }      from '@/components/ui/TableRow'
 import { Pagination }    from '@/components/ui/Pagination'
 import { AccessDenied }  from '@/components/ui/AccessDenied'
-import { playerStatusBadge } from '@/lib/statusMappings'
 import { can, roleLabel, requiredRoleLabel } from '@/lib/permissions'
 import { theme } from '@/lib/theme'
+import { resendInvite, notifyTeamAdded } from '@/app/actions/members'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Player {
-  userId:       string
-  firstName:    string
-  lastName:     string
-  jerseyNumber: number | null
-  position:     string
-  academicYear: string
-  status:       string
-  major?:       string
+  userId:         string
+  firstName:      string
+  lastName:       string
+  email:          string
+  jerseyNumber:   number | null
+  position:       string
+  academicYear:   string
+  accountClaimed: boolean
+  major?:         string
 }
+
+type RowActionState = 'idle' | 'sending' | 'sent' | 'error'
 
 interface PlayersResponse {
   success: boolean
@@ -54,12 +57,41 @@ export default function RosterPage() {
   const { filters: { search, position, year }, setFilter, page, setPage } =
     useFilteredPagination({ search: '', position: '', year: '' })
 
-  const [players,  setPlayers]  = useState<Player[]>([])
-  const [total,    setTotal]    = useState(0)
-  const [loading,  setLoading]  = useState(true)
-  const [error,    setError]    = useState<string | null>(null)
-  const [sports,   setSports]   = useState<SportOption[]>([])
-  const [sportId,  setSportId]  = useState<number | null>(null)
+  const [players,    setPlayers]    = useState<Player[]>([])
+  const [total,      setTotal]      = useState(0)
+  const [loading,    setLoading]    = useState(true)
+  const [error,      setError]      = useState<string | null>(null)
+  const [sports,     setSports]     = useState<SportOption[]>([])
+  const [sportId,    setSportId]    = useState<number | null>(null)
+  const [rowActions, setRowActions] = useState<Record<string, RowActionState>>({})
+
+  const setRowAction = (userId: string, state: RowActionState) =>
+    setRowActions(prev => ({ ...prev, [userId]: state }))
+
+  const handleResend = async (player: Player) => {
+    if (!user?.currentTeamId) return
+    setRowAction(player.userId, 'sending')
+    const result = await resendInvite({
+      email:     player.email,
+      firstName: player.firstName,
+      teamId:    user.currentTeamId,
+      teamName:  config.teamName,
+      role:      'player',
+    })
+    setRowAction(player.userId, result.success ? 'sent' : 'error')
+    if (result.success) setTimeout(() => setRowAction(player.userId, 'idle'), 3000)
+  }
+
+  const handleNotify = async (player: Player) => {
+    setRowAction(player.userId, 'sending')
+    const result = await notifyTeamAdded({
+      email:     player.email,
+      firstName: player.firstName,
+      teamName:  config.teamName,
+    })
+    setRowAction(player.userId, result.success ? 'sent' : 'error')
+    if (result.success) setTimeout(() => setRowAction(player.userId, 'idle'), 3000)
+  }
 
   useEffect(() => {
     fetch('/api/sports', { credentials: 'include' })
@@ -201,9 +233,37 @@ export default function RosterPage() {
                   {player.academicYear ?? '—'}
                 </td>
 
-                {/* Status */}
-                <td style={{ padding: '12px 20px' }}>
-                  <Badge label={player.status} variant={playerStatusBadge(player.status)} />
+                {/* Status + invite action */}
+                <td style={{ padding: '12px 20px' }} onClick={e => e.stopPropagation()}>
+                  {player.accountClaimed ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Badge label="Active" variant="green" />
+                      <button
+                        disabled={rowActions[player.userId] === 'sending'}
+                        onClick={() => handleNotify(player)}
+                        style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: '1px solid var(--color-card-border)', backgroundColor: 'var(--color-card-bg)', color: theme.gray600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                      >
+                        {rowActions[player.userId] === 'sending' ? '…'
+                          : rowActions[player.userId] === 'sent'    ? '✓ Sent'
+                          : rowActions[player.userId] === 'error'   ? 'Error'
+                          : 'Notify'}
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Badge label="Unclaimed" variant="warning" />
+                      <button
+                        disabled={rowActions[player.userId] === 'sending'}
+                        onClick={() => handleResend(player)}
+                        style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: '1px solid var(--color-card-border)', backgroundColor: 'var(--color-card-bg)', color: theme.gray600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                      >
+                        {rowActions[player.userId] === 'sending' ? '…'
+                          : rowActions[player.userId] === 'sent'    ? '✓ Sent'
+                          : rowActions[player.userId] === 'error'   ? 'Error'
+                          : 'Resend Invite'}
+                      </button>
+                    </div>
+                  )}
                 </td>
 
                 {/* Arrow */}
