@@ -433,6 +433,185 @@ END;
 GO
 
 -- ============================================================
+-- sp_GetUserSession
+-- Returns the same UserJson payload as sp_Login but without
+-- password check or login tracking. Used by the refresh route
+-- to rebuild full JWT claims from a valid userId.
+-- ============================================================
+CREATE OR ALTER PROCEDURE dbo.sp_GetUserSession
+  @UserId        BIGINT,
+  @CurrentTeamId INT          = NULL,
+  -- Outputs
+  @UserJson      NVARCHAR(MAX) OUTPUT,
+  @ErrorCode     NVARCHAR(50)  OUTPUT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SET @ErrorCode = NULL;
+
+  IF NOT EXISTS (SELECT 1 FROM dbo.users WHERE user_id = @UserId AND is_active = 1)
+  BEGIN
+    SET @ErrorCode = 'USER_NOT_FOUND_OR_INACTIVE';
+    RETURN;
+  END
+
+  DECLARE @RoleId   INT;
+  DECLARE @RoleName NVARCHAR(50);
+
+  SELECT @RoleId = u.role_id, @RoleName = r.role_name
+  FROM   dbo.users u
+  JOIN   dbo.roles r ON r.id = u.role_id
+  WHERE  u.user_id = @UserId;
+
+  DECLARE @TeamsJson NVARCHAR(MAX);
+
+  IF @RoleId = 1
+  BEGIN
+    SELECT @TeamsJson = (
+      SELECT
+        t.id        AS teamId,
+        t.abbr,
+        t.name,
+        @RoleName   AS role,
+        tc.logo_url AS logoUrl,
+        ISNULL(tc.color_primary, '#1B1B2F') AS colorPrimary,
+        ISNULL(tc.color_accent,  '#B8973D') AS colorAccent
+      FROM dbo.teams t
+      LEFT JOIN dbo.team_config tc ON tc.team_id = t.id
+      WHERE t.is_active = 1
+      ORDER BY t.name
+      FOR JSON PATH
+    );
+  END
+  ELSE
+  BEGIN
+    SELECT @TeamsJson = (
+      SELECT
+        t.id        AS teamId,
+        t.abbr,
+        t.name,
+        @RoleName   AS role,
+        tc.logo_url AS logoUrl,
+        ISNULL(tc.color_primary, '#1B1B2F') AS colorPrimary,
+        ISNULL(tc.color_accent,  '#B8973D') AS colorAccent
+      FROM dbo.user_teams ut
+      JOIN  dbo.teams t        ON t.id      = ut.team_id
+      LEFT JOIN dbo.team_config tc ON tc.team_id = t.id
+      WHERE ut.user_id   = @UserId
+        AND ut.is_active = 1
+      ORDER BY t.name
+      FOR JSON PATH
+    );
+  END
+
+  IF @TeamsJson IS NULL SET @TeamsJson = '[]';
+
+  DECLARE @ResolvedTeamId INT;
+  DECLARE @AppDb          NVARCHAR(100) = '';
+
+  IF @CurrentTeamId IS NOT NULL
+  BEGIN
+    IF @RoleId = 1
+    BEGIN
+      SELECT @ResolvedTeamId = t.id, @AppDb = t.app_db
+      FROM dbo.teams t
+      WHERE t.id = @CurrentTeamId AND t.is_active = 1;
+    END
+    ELSE
+    BEGIN
+      SELECT @ResolvedTeamId = t.id, @AppDb = t.app_db
+      FROM dbo.user_teams ut
+      JOIN dbo.teams t ON t.id = ut.team_id
+      WHERE ut.user_id   = @UserId
+        AND ut.team_id   = @CurrentTeamId
+        AND ut.is_active = 1
+        AND t.is_active  = 1;
+    END
+  END
+
+  IF @ResolvedTeamId IS NULL
+  BEGIN
+    IF @RoleId = 1
+    BEGIN
+      SELECT TOP 1 @ResolvedTeamId = t.id, @AppDb = t.app_db
+      FROM dbo.teams t
+      WHERE t.is_active = 1
+      ORDER BY t.name;
+    END
+    ELSE
+    BEGIN
+      SELECT TOP 1 @ResolvedTeamId = t.id, @AppDb = t.app_db
+      FROM dbo.user_teams ut
+      JOIN dbo.teams t ON t.id = ut.team_id
+      WHERE ut.user_id   = @UserId
+        AND ut.is_active = 1
+        AND t.is_active  = 1
+      ORDER BY t.name;
+    END
+  END
+
+  DECLARE @PreferredTeamId INT = NULL;
+
+  IF @RoleId = 1
+  BEGIN
+    SELECT @PreferredTeamId = utp.preferred_team_id
+    FROM dbo.user_team_preferences utp
+    JOIN dbo.teams t ON t.id = utp.preferred_team_id
+    WHERE utp.user_id = @UserId AND t.is_active = 1;
+  END
+  ELSE
+  BEGIN
+    SELECT @PreferredTeamId = utp.preferred_team_id
+    FROM dbo.user_team_preferences utp
+    JOIN dbo.user_teams ut ON ut.user_id = utp.user_id AND ut.team_id = utp.preferred_team_id
+    JOIN dbo.teams t       ON t.id = utp.preferred_team_id
+    WHERE utp.user_id = @UserId AND ut.is_active = 1 AND t.is_active = 1;
+  END
+
+  DECLARE @TierId   INT          = NULL;
+  DECLARE @TierName NVARCHAR(50) = N'starter';
+
+  IF @ResolvedTeamId IS NOT NULL
+  BEGIN
+    SELECT @TierId = t.tier_id, @TierName = tr.name
+    FROM   dbo.teams t
+    JOIN   dbo.tiers tr ON tr.id = t.tier_id
+    WHERE  t.id = @ResolvedTeamId;
+  END
+
+  SELECT @UserJson = (
+    SELECT
+      u.user_id                                AS userId,
+      u.email,
+      u.first_name                             AS firstName,
+      u.last_name                              AS lastName,
+      u.role_id                                AS roleId,
+      r.role_name                              AS role,
+      u.is_active                              AS isActive,
+      u.account_claimed                        AS accountClaimed,
+      u.token_version                          AS tokenVersion,
+      @ResolvedTeamId                          AS currentTeamId,
+      @PreferredTeamId                         AS preferredTeamId,
+      @AppDb                                   AS appDb,
+      @TierId                                  AS tierId,
+      @TierName                                AS tierName,
+      (SELECT level_id FROM dbo.teams WHERE id = @ResolvedTeamId) AS levelId,
+      JSON_QUERY(@TeamsJson)                   AS teams,
+      (
+        SELECT ap.app_name AS app, ap.role, ap.granted_at AS grantedAt, ap.granted_by AS grantedBy
+        FROM dbo.app_permissions ap
+        WHERE ap.user_id = u.user_id AND ap.revoked_at IS NULL
+        FOR JSON PATH
+      ) AS appPermissions
+    FROM dbo.users u
+    JOIN dbo.roles r ON r.id = u.role_id
+    WHERE u.user_id = @UserId
+    FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
+  );
+END;
+GO
+
+-- ============================================================
 -- sp_Logout
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_Logout

@@ -108,7 +108,12 @@ export async function POST(req: NextRequest) {
           .query('SELECT MIN(program_role_id) AS program_role_id FROM dbo.users_sports WHERE user_id = @UserId AND is_active = 1')
         return result.recordset[0]?.program_role_id as number | undefined
       })
-      if (programRoleId != null) userJson.programRoleId = programRoleId
+      if (programRoleId != null) {
+        userJson.programRoleId = programRoleId
+        if (programRoleId === 7)      userJson.apps = ['alumni']
+        else if (programRoleId === 8) userJson.apps = ['roster']
+        else                          userJson.apps = ['roster', 'alumni']
+      }
     } catch (err) {
       // Non-fatal: permission checks will default to denied for missing programRoleId
       console.warn('[/api/auth/login] Could not fetch programRoleId:', (err as Error).message)
