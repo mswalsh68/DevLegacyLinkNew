@@ -54,7 +54,7 @@ interface PlayerData {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ backgroundColor: 'var(--color-card-bg)', border: '1px solid var(--color-card-border)', borderRadius: 12, padding: 24, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', marginBottom: 16 }}>
+    <div style={{ backgroundColor: 'var(--color-card-bg)', border: '1px solid var(--color-card-border)', borderRadius: 12, padding: 24, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
       <h2 style={{ fontSize: 12, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 16px' }}>{title}</h2>
       {children}
     </div>
@@ -170,70 +170,63 @@ export default function PlayerDetailPage() {
         <Button label="← Back to Roster" variant="outline" onClick={() => router.push('/roster')} />
       </div>
 
-      <div className="detail-grid-2">
-        {/* Left column */}
-        <div>
-          {/* Sport rows */}
-          {player.sportRows.map((sport) => (
-            <Section key={sport.sportId} title={sport.sportName}>
-              <Grid>
-                <Field label="Jersey #"       value={sport.jerseyNumber} />
-                <Field label="Position"       value={sport.positionName} />
-                <Field label="Class Year"     value={sport.classYear} />
-                <Field label="Seasons Played" value={sport.seasonsPlayed} />
-              </Grid>
-            </Section>
-          ))}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, alignItems: 'start' }}>
+        {/* Sport rows */}
+        {player.sportRows.map((sport) => (
+          <Section key={sport.sportId} title={sport.sportName}>
+            <Grid>
+              <Field label="Jersey #"       value={sport.jerseyNumber} />
+              <Field label="Position"       value={sport.positionName} />
+              <Field label="Class Year"     value={sport.classYear} />
+              <Field label="Seasons Played" value={sport.seasonsPlayed} />
+            </Grid>
+          </Section>
+        ))}
 
-          {/* Social links */}
-          {socialLinks.length > 0 && (
-            <Section title="Social &amp; Links">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {socialLinks.map((l, i) => (
-                  <Field key={i} label={l.label} value={l.value} href={l.value ?? undefined} />
-                ))}
-              </div>
-            </Section>
-          )}
+        {/* Contact — visible to all roster viewers */}
+        {(player.phone || player.email) && (
+          <Section title="Contact">
+            <Field label="Phone" value={player.phone} />
+            <Field label="Email" value={player.email} />
+          </Section>
+        )}
 
-          {/* Contact — visible to all roster viewers */}
-          {(player.phone || player.email) && (
-            <Section title="Contact">
-              <Field label="Phone" value={player.phone} />
-              <Field label="Email" value={player.email} />
-            </Section>
-          )}
-        </div>
+        {/* Social links */}
+        {socialLinks.length > 0 && (
+          <Section title="Social &amp; Links">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {socialLinks.map((l, i) => (
+                <Field key={i} label={l.label} value={l.value} href={l.value ?? undefined} />
+              ))}
+            </div>
+          </Section>
+        )}
 
-        {/* Right column */}
-        <div>
-          {/* Emergency contact — managers only */}
-          {canManage && (
-            <Section title="Emergency Contact">
-              {hasEmergency ? (
-                <>
-                  {player.emergencyContactName1 && (
-                    <div style={{ marginBottom: 12 }}>
-                      <Field label="Name"  value={player.emergencyContactName1} />
-                      <Field label="Phone" value={player.emergencyContactPhone1} />
-                      <Field label="Email" value={player.emergencyContactEmail1} />
-                    </div>
-                  )}
-                  {player.emergencyContactName2 && (
-                    <div>
-                      <Field label="Name"  value={player.emergencyContactName2} />
-                      <Field label="Phone" value={player.emergencyContactPhone2} />
-                      <Field label="Email" value={player.emergencyContactEmail2} />
-                    </div>
-                  )}
-                </>
-              ) : (
-                <p style={{ fontSize: 13, color: theme.gray400, margin: 0 }}>None on file.</p>
-              )}
-            </Section>
-          )}
-
-        </div>
+        {/* Emergency contact — managers only */}
+        {canManage && (
+          <Section title="Emergency Contact">
+            {hasEmergency ? (
+              <>
+                {player.emergencyContactName1 && (
+                  <div style={{ marginBottom: 12 }}>
+                    <Field label="Name"  value={player.emergencyContactName1} />
+                    <Field label="Phone" value={player.emergencyContactPhone1} />
+                    <Field label="Email" value={player.emergencyContactEmail1} />
+                  </div>
+                )}
+                {player.emergencyContactName2 && (
+                  <div>
+                    <Field label="Name"  value={player.emergencyContactName2} />
+                    <Field label="Phone" value={player.emergencyContactPhone2} />
+                    <Field label="Email" value={player.emergencyContactEmail2} />
+                  </div>
+                )}
+              </>
+            ) : (
+              <p style={{ fontSize: 13, color: theme.gray400, margin: 0 }}>None on file.</p>
+            )}
+          </Section>
+        )}
       </div>
     </>
   )
