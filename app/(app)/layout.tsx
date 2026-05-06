@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { getServerSession } from '@/lib/auth'
 import { AppNav } from '@/components/app/AppNav'
 import { CommunityConsentGate } from './CommunityConsentGate'
+import { WelcomePopupGate } from './WelcomePopupGate'
 
 // program_role_id 7 = alumni (platform-standard, never customized)
 const ALUMNI_PROGRAM_ROLE_ID = 7
@@ -29,6 +30,9 @@ export default async function AppLayout({
 
       {/* Consent gate — renders as an overlay modal for alumni; no-ops for all other roles */}
       {isAlumni && <CommunityConsentGate />}
+
+      {/* Welcome popup — shown once after player → alumni promotion; no-op once dismissed */}
+      {isAlumni && <WelcomePopupGate />}
 
       {/* Page content — centered, max 1200px, responsive padding via .app-page */}
       <div className="app-page">
