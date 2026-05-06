@@ -16,23 +16,28 @@ import { AccessDenied }  from '@/components/ui/AccessDenied'
 import { alumniStatusBadge } from '@/lib/statusMappings'
 import { can, roleLabel, requiredRoleLabel } from '@/lib/permissions'
 import { theme } from '@/lib/theme'
+import { resendInvite, notifyTeamAdded } from '@/app/actions/members'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface AlumniRecord {
-  userId:          string
-  firstName:       string
-  lastName:        string
-  graduationYear:  number
+  userId:             string
+  firstName:          string
+  lastName:           string
+  email:              string
+  graduationYear:     number
   graduationSemester?: string
-  position:        string
-  currentEmployer?: string
-  currentJobTitle?: string
-  currentCity?:    string
-  currentState?:   string
-  status:          string
-  isDonor:         boolean
+  position:           string
+  currentEmployer?:   string
+  currentJobTitle?:   string
+  currentCity?:       string
+  currentState?:      string
+  status:             string
+  isDonor:            boolean
+  accountClaimed:     boolean
 }
+
+type RowActionState = 'idle' | 'sending' | 'sent' | 'error'
 
 interface AlumniResponse {
   success: boolean
@@ -63,12 +68,41 @@ export default function AlumniPage() {
   const { filters: { search, status, position, isDonor }, setFilter, page, setPage } =
     useFilteredPagination({ search: '', status: '', position: '', isDonor: false })
 
-  const [alumni,   setAlumni]  = useState<AlumniRecord[]>([])
-  const [total,    setTotal]   = useState(0)
-  const [loading,  setLoading] = useState(true)
-  const [error,    setError]   = useState<string | null>(null)
-  const [sports,   setSports]  = useState<SportOption[]>([])
-  const [sportId,  setSportId] = useState<number | null>(null)
+  const [alumni,     setAlumni]     = useState<AlumniRecord[]>([])
+  const [total,      setTotal]      = useState(0)
+  const [loading,    setLoading]    = useState(true)
+  const [error,      setError]      = useState<string | null>(null)
+  const [sports,     setSports]     = useState<SportOption[]>([])
+  const [sportId,    setSportId]    = useState<number | null>(null)
+  const [rowActions, setRowActions] = useState<Record<string, RowActionState>>({})
+
+  const setRowAction = (userId: string, state: RowActionState) =>
+    setRowActions(prev => ({ ...prev, [userId]: state }))
+
+  const handleResend = async (a: AlumniRecord) => {
+    if (!user?.currentTeamId) return
+    setRowAction(a.userId, 'sending')
+    const result = await resendInvite({
+      email:     a.email,
+      firstName: a.firstName,
+      teamId:    user.currentTeamId,
+      teamName:  config.teamName,
+      role:      'alumni',
+    })
+    setRowAction(a.userId, result.success ? 'sent' : 'error')
+    if (result.success) setTimeout(() => setRowAction(a.userId, 'idle'), 3000)
+  }
+
+  const handleNotify = async (a: AlumniRecord) => {
+    setRowAction(a.userId, 'sending')
+    const result = await notifyTeamAdded({
+      email:     a.email,
+      firstName: a.firstName,
+      teamName:  config.teamName,
+    })
+    setRowAction(a.userId, result.success ? 'sent' : 'error')
+    if (result.success) setTimeout(() => setRowAction(a.userId, 'idle'), 3000)
+  }
 
   useEffect(() => {
     fetch('/api/sports', { credentials: 'include' })
@@ -234,9 +268,37 @@ export default function AlumniPage() {
                   {a.currentCity && a.currentState ? `${a.currentCity}, ${a.currentState}` : '—'}
                 </td>
 
-                {/* Status */}
-                <td style={{ padding: '12px 20px' }}>
-                  <Badge label={a.status} variant={alumniStatusBadge(a.status)} />
+                {/* Status + invite action */}
+                <td style={{ padding: '12px 20px' }} onClick={e => e.stopPropagation()}>
+                  {a.accountClaimed ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <Badge label={a.status} variant={alumniStatusBadge(a.status)} />
+                      <button
+                        disabled={rowActions[a.userId] === 'sending'}
+                        onClick={() => handleNotify(a)}
+                        style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: '1px solid var(--color-card-border)', backgroundColor: 'var(--color-card-bg)', color: theme.gray600, cursor: 'pointer', whiteSpace: 'nowrap', alignSelf: 'flex-start' }}
+                      >
+                        {rowActions[a.userId] === 'sending' ? '…'
+                          : rowActions[a.userId] === 'sent'    ? '✓ Sent'
+                          : rowActions[a.userId] === 'error'   ? 'Error'
+                          : 'Notify'}
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <Badge label="Unclaimed" variant="warning" />
+                      <button
+                        disabled={rowActions[a.userId] === 'sending'}
+                        onClick={() => handleResend(a)}
+                        style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: '1px solid var(--color-card-border)', backgroundColor: 'var(--color-card-bg)', color: theme.gray600, cursor: 'pointer', whiteSpace: 'nowrap', alignSelf: 'flex-start' }}
+                      >
+                        {rowActions[a.userId] === 'sending' ? '…'
+                          : rowActions[a.userId] === 'sent'    ? '✓ Sent'
+                          : rowActions[a.userId] === 'error'   ? 'Error'
+                          : 'Resend Invite'}
+                      </button>
+                    </div>
+                  )}
                 </td>
 
                 {/* Donor */}

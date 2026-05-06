@@ -203,20 +203,21 @@ export async function sp_UpsertUser(params: {
 // ─── App DB — Roster / Users Roles ───────────────────────────────────────────
 
 export interface RosterRow {
-  userSportId:  number       // users_sports.id (was userRoleId)
-  userId:       number
-  firstName:    string
-  lastName:     string
-  email:        string
-  sportId:      number
-  sportName:    string
-  positionId:   number | null
-  position:     string | null
-  jerseyNumber: number | null
+  userSportId:   number       // users_sports.id (was userRoleId)
+  userId:        number
+  firstName:     string
+  lastName:      string
+  email:         string
+  sportId:       number
+  sportName:     string
+  positionId:    number | null
+  position:      string | null
+  jerseyNumber:  number | null
   seasonsPlayed: number | null
-  classYear:    number | null
-  createdAt:    string
-  updatedAt:    string | null
+  classYear:     number | null
+  createdAt:     string
+  updatedAt:     string | null
+  accountClaimed: boolean     // from Global DB — false = invite not yet accepted
 }
 
 /**

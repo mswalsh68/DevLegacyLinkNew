@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
 import { sp_GetAlumniRoster } from '@/lib/db/procedures'
-import { appDbContext } from '@/lib/db/connection'
+import { appDbContext, getPool } from '@/lib/db/connection'
 
 // ─── GET /api/alumni ──────────────────────────────────────────────────────────
 // Query params:
@@ -43,7 +43,29 @@ export async function GET(req: Request) {
         page,
         pageSize,
       })
-      return NextResponse.json({ success: true, data: alumni, total: totalCount })
+
+      // Batch-fetch account_claimed from Global DB for all returned users.
+      const accountClaimedMap = new Map<number, boolean>()
+      if (alumni.length > 0) {
+        try {
+          const globalDb = await getPool('global')
+          const ids = alumni.map(a => a.userId).join(',')
+          const { recordset } = await globalDb.request()
+            .query(`SELECT user_id, account_claimed FROM dbo.users WHERE user_id IN (${ids})`)
+          for (const row of recordset as { user_id: number; account_claimed: boolean }[]) {
+            accountClaimedMap.set(row.user_id, Boolean(row.account_claimed))
+          }
+        } catch (err) {
+          console.warn('[GET /api/alumni] Could not fetch account_claimed:', err)
+        }
+      }
+
+      const enriched = alumni.map(a => ({
+        ...a,
+        accountClaimed: accountClaimedMap.get(a.userId) ?? false,
+      }))
+
+      return NextResponse.json({ success: true, data: enriched, total: totalCount })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error('[GET /api/alumni]', msg)
