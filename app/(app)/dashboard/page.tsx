@@ -21,6 +21,12 @@ export default async function DashboardPage() {
   // Auth already enforced by the (app) layout — session is guaranteed here.
   const session = await getServerSession()
 
+  // Players and alumni (programRoleId 7-8) belong on /feed, not /dashboard.
+  const programRoleId = (session as unknown as Record<string, unknown>)?.programRoleId as number | undefined
+  if (session!.roleId === 3 && programRoleId != null && programRoleId >= 7) {
+    redirect('/feed')
+  }
+
   // Admins always have full access — skip request check.
   if (!isGlobalAdmin(session!)) {
     const perms = (session as unknown as Record<string, unknown>)?.appPermissions

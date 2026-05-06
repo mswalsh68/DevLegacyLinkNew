@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
         const result  = await appPool
           .request()
           .input('UserId', sql.BigInt, userId)
-          .query('SELECT program_role_id FROM dbo.users WHERE user_id = @UserId')
+          .query('SELECT MIN(program_role_id) AS program_role_id FROM dbo.users_sports WHERE user_id = @UserId AND is_active = 1')
         return result.recordset[0]?.program_role_id as number | undefined
       })
       if (programRoleId != null) userJson.programRoleId = programRoleId
