@@ -170,7 +170,7 @@ export default function PlayerDetailPage() {
         <Button label="← Back to Roster" variant="outline" onClick={() => router.push('/roster')} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, alignItems: 'start' }}>
+      <div className="detail-grid-2">
         {/* Sport rows */}
         {player.sportRows.map((sport) => (
           <Section key={sport.sportId} title={sport.sportName}>
