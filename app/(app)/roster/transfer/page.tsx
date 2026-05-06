@@ -19,15 +19,17 @@ interface Player {
   firstName:    string
   lastName:     string
   jerseyNumber: number | null
-  position:     string
-  academicYear: string
+  position:     string | null
+  classYear:    number | null
   status:       string
-  recruitingClass?: number
+  sportId:      number
 }
+
+interface SportOption { id: number; name: string; abbr: string }
 
 interface TransferResult {
   transferredCount: number
-  failures: { reason: string }[]
+  failures: { userId: number; sportId: number; reason: string }[]
 }
 
 const YEAR_OPTIONS = makeYearOptions(10).map((y) => ({ value: String(y), label: String(y) }))
@@ -40,8 +42,10 @@ export default function TransferPage() {
 
   const currentYear = new Date().getFullYear()
 
+  const [sports,           setSports]           = useState<SportOption[]>([])
+  const [sportId,          setSportId]          = useState<number | null>(null)
   const [players,          setPlayers]          = useState<Player[]>([])
-  const [loading,          setLoading]          = useState(true)
+  const [loading,          setLoading]          = useState(false)
   const [selectedIds,      setSelectedIds]      = useState<Set<string>>(new Set())
   const [transferYear,     setTransferYear]     = useState(String(currentYear))
   const [transferSemester, setTransferSemester] = useState('spring')
@@ -49,27 +53,41 @@ export default function TransferPage() {
   const [alert,            setAlert]            = useState<{ msg: string; type: 'success' | 'error' | 'warning' } | null>(null)
   const [result,           setResult]           = useState<TransferResult | null>(null)
   const [search,           setSearch]           = useState('')
+  const [showConfirm,      setShowConfirm]      = useState(false)
+  const [refreshKey,       setRefreshKey]       = useState(0)
 
-  const allowed = can(user, 'roster:transfer')
+  const allowed = can(user, 'roster:promote_to_alumni')
 
+  // Load sports
   useEffect(() => {
-    if (!allowed) return
-    fetchPlayers()
-  }, [allowed]) // eslint-disable-line react-hooks/exhaustive-deps
+    fetch('/api/sports', { credentials: 'include' })
+      .then(r => r.json())
+      .then(res => {
+        const list: SportOption[] = res.success ? (res.data ?? []) : []
+        setSports(list)
+        if (list.length === 1) setSportId(list[0].id)
+      })
+      .catch(() => {})
+  }, [])
 
-  const fetchPlayers = () => {
+  // Load players when sport is selected
+  useEffect(() => {
+    if (!allowed || !sportId) return
     setLoading(true)
-    fetch('/api/players?pageSize=200&status=active', { credentials: 'include' })
+    setSelectedIds(new Set())
+    fetch(`/api/players?pageSize=200&sportId=${sportId}`, { credentials: 'include' })
       .then((r) => r.json())
       .then((res: { success: boolean; data: Player[] }) => setPlayers(res.data ?? []))
       .catch(() => setAlert({ msg: 'Failed to load players.', type: 'error' }))
       .finally(() => setLoading(false))
-  }
+  }, [allowed, sportId, refreshKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const filteredPlayers = players.filter((p) =>
     !search ||
     `${p.firstName} ${p.lastName} ${p.jerseyNumber ?? ''}`.toLowerCase().includes(search.toLowerCase()),
   )
+
+  const selectedPlayers = players.filter(p => selectedIds.has(p.userId))
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -88,20 +106,20 @@ export default function TransferPage() {
   }
 
   const handleTransfer = async () => {
-    if (selectedIds.size === 0) {
-      setAlert({ msg: 'Select at least one player.', type: 'warning' })
-      return
-    }
+    setShowConfirm(false)
     setSubmitting(true)
     try {
+      const transfers = selectedPlayers.map(p => ({
+        userId:  Number(p.userId),
+        sportId: p.sportId,
+      }))
       const res = await fetch('/api/players/transfer', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          playerIds:        Array.from(selectedIds),
-          transferYear:     parseInt(transferYear),
-          transferSemester,
+          transfers,
+          transferYear: parseInt(transferYear),
         }),
       })
       const json = await res.json() as { success: boolean; data: TransferResult; error?: string }
@@ -109,8 +127,7 @@ export default function TransferPage() {
 
       const data = json.data
       setResult(data)
-      setSelectedIds(new Set())
-      fetchPlayers()
+      setRefreshKey(k => k + 1)
       setAlert({
         msg:  `${data.transferredCount} player(s) moved to Alumni successfully.`,
         type: data.failures?.length > 0 ? 'warning' : 'success',
@@ -123,9 +140,14 @@ export default function TransferPage() {
     }
   }
 
+  const sportOptions = [
+    { value: '', label: 'Select a sport...' },
+    ...sports.map(s => ({ value: String(s.id), label: s.name })),
+  ]
+
   if (isLoading) return null
   if (!allowed) {
-    return <AccessDenied currentRole={roleLabel(user?.role)} requiredRole={requiredRoleLabel('roster:transfer')} />
+    return <AccessDenied currentRole={roleLabel(user?.role)} requiredRole={requiredRoleLabel('roster:promote_to_alumni')} />
   }
 
   return (
@@ -145,8 +167,21 @@ export default function TransferPage() {
 
       <div className="transfer-grid">
 
-        {/* ── Left: Departure period + submit ── */}
+        {/* ── Left: Sport + departure period + submit ── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          <div style={{ backgroundColor: 'var(--color-card-bg)', border: '1px solid var(--color-card-border)', borderRadius: 12, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+            <h2 style={{ fontSize: 12, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 14, marginTop: 0 }}>
+              Sport
+            </h2>
+            <Select
+              label="Sport"
+              value={sportId ? String(sportId) : ''}
+              onChange={(v) => setSportId(v ? Number(v) : null)}
+              options={sportOptions}
+            />
+          </div>
+
           <div style={{ backgroundColor: 'var(--color-card-bg)', border: '1px solid var(--color-card-border)', borderRadius: 12, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
             <h2 style={{ fontSize: 12, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 14, marginTop: 0 }}>
               Departure Period
@@ -166,10 +201,9 @@ export default function TransferPage() {
                 {transferSemester} {transferYear}
               </p>
               <Button
-                label={submitting ? 'Transferring...' : `Transfer ${selectedIds.size} Player${selectedIds.size !== 1 ? 's' : ''} to Alumni`}
-                loading={submitting}
+                label={`Transfer ${selectedIds.size} Player${selectedIds.size !== 1 ? 's' : ''} to Alumni`}
                 fullWidth
-                onClick={handleTransfer}
+                onClick={() => setShowConfirm(true)}
               />
               <p style={{ fontSize: 11, color: theme.gray500, textAlign: 'center', marginTop: 10, marginBottom: 0 }}>
                 This moves players to Alumni and removes roster access.
@@ -180,7 +214,7 @@ export default function TransferPage() {
 
         {/* ── Right: Player selection ── */}
         <div style={{ backgroundColor: 'var(--color-card-bg)', border: '1px solid var(--color-card-border)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-          {/* Search + select all */}
+          {/* Search + select all header */}
           <div style={{ padding: '14px 20px', borderBottom: `1px solid ${theme.gray200}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
               <input
@@ -194,16 +228,20 @@ export default function TransferPage() {
                 {selectedIds.size} of {filteredPlayers.length} selected
               </span>
             </div>
-            <button
-              onClick={toggleAll}
-              style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer' }}
-            >
-              {selectedIds.size === filteredPlayers.length && filteredPlayers.length > 0 ? 'Deselect All' : 'Select All'}
-            </button>
+            {filteredPlayers.length > 0 && (
+              <button
+                onClick={toggleAll}
+                style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer' }}
+              >
+                {selectedIds.size === filteredPlayers.length ? 'Deselect All' : 'Select All'}
+              </button>
+            )}
           </div>
 
           {/* Player list */}
-          {loading ? (
+          {!sportId ? (
+            <div style={{ textAlign: 'center', padding: 48, color: theme.gray400 }}>Select a sport to load players</div>
+          ) : loading ? (
             <div style={{ textAlign: 'center', padding: 48, color: theme.gray400 }}>Loading players...</div>
           ) : filteredPlayers.length === 0 ? (
             <div style={{ textAlign: 'center', padding: 48, color: theme.gray400 }}>No active players found</div>
@@ -257,7 +295,7 @@ export default function TransferPage() {
                         {player.lastName}, {player.firstName}
                       </div>
                       <div style={{ fontSize: 12, color: theme.gray500, marginTop: 2 }}>
-                        {player.position} · {player.academicYear ?? '—'}{player.recruitingClass ? ` · Class of ${player.recruitingClass}` : ''}
+                        {player.position ?? '—'}{player.classYear ? ` · Class of ${player.classYear}` : ''}
                       </div>
                     </div>
 
@@ -278,9 +316,72 @@ export default function TransferPage() {
           </h2>
           {result.failures.map((f, i) => (
             <div key={i} style={{ backgroundColor: 'var(--color-danger-light)', borderRadius: 8, padding: '8px 12px', marginBottom: 6, fontSize: 13, color: 'var(--color-danger)' }}>
-              {f.reason}
+              User {f.userId} — {f.reason}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Confirmation modal */}
+      {showConfirm && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 50,
+          backgroundColor: 'rgba(0,0,0,0.45)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: 24,
+        }}>
+          <div style={{
+            backgroundColor: 'var(--color-card-bg)',
+            borderRadius: 16,
+            padding: 28,
+            maxWidth: 480,
+            width: '100%',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+          }}>
+            <h2 style={{ fontSize: 18, fontWeight: 700, color: theme.gray900, margin: '0 0 4px 0' }}>
+              Confirm Transfer to Alumni
+            </h2>
+            <p style={{ fontSize: 13, color: theme.gray500, margin: '0 0 20px 0', textTransform: 'capitalize' }}>
+              {transferSemester} {transferYear} · {selectedPlayers.length} player{selectedPlayers.length !== 1 ? 's' : ''}
+            </p>
+
+            <div style={{ maxHeight: 240, overflowY: 'auto', marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {selectedPlayers.map(p => (
+                <div key={p.userId} style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '8px 12px',
+                  backgroundColor: theme.gray50,
+                  borderRadius: 8,
+                }}>
+                  <div style={{ fontWeight: 600, color: theme.gray900, fontSize: 13, flex: 1 }}>
+                    {p.lastName}, {p.firstName}
+                  </div>
+                  {p.classYear && (
+                    <span style={{ fontSize: 12, color: theme.gray500 }}>Class of {p.classYear}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <p style={{ fontSize: 12, color: theme.gray500, margin: '0 0 20px 0' }}>
+              This will change their program role from Player to Alumni and remove active roster access. This action cannot be undone.
+            </p>
+
+            <div style={{ display: 'flex', gap: 12 }}>
+              <Button
+                label="Cancel"
+                variant="outline"
+                fullWidth
+                onClick={() => setShowConfirm(false)}
+              />
+              <Button
+                label={submitting ? 'Transferring...' : 'Confirm Transfer'}
+                loading={submitting}
+                fullWidth
+                onClick={handleTransfer}
+              />
+            </div>
+          </div>
         </div>
       )}
     </>

@@ -48,7 +48,7 @@ export default function RosterPage() {
   const config = useTeamConfig()
   const { user, isLoading } = useAuth()
 
-  const isAdmin = ['global_admin', 'platform_owner', 'app_admin'].includes(user?.role ?? '')
+  const canTransfer = can(user, 'roster:promote_to_alumni')
 
   // All hooks must be called unconditionally before any early return.
   const { filters: { search, position, year }, setFilter, page, setPage } =
@@ -116,7 +116,7 @@ export default function RosterPage() {
     <DataTablePage
       title={config.rosterLabel ?? 'Roster'}
       subtitle={`${total} players`}
-      actions={isAdmin ? (
+      actions={canTransfer ? (
         <>
           <Button label="Transfer to Alumni" variant="outline" onClick={() => router.push('/roster/transfer')} />
         </>

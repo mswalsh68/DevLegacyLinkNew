@@ -88,7 +88,6 @@ export async function POST(req: NextRequest) {
             email:        session.email,
             firstName,
             lastName,
-            platformRole: session.role,
             globalRoleId: session.roleId,
           })
         )

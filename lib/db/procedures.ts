@@ -189,15 +189,13 @@ export async function sp_UpsertUser(params: {
   email:         string
   firstName:     string
   lastName:      string
-  platformRole?: string
-  globalRoleId?: number   // dbo.roles.id — 1=super_admin, 2=support_admin, 3=client
+  globalRoleId?: number   // 1=super_admin, 2=support_admin, 3=client
 }): Promise<void> {
   await exec('app', 'sp_UpsertUser', (r) => {
-    r.input('UserId',       sql.Int,          params.userId)
+    r.input('UserId',       sql.Int,           params.userId)
     r.input('Email',        sql.NVarChar(255), params.email)
     r.input('FirstName',    sql.NVarChar(100), params.firstName)
     r.input('LastName',     sql.NVarChar(100), params.lastName)
-    r.input('PlatformRole', sql.NVarChar(50),  params.platformRole ?? 'player')
     r.input('GlobalRoleId', sql.Int,           params.globalRoleId ?? 3)
   })
 }
@@ -280,10 +278,9 @@ export interface MemberDetailsRow {
   email:              string
   firstName:          string
   lastName:           string
-  platformRole:       string
-  programRoleId:      number
-  programRoleDisplay: string
   globalRoleId:       number
+  programRoleId:      number | null
+  programRoleDisplay: string | null
   isActive:           boolean
   lastTeamLogin:      string | null
   // sport membership columns (NULL when user has no sport rows)
@@ -403,7 +400,7 @@ export async function sp_UpdateUserRole(params: {
 export async function sp_TransferUserRole(params: {
   userId:           number
   newProgramRoleId: number
-  sportId?:         number | null
+  sportId:          number          // required — role is now per user×sport
   seasonsPlayed?:   number | null
   classYear?:       number | null
   adminUserId:      number

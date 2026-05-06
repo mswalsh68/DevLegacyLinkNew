@@ -97,7 +97,6 @@ export async function approveAccessRequest(params: {
             email:        info.email,
             firstName:    info.firstName,
             lastName:     info.lastName,
-            platformRole: info.inviteRole ?? 'client',
             globalRoleId: 3,
           })
 

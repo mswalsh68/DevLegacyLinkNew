@@ -20,17 +20,14 @@ GO
 -- sp_UpsertAppUser
 -- Called on team switch when global data has changed.
 -- Creates the row if the user has never logged into this team.
--- program_role_id defaults to 8 (player) on first insert;
--- it should be set via sp_AddUserRole / sp_SetProgramRole after.
+-- Program role is now per-sport on dbo.users_sports.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_UpsertAppUser
   @UserId        INT,
   @Email         NVARCHAR(255),
   @FirstName     NVARCHAR(100),
   @LastName      NVARCHAR(100),
-  @PlatformRole  NVARCHAR(50),       -- global dbo.roles.role_name
-  @GlobalRoleId  INT          = 3,   -- 1=super_admin 2=support_admin 3=client
-  @ProgramRoleId INT          = NULL -- override default if known at sync time
+  @GlobalRoleId  INT          = 3   -- 1=super_admin 2=support_admin 3=client
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -38,22 +35,17 @@ BEGIN
   IF EXISTS (SELECT 1 FROM dbo.users WHERE user_id = @UserId)
   BEGIN
     UPDATE dbo.users SET
-      email         = @Email,
-      first_name    = @FirstName,
-      last_name     = @LastName,
-      platform_role = @PlatformRole,
-      global_role_id= @GlobalRoleId,
-      synced_at     = SYSUTCDATETIME()
+      email          = @Email,
+      first_name     = @FirstName,
+      last_name      = @LastName,
+      global_role_id = @GlobalRoleId,
+      synced_at      = SYSUTCDATETIME()
     WHERE user_id = @UserId;
   END
   ELSE
   BEGIN
-    INSERT INTO dbo.users (user_id, email, first_name, last_name, platform_role, global_role_id, program_role_id)
-    VALUES (
-      @UserId, @Email, @FirstName, @LastName, @PlatformRole,
-      @GlobalRoleId,
-      ISNULL(@ProgramRoleId, 8)   -- default to player if not specified
-    );
+    INSERT INTO dbo.users (user_id, email, first_name, last_name, global_role_id)
+    VALUES (@UserId, @Email, @FirstName, @LastName, @GlobalRoleId);
   END
 END;
 GO
@@ -93,12 +85,12 @@ GO
 
 -- ============================================================
 -- sp_SetProgramRole
--- Directly sets a user's program_role_id on dbo.users.
--- Used by admins from the member management UI.
--- Roles are program-local — never synced back to global.
+-- Sets a user's program_role_id on a specific users_sports row.
+-- @SportId is required — role is now per user×sport.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_SetProgramRole
   @UserId        INT,
+  @SportId       INT,
   @ProgramRoleId INT,
   @ErrorCode     NVARCHAR(50)  OUTPUT
 AS
@@ -106,9 +98,9 @@ BEGIN
   SET NOCOUNT ON;
   SET @ErrorCode = NULL;
 
-  IF NOT EXISTS (SELECT 1 FROM dbo.users WHERE user_id = @UserId)
+  IF NOT EXISTS (SELECT 1 FROM dbo.users_sports WHERE user_id = @UserId AND sport_id = @SportId)
   BEGIN
-    SET @ErrorCode = 'USER_NOT_FOUND';
+    SET @ErrorCode = 'SPORT_NOT_FOUND';
     RETURN;
   END
 
@@ -118,17 +110,16 @@ BEGIN
     RETURN;
   END
 
-  UPDATE dbo.users
-  SET    program_role_id = @ProgramRoleId
-  WHERE  user_id = @UserId;
+  UPDATE dbo.users_sports
+  SET    program_role_id = @ProgramRoleId,
+         updated_at      = SYSUTCDATETIME()
+  WHERE  user_id = @UserId AND sport_id = @SportId;
 END;
 GO
 
 -- ============================================================
 -- sp_GetUserProgramRole
--- Returns the user's current program role.
--- Used by the Add Members wizard to determine what the creator
--- is allowed to do (player=blocked, alumni=invite-only, staff=full).
+-- Returns the user's program role for each sport.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetUserProgramRole
   @UserId INT
@@ -137,12 +128,17 @@ BEGIN
   SET NOCOUNT ON;
 
   SELECT
-    u.program_role_id   AS programRoleId,
-    pr.role_name        AS roleName,
-    pr.display_name     AS displayName,
-    u.global_role_id    AS globalRoleId
+    us.sport_id        AS sportId,
+    s.name             AS sportName,
+    us.program_role_id AS programRoleId,
+    pr.role_name       AS roleName,
+    pr.display_name    AS displayName,
+    u.global_role_id   AS globalRoleId
   FROM   dbo.users u
-  JOIN   dbo.program_role pr ON pr.id = u.program_role_id
-  WHERE  u.user_id = @UserId;
+  JOIN   dbo.users_sports  us ON us.user_id = u.user_id AND us.is_active = 1
+  JOIN   dbo.sports         s ON s.id        = us.sport_id
+  JOIN   dbo.program_role  pr ON pr.id       = us.program_role_id
+  WHERE  u.user_id = @UserId
+  ORDER  BY s.name;
 END;
 GO

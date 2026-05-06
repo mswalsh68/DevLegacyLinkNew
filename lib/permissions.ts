@@ -5,41 +5,38 @@
 // Global roles (migration 028):
 //   super_admin   — internal, full access
 //   support_admin — internal, support access
-//   client        — external; program-level category stored in App DB users_roles.program_role_id
+//   client        — external; app access scoped by session.apps (e.g. ['roster'], ['alumni'])
 //
-// NOTE: client-role feature permissions are not yet spec'd.
-// They will be defined once the program_role permission model is designed.
+// Client virtual roles derived from session.apps:
+//   client:roster — player (approved via roster invite)
+//   client:alumni — alumni (approved via alumni invite)
+//
+//   Feature             super_admin  support_admin  client:roster  client:alumni
+//   roster:view         ✓            ✓              ✓              ✗
+//   roster:edit         ✓            ✓              ✗              ✗
+//   roster:transfer     ✓            ✓              ✗              ✗
+//   alumni:view         ✓            ✓              ✗              ✓
+//   alumni:edit         ✓            ✓              ✗              ✗
+//   message:players     ✓            ✓              ✗              ✗
+//   message:alumni      ✓            ✓              ✗              ✗
+//   feed:players        ✓            ✓              ✓              ✗
+//   feed:alumni         ✓            ✓              ✗              ✓
+//   feed:post           ✓            ✓              ✗              ✗  (read-only for clients for now)
+//   feed:delete_any     ✓            ✓              ✗              ✗
+//   feed:pin            ✓            ✓              ✗              ✗
+//   settings:view       ✓            ✓              ✗              ✗
+//   settings:requests   ✓            ✓              ✗              ✗
 
 import type { UserSession } from '@/types'
 
 // ─── Role groups ──────────────────────────────────────────────────────────────
 
-/** Internal — unrestricted across all teams. */
-const SUPER_ADMIN    = ['super_admin'] as const
-
-/** Internal — super admin plus support staff. */
-const INTERNAL       = [...SUPER_ADMIN, 'support_admin'] as const
+const SUPER_ADMIN     = ['super_admin']                        as const
+const INTERNAL        = [...SUPER_ADMIN, 'support_admin']      as const
+const CLIENT_ROSTER   = 'client:roster'
+const CLIENT_ALUMNI   = 'client:alumni'
 
 // ─── Feature map ──────────────────────────────────────────────────────────────
-//
-// Internal roles have full access to all features.
-// Client permissions will be added here once the program_role permission model is spec'd.
-//
-//   Feature             super_admin  support_admin  client
-//   roster:view         ✓            ✓              TBD
-//   roster:edit         ✓            ✓              TBD
-//   roster:transfer     ✓            ✓              TBD
-//   alumni:view         ✓            ✓              TBD
-//   alumni:edit         ✓            ✓              TBD
-//   message:players     ✓            ✓              TBD
-//   message:alumni      ✓            ✓              TBD
-//   feed:players        ✓            ✓              TBD
-//   feed:alumni         ✓            ✓              TBD
-//   feed:post           ✓            ✓              TBD
-//   feed:delete_any     ✓            ✓              TBD
-//   feed:pin            ✓            ✓              TBD
-//   settings:view       ✓            ✓              TBD
-//   settings:requests   ✓            ✓              TBD
 
 export type Feature =
   | 'roster:view'
@@ -66,21 +63,21 @@ export type Feature =
   | 'settings:requests'
 
 const FEATURE_ROLES: Record<Feature, readonly string[]> = {
-  'roster:view':              [...INTERNAL],
+  'roster:view':              [...INTERNAL, CLIENT_ROSTER],
   'roster:edit':              [...INTERNAL],
   'roster:transfer':          [...INTERNAL],
   'roster:manage':            [...INTERNAL],
   'roster:player_accounts':   [...INTERNAL],
   'roster:promote_to_alumni': [...INTERNAL],
-  'alumni:view':              [...INTERNAL],
-  'alumni:edit':        [...INTERNAL],
-  'message:players':    [...INTERNAL],
-  'message:alumni':     [...INTERNAL],
-  'feed:view':          [...INTERNAL],
-  'feed:like':          [...INTERNAL],
-  'feed:sport_filter':  [...INTERNAL],
-  'feed:players':       [...INTERNAL],
-  'feed:alumni':        [...INTERNAL],
+  'alumni:view':              [...INTERNAL, CLIENT_ALUMNI],
+  'alumni:edit':              [...INTERNAL],
+  'message:players':          [...INTERNAL],
+  'message:alumni':           [...INTERNAL],
+  'feed:view':                [...INTERNAL],
+  'feed:like':                [...INTERNAL],
+  'feed:sport_filter':        [...INTERNAL],
+  'feed:players':             [...INTERNAL, CLIENT_ROSTER],
+  'feed:alumni':              [...INTERNAL, CLIENT_ALUMNI],
   'feed:post':          [...INTERNAL],
   'feed:delete_any':          [...INTERNAL],
   'feed:pin':                 [...INTERNAL],
@@ -90,36 +87,54 @@ const FEATURE_ROLES: Record<Feature, readonly string[]> = {
   'settings:requests':        [...INTERNAL],
 }
 
+// ─── Effective roles ──────────────────────────────────────────────────────────
+// Derives virtual client sub-roles from session.apps so FEATURE_ROLES can stay
+// as a simple string-array lookup without bespoke logic per feature.
+
+function effectiveRoles(session: UserSession): string[] {
+  const roles: string[] = [session.role as string]
+  if (session.role === 'client') {
+    for (const app of (session.apps ?? [])) {
+      roles.push(`client:${app}`)
+    }
+  }
+  return roles
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Returns true if the session's role is allowed to access the given feature.
- * Safe to call with a null session (returns false).
+ * Returns true if the session is allowed to access the given feature.
+ * Safe to call with a null/undefined session (returns false).
  */
 export function can(
   session: UserSession | null | undefined,
   feature: Feature,
 ): boolean {
   if (!session) return false
-  const role = (session.role as string | undefined) ?? ''
-  return (FEATURE_ROLES[feature] as string[]).includes(role)
+  const allowed = FEATURE_ROLES[feature] as string[]
+  return effectiveRoles(session).some(r => allowed.includes(r))
 }
 
 /**
- * Human-readable label for a role.
+ * Human-readable label for a global role.
  */
 export function roleLabel(role: string | undefined): string {
   switch (role) {
-    case 'super_admin':    return 'Super Admin'
-    case 'support_admin':  return 'Support Admin'
-    case 'client':         return 'Client'
-    default:               return role ?? 'Unknown'
+    case 'super_admin':   return 'Super Admin'
+    case 'support_admin': return 'Support Admin'
+    case 'client':        return 'Client'
+    default:              return role ?? 'Unknown'
   }
 }
 
 /**
  * Minimum role required to access a feature — shown in the AccessDenied message.
  */
-export function requiredRoleLabel(_feature: Feature): string {
+export function requiredRoleLabel(feature: Feature): string {
+  const allowed = FEATURE_ROLES[feature] as string[]
+  if (allowed.includes(CLIENT_ROSTER) || allowed.includes(CLIENT_ALUMNI)) {
+    return 'Program member access required'
+  }
   return 'Support Admin or higher'
 }
