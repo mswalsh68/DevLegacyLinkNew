@@ -138,6 +138,16 @@ export default function ProfilePage() {
   const [settingTeam, setSettingTeam] = useState<number | null>(null)
   const [teamMsg,     setTeamMsg]     = useState('')
 
+  // ── Contact info ─────────────────────────────────────────
+  const [phone,          setPhone]          = useState('')
+  const [address,        setAddress]        = useState('')
+  const [city,           setCity]           = useState('')
+  const [stateVal,       setStateVal]       = useState('')
+  const [zipcode,        setZipcode]        = useState('')
+  const [contactLoading, setContactLoading] = useState(false)
+  const [contactSuccess, setContactSuccess] = useState(false)
+  const [contactError,   setContactError]   = useState('')
+
   // ── Social links ─────────────────────────────────────────
   const [twitter,       setTwitter]       = useState('')
   const [instagram,     setInstagram]     = useState('')
@@ -172,6 +182,11 @@ export default function ProfilePage() {
         if (data?.email)     setEmail(data.email)
         if (data?.firstName) setFirstName(data.firstName)
         if (data?.lastName)  setLastName(data.lastName)
+        setPhone(data?.phone    ?? '')
+        setAddress(data?.address ?? '')
+        setCity(data?.city       ?? '')
+        setStateVal(data?.state  ?? '')
+        setZipcode(data?.zipcode ?? '')
         setTwitter(data?.twitter    ?? '')
         setInstagram(data?.instagram ?? '')
         setFacebook(data?.facebook  ?? '')
@@ -347,6 +362,34 @@ export default function ProfilePage() {
     setVisibilityLoading(false)
   }
 
+  const handleSaveContact = async () => {
+    setContactLoading(true)
+    setContactError('')
+    setContactSuccess(false)
+    try {
+      const res  = await fetch('/api/profile/contact', {
+        method:      'PATCH',
+        headers:     { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          phone:   phone.trim(),
+          address: address.trim(),
+          city:    city.trim(),
+          state:   stateVal.trim(),
+          zipcode: zipcode.trim(),
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) { setContactError(json.error ?? 'Failed to save'); return }
+      setContactSuccess(true)
+      setTimeout(() => setContactSuccess(false), 3000)
+    } catch {
+      setContactError('Network error — please try again')
+    } finally {
+      setContactLoading(false)
+    }
+  }
+
   const handleSaveSocial = async () => {
     setSocialLoading(true)
     setSocialError('')
@@ -356,15 +399,16 @@ export default function ProfilePage() {
         method:      'PATCH',
         headers:     { 'Content-Type': 'application/json' },
         credentials: 'include',
+        // Send trimmed value; '' tells the SP to clear the field
         body: JSON.stringify({
-          twitter:    twitter.trim()    || null,
-          instagram:  instagram.trim()  || null,
-          facebook:   facebook.trim()   || null,
-          linkedIn:   linkedIn.trim()   || null,
-          website:    website.trim()    || null,
-          otherLink1: otherLink1.trim() || null,
-          otherLink2: otherLink2.trim() || null,
-          otherLink3: otherLink3.trim() || null,
+          twitter:    twitter.trim(),
+          instagram:  instagram.trim(),
+          facebook:   facebook.trim(),
+          linkedIn:   linkedIn.trim(),
+          website:    website.trim(),
+          otherLink1: otherLink1.trim(),
+          otherLink2: otherLink2.trim(),
+          otherLink3: otherLink3.trim(),
         }),
       })
       const json = await res.json()
@@ -424,6 +468,34 @@ export default function ProfilePage() {
         {nameSuccess && <p style={{ fontSize: 13, color: 'var(--color-success)', marginTop: 10 }}>Name saved.</p>}
         <div style={{ marginTop: 16 }}>
           <Btn label={nameLoading ? 'Saving…' : 'Save name'} onClick={handleSaveName} disabled={nameLoading} />
+        </div>
+      </Section>
+
+      {/* ── Contact Info ──────────────────────────────────── */}
+      <Section title="Contact info" description="Your phone number and address. Visible to team staff.">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 560 }}>
+          <Field label="Phone number">
+            <TextInput value={phone} onChange={setPhone} placeholder="(555) 555-5555" type="tel" />
+          </Field>
+          <Field label="Street address">
+            <TextInput value={address} onChange={setAddress} placeholder="123 Main St" />
+          </Field>
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12 }}>
+            <Field label="City">
+              <TextInput value={city} onChange={setCity} placeholder="City" />
+            </Field>
+            <Field label="State">
+              <TextInput value={stateVal} onChange={setStateVal} placeholder="TX" />
+            </Field>
+            <Field label="Zip">
+              <TextInput value={zipcode} onChange={setZipcode} placeholder="78701" />
+            </Field>
+          </div>
+        </div>
+        {contactError   && <p style={{ fontSize: 13, color: 'var(--color-danger)',  marginTop: 12 }}>{contactError}</p>}
+        {contactSuccess && <p style={{ fontSize: 13, color: 'var(--color-success)', marginTop: 12 }}>Contact info saved.</p>}
+        <div style={{ marginTop: 16 }}>
+          <Btn label={contactLoading ? 'Saving…' : 'Save contact info'} onClick={handleSaveContact} disabled={contactLoading} />
         </div>
       </Section>
 

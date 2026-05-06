@@ -40,8 +40,8 @@ interface PlayerData {
   otherLink1:    string | null
   otherLink2:    string | null
   otherLink3:    string | null
-  // Contact — managers only
-  phone?:                  string | null
+  // Contact — all roster viewers
+  phone:                   string | null
   emergencyContactName1?:  string | null
   emergencyContactPhone1?: string | null
   emergencyContactEmail1?: string | null
@@ -196,8 +196,8 @@ export default function PlayerDetailPage() {
             </Section>
           )}
 
-          {/* Contact — managers only */}
-          {canManage && player.phone && (
+          {/* Contact — visible to all roster viewers */}
+          {(player.phone || player.email) && (
             <Section title="Contact">
               <Field label="Phone" value={player.phone} />
               <Field label="Email" value={player.email} />
@@ -233,11 +233,6 @@ export default function PlayerDetailPage() {
             </Section>
           )}
 
-          {/* Team info */}
-          <Section title="Program">
-            <Field label="Teams"      value={teamConfig.teamName} />
-            <Field label="Last Login" value={player.lastTeamLogin ? new Date(player.lastTeamLogin).toLocaleDateString() : null} />
-          </Section>
         </div>
       </div>
     </>
