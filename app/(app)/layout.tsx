@@ -6,6 +6,7 @@ import { getServerSession } from '@/lib/auth'
 import { AppNav } from '@/components/app/AppNav'
 import { CommunityConsentGate } from './CommunityConsentGate'
 import { WelcomePopupGate } from './WelcomePopupGate'
+import { PreviewBanner } from '@/components/PreviewBanner'
 
 // program_role_id 7 = alumni (platform-standard, never customized)
 const ALUMNI_PROGRAM_ROLE_ID = 7
@@ -25,6 +26,14 @@ export default async function AppLayout({
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: 'var(--color-page-bg)' }}>
+      {/* Preview mode banner — only visible during a View As session */}
+      {session.previewActive && session.previewTeamName && session.previewProgramRoleId && (
+        <PreviewBanner
+          teamName={session.previewTeamName}
+          programRoleId={session.previewProgramRoleId}
+        />
+      )}
+
       {/* Sticky top nav — background is var(--color-primary), updates on team switch */}
       <AppNav />
 

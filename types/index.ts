@@ -23,6 +23,19 @@ export interface UserSession {
   apps: string[]
   exp: number
   iat: number
+
+  // ─── View As / Role Preview ──────────────────────────────
+  // Set only while a global admin is actively previewing a program role.
+  // When present, permissions.ts treats the session as the preview role;
+  // writes are blocked by middleware unless PREVIEW_WRITE_ENABLED=true.
+  previewActive?: boolean        // true = preview session in flight
+  previewProgramRoleId?: number  // the program role being impersonated (1–8)
+  previewTeamId?: number         // the team being previewed
+  previewTeamName?: string       // denormalized for the preview banner
+  previewAppDb?: string          // appDb for the preview team
+  previewSessionId?: number      // row ID in dbo.preview_sessions (for audit end-stamp)
+  originalAppDb?: string         // admin's real appDb, restored on exit
+  originalTeamId?: number        // admin's real currentTeamId, restored on exit
 }
 
 // ─── User Profile ─────────────────────────────────────────────────────────────

@@ -90,8 +90,21 @@ const FEATURE_ROLES: Record<Feature, readonly string[]> = {
 // ─── Effective roles ──────────────────────────────────────────────────────────
 // Derives virtual client sub-roles from session.apps so FEATURE_ROLES can stay
 // as a simple string-array lookup without bespoke logic per feature.
+//
+// Preview mode: when previewActive is true the admin is rendered as a client
+// with the previewed program role. The admin's real roleId/role is preserved in
+// the JWT so isGlobalAdmin() still returns true for the global settings shell,
+// but every feature-permission check here sees only the preview role's access.
 
 function effectiveRoles(session: UserSession): string[] {
+  if (session.previewActive) {
+    const roles = ['client']
+    for (const app of (session.apps ?? [])) {
+      roles.push(`client:${app}`)
+    }
+    return roles
+  }
+
   const roles: string[] = [session.role as string]
   if (session.role === 'client') {
     for (const app of (session.apps ?? [])) {

@@ -71,3 +71,21 @@ export type UserRole = (typeof USER_ROLES)[number]
 
 // Bump this string whenever the community T&C text changes to force re-consent.
 export const COMMUNITY_TC_VERSION = '1.0'
+
+// ─── Program role labels ──────────────────────────────────────────────────────
+// Matches dbo.program_role IDs in the App DB (post-migration 014).
+// 1=AD, 2=PA, 3=ADir, 4=HC, 5=Coach, 6=Staff, 7=Alumni, 8=Player
+export const PROGRAM_ROLE_LABELS: Record<number, string> = {
+  1: 'Athletic Director',
+  2: 'Program Admin',
+  3: 'Associate Director',
+  4: 'Head Coach',
+  5: 'Coach',
+  6: 'Staff',
+  7: 'Alumni',
+  8: 'Player',
+}
+
+export const PROGRAM_ROLE_OPTIONS = Object.entries(PROGRAM_ROLE_LABELS).map(
+  ([id, label]) => ({ value: Number(id), label }),
+)

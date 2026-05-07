@@ -1419,6 +1419,42 @@ export async function sp_SetContactVisible(params: {
   })
 }
 
+// ─── Global DB — Preview Sessions ─────────────────────────────────────────────
+
+/**
+ * Inserts a preview session audit row and returns the new session ID.
+ * Called when an internal admin starts a View As / Role Preview session.
+ */
+export async function sp_StartPreviewSession(params: {
+  actorId:       number
+  actorEmail:    string
+  teamId:        number
+  teamName:      string
+  programRoleId: number
+}): Promise<{ sessionId: number }> {
+  const { output } = await execFull('global', 'sp_StartPreviewSession', (r) => {
+    r.input ('ActorId',       sql.BigInt,        params.actorId)
+    r.input ('ActorEmail',    sql.NVarChar(255),  params.actorEmail)
+    r.input ('TeamId',        sql.Int,            params.teamId)
+    r.input ('TeamName',      sql.NVarChar(100),  params.teamName)
+    r.input ('ProgramRoleId', sql.Int,            params.programRoleId)
+    r.output('SessionId',     sql.Int)
+  })
+  return { sessionId: (output.SessionId as number) }
+}
+
+/**
+ * Stamps ended_at on a preview session row.
+ * Called when the admin explicitly exits preview, or on a subsequent login.
+ */
+export async function sp_EndPreviewSession(params: {
+  sessionId: number
+}): Promise<void> {
+  await exec('global', 'sp_EndPreviewSession', (r) => {
+    r.input('SessionId', sql.Int, params.sessionId)
+  })
+}
+
 // ─── Welcome Popup ────────────────────────────────────────────────────────────
 
 export interface PendingWelcomePopup {
