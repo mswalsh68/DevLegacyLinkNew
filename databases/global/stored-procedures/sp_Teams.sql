@@ -110,6 +110,7 @@ GO
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_CreateTeam
   @Name      NVARCHAR(100),
+  @Abbr      NVARCHAR(20),
   @AppDb     NVARCHAR(150),
   @TierId    INT           = 1,
   @LevelId   INT           = 1,
@@ -124,8 +125,8 @@ BEGIN
   SET XACT_ABORT ON;
   SET @ErrorCode = NULL;
 
-  INSERT INTO dbo.teams (name, tier_id, level_id, app_db, expires_at)
-  VALUES (@Name, @TierId, @LevelId, @AppDb, @ExpiresAt);
+  INSERT INTO dbo.teams (name, abbr, tier_id, level_id, app_db, expires_at)
+  VALUES (@Name, @Abbr, @TierId, @LevelId, @AppDb, @ExpiresAt);
 
   SET @NewTeamId = SCOPE_IDENTITY();
 

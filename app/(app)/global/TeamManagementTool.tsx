@@ -248,11 +248,17 @@ function NewTeamForm({ tiers, levels, onCreated, onCancel }: {
   onCancel:  () => void
 }) {
   const [name,    setName]    = useState('')
+  const [abbr,    setAbbr]    = useState('')
   const [appDb,   setAppDb]   = useState('')
   const [tierId,  setTierId]  = useState(tiers[0]?.id ?? 1)
   const [levelId, setLevelId] = useState(levels[0]?.id ?? 1)
   const [saving,  setSaving]  = useState(false)
   const [error,   setError]   = useState('')
+
+  const handleNameChange = (v: string) => {
+    setName(v)
+    setAbbr(v.trim().split(/\s+/).map(w => w[0] ?? '').join('').toUpperCase().slice(0, 5))
+  }
 
   const handleCreate = async () => {
     if (!name.trim() || !appDb.trim()) { setError('Name and App DB are required.'); return }
@@ -262,7 +268,7 @@ function NewTeamForm({ tiers, levels, onCreated, onCancel }: {
       const res = await fetch('/api/internal/teams', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ name: name.trim(), appDb: appDb.trim(), tierId, levelId }),
+        body: JSON.stringify({ name: name.trim(), abbr: abbr.trim(), appDb: appDb.trim(), tierId, levelId }),
       })
       const json = await res.json()
       if (!res.ok) { setError(json.error ?? 'Failed to create'); return }
@@ -291,10 +297,14 @@ function NewTeamForm({ tiers, levels, onCreated, onCancel }: {
 
       {/* Card body */}
       <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 16 }}>
           <div>
             <FieldLabel>Team / Program Name</FieldLabel>
-            <TextInput value={name} onChange={setName} placeholder="e.g. Legacy Link" />
+            <TextInput value={name} onChange={handleNameChange} placeholder="e.g. Legacy Link" />
+          </div>
+          <div style={{ width: 96 }}>
+            <FieldLabel>Abbreviation</FieldLabel>
+            <TextInput value={abbr} onChange={v => setAbbr(v.toUpperCase().slice(0, 5))} placeholder="LL" />
           </div>
           <div>
             <FieldLabel>App Database Name</FieldLabel>

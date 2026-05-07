@@ -125,6 +125,7 @@ export async function sp_GetLevels(): Promise<LookupRow[]> {
 /** Creates a new team. Returns the new teamId or an errorCode. */
 export async function sp_CreateTeam(params: {
   name:      string
+  abbr:      string
   appDb:     string
   tierId:    number
   levelId:   number
@@ -132,6 +133,7 @@ export async function sp_CreateTeam(params: {
 }): Promise<{ teamId: number | null; errorCode: string | null }> {
   const { output } = await execFull('global', 'sp_CreateTeam', (r) => {
     r.input ('Name',      sql.NVarChar(100), params.name)
+    r.input ('Abbr',      sql.NVarChar(20),  params.abbr)
     r.input ('AppDb',     sql.NVarChar(150), params.appDb)
     r.input ('TierId',    sql.Int,           params.tierId)
     r.input ('LevelId',   sql.Int,           params.levelId)

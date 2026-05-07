@@ -24,6 +24,7 @@ export async function GET() {
 
 const createSchema = z.object({
   name:    z.string().min(1).max(100),
+  abbr:    z.string().min(1).max(20),
   appDb:   z.string().min(1).max(150),
   tierId:  z.number().int().min(1).default(1),
   levelId: z.number().int().min(1).default(1),
@@ -48,6 +49,7 @@ export async function POST(req: NextRequest) {
   try {
     const { teamId, errorCode } = await sp_CreateTeam({
       name:      p.data.name,
+      abbr:      p.data.abbr,
       appDb:     p.data.appDb,
       tierId:    p.data.tierId,
       levelId:   p.data.levelId,
