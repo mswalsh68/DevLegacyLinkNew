@@ -48,12 +48,18 @@ BEGIN
   SELECT
     t.id,
     t.name,
-    t.tier_id   AS tierId,
-    t.level_id  AS levelId,
-    t.app_db    AS appDb,
-    t.is_active AS isActive,
-    t.created_at AS createdAt
+    t.tier_id          AS tierId,
+    tr.name            AS tier,
+    tr.display_name    AS tierDisplayName,
+    t.level_id         AS levelId,
+    lv.name            AS level,
+    lv.display_name    AS levelDisplayName,
+    t.app_db           AS appDb,
+    t.is_active        AS isActive,
+    t.created_at       AS createdAt
   FROM  dbo.teams t
+  JOIN  dbo.tiers  tr ON tr.id = t.tier_id
+  JOIN  dbo.levels lv ON lv.id = t.level_id
   WHERE @IncludeInactive = 1 OR t.is_active = 1
   ORDER BY t.name;
 END;
@@ -80,12 +86,18 @@ BEGIN
   SELECT
     t.id,
     t.name,
-    t.tier_id    AS tierId,
-    t.level_id   AS levelId,
-    t.app_db     AS appDb,
-    t.is_active  AS isActive,
-    t.created_at AS createdAt
+    t.tier_id          AS tierId,
+    tr.name            AS tier,
+    tr.display_name    AS tierDisplayName,
+    t.level_id         AS levelId,
+    lv.name            AS level,
+    lv.display_name    AS levelDisplayName,
+    t.app_db           AS appDb,
+    t.is_active        AS isActive,
+    t.created_at       AS createdAt
   FROM  dbo.teams t
+  JOIN  dbo.tiers  tr ON tr.id = t.tier_id
+  JOIN  dbo.levels lv ON lv.id = t.level_id
   WHERE t.id = @TeamId;
 END;
 GO
