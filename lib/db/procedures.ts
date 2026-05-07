@@ -100,10 +100,72 @@ export async function sp_GetTeamConfig(params?: { teamId?: number }): Promise<Te
   return (rows as unknown as TeamConfigRow[])[0] ?? null
 }
 
-/** Returns all active teams. */
-export async function sp_GetTeams(): Promise<TeamConfigRow[]> {
-  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_GetTeams')
+/** Returns teams. Pass includeInactive=true to include deactivated teams. */
+export async function sp_GetTeams(params?: { includeInactive?: boolean }): Promise<TeamConfigRow[]> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_GetTeams', (r) => {
+    r.input('IncludeInactive', sql.Bit, params?.includeInactive ? 1 : 0)
+  })
   return rows as unknown as TeamConfigRow[]
+}
+
+export interface LookupRow { id: number; name: string; displayName: string }
+
+/** Returns all active subscription tiers. */
+export async function sp_GetTiers(): Promise<LookupRow[]> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_GetTiers')
+  return rows as unknown as LookupRow[]
+}
+
+/** Returns all active program levels. */
+export async function sp_GetLevels(): Promise<LookupRow[]> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_GetLevels')
+  return rows as unknown as LookupRow[]
+}
+
+/** Creates a new team. Returns the new teamId or an errorCode. */
+export async function sp_CreateTeam(params: {
+  name:      string
+  appDb:     string
+  tierId:    number
+  levelId:   number
+  createdBy: number
+}): Promise<{ teamId: number | null; errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_CreateTeam', (r) => {
+    r.input ('Name',      sql.NVarChar(100), params.name)
+    r.input ('AppDb',     sql.NVarChar(150), params.appDb)
+    r.input ('TierId',    sql.Int,           params.tierId)
+    r.input ('LevelId',   sql.Int,           params.levelId)
+    r.input ('CreatedBy', sql.BigInt,        params.createdBy)
+    r.output('NewTeamId', sql.Int)
+    r.output('ErrorCode', sql.NVarChar(50))
+  })
+  return {
+    teamId:    (output.NewTeamId as number | null) ?? null,
+    errorCode: (output.ErrorCode as string | null) ?? null,
+  }
+}
+
+/** Updates team metadata. Pass only the fields to change (null = no change). */
+export async function sp_UpdateTeam(params: {
+  teamId:   number
+  name?:    string | null
+  tierId?:  number | null
+  levelId?: number | null
+  appDb?:   string | null
+  isActive?: boolean | null
+  actorId:  number
+}): Promise<{ errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_UpdateTeam', (r) => {
+    r.input ('TeamId',    sql.Int,           params.teamId)
+    r.input ('Name',      sql.NVarChar(100), params.name     ?? null)
+    r.input ('TierId',    sql.Int,           params.tierId   ?? null)
+    r.input ('LevelId',   sql.Int,           params.levelId  ?? null)
+    r.input ('AppDb',     sql.NVarChar(150), params.appDb    ?? null)
+    r.input ('IsActive',  sql.Bit,           params.isActive ?? null)
+    r.input ('ActorId',   sql.BigInt,        params.actorId)
+    r.output('ErrorCode', sql.NVarChar(50))
+  })
+  return { errorCode: (output.ErrorCode as string | null) ?? null }
 }
 
 /** Returns the teams a specific user has access to. */

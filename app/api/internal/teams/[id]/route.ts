@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getServerSession, isGlobalAdmin } from '@/lib/auth'
-import { execFull } from '@/lib/db/connection'
-import * as sql from 'mssql'
+import { sp_UpdateTeam } from '@/lib/db/procedures'
 
 // ─── PATCH /api/internal/teams/[id] ──────────────────────────────────────────
-// Admin-only: update tier, level, appDb, isActive for a team.
 
 const patchSchema = z.object({
   name:     z.string().min(1).max(100).optional(),
@@ -39,25 +37,20 @@ export async function PATCH(
   }
 
   try {
-    const { output } = await execFull('global', 'sp_UpdateTeam', (r) => {
-      r.input ('TeamId',    sql.Int,           teamId)
-      r.input ('Name',      sql.NVarChar(100), p.data.name      ?? null)
-      r.input ('TierId',    sql.Int,           p.data.tierId    ?? null)
-      r.input ('LevelId',   sql.Int,           p.data.levelId   ?? null)
-      r.input ('AppDb',     sql.NVarChar(150), p.data.appDb     ?? null)
-      r.input ('IsActive',  sql.Bit,           p.data.isActive  ?? null)
-      r.input ('ActorId',   sql.BigInt,        session.userId)
-      r.output('ErrorCode', sql.NVarChar(50))
+    const { errorCode } = await sp_UpdateTeam({
+      teamId,
+      name:     p.data.name     ?? null,
+      tierId:   p.data.tierId   ?? null,
+      levelId:  p.data.levelId  ?? null,
+      appDb:    p.data.appDb    ?? null,
+      isActive: p.data.isActive ?? null,
+      actorId:  session.userId,
     })
 
-    const errorCode = output.ErrorCode as string | null
     if (errorCode === 'TEAM_NOT_FOUND') {
       return NextResponse.json({ success: false, error: 'Team not found.' }, { status: 404 })
     }
-    if (errorCode) {
-      return NextResponse.json({ success: false, error: errorCode }, { status: 400 })
-    }
-
+    if (errorCode) return NextResponse.json({ success: false, error: errorCode }, { status: 400 })
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error('[PATCH /api/internal/teams/[id]]', err)

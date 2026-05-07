@@ -5,8 +5,7 @@
 import type { Metadata } from 'next'
 import { getServerSession, isGlobalAdmin } from '@/lib/auth'
 import { AccessDenied } from '@/components/ui/AccessDenied'
-import { exec } from '@/lib/db/connection'
-import * as sql from 'mssql'
+import { sp_GetTeams, sp_GetTiers, sp_GetLevels } from '@/lib/db/procedures'
 import RolePreviewTool from './RolePreviewTool'
 import TeamManagementTool from './TeamManagementTool'
 
@@ -24,18 +23,13 @@ export default async function GlobalPage() {
     )
   }
 
-  type TeamRow  = Record<string, unknown>
-  type LookupRow = { id: number; name: string; displayName: string }
-
-  const [rawTeams, rawTiers, rawLevels] = await Promise.all([
-    exec<sql.IRecordSet<TeamRow>>('global', 'sp_GetTeams', (r) => {
-      r.input('IncludeInactive', sql.Bit, 1)
-    }),
-    exec<sql.IRecordSet<LookupRow>>('global', 'sp_GetTiers'),
-    exec<sql.IRecordSet<LookupRow>>('global', 'sp_GetLevels'),
+  const [rawTeams, tiers, levels] = await Promise.all([
+    sp_GetTeams({ includeInactive: true }),
+    sp_GetTiers(),
+    sp_GetLevels(),
   ])
 
-  const teams = (rawTeams as unknown as TeamRow[]).map(t => ({
+  const teams = rawTeams.map(t => ({
     id:               t.id               as number,
     name:             t.name             as string,
     tierId:           t.tierId           as number,
@@ -48,9 +42,6 @@ export default async function GlobalPage() {
     isActive:         Boolean(t.isActive),
     createdAt:        (t.createdAt       as string) ?? '',
   }))
-
-  const tiers  = (rawTiers  as unknown as LookupRow[])
-  const levels = (rawLevels as unknown as LookupRow[])
 
   const previewTeams = teams.filter(t => t.isActive).map(t => ({ id: t.id, name: t.name }))
 
@@ -74,7 +65,7 @@ export default async function GlobalPage() {
         <p style={{ margin: '0 0 20px', fontSize: 13, color: 'var(--color-text-secondary)' }}>
           Provision new clients, manage tiers and levels, assign App DBs, and activate or deactivate accounts.
         </p>
-        <TeamManagementTool teams={teams} tiers={TIERS} levels={LEVELS} />
+        <TeamManagementTool teams={teams} tiers={tiers} levels={levels} />
       </section>
 
       {/* Tool: Role Preview */}
