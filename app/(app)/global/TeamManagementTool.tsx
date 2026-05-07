@@ -27,22 +27,22 @@ interface Props {
 // ─── Inline style helpers ─────────────────────────────────────────────────────
 
 const card: React.CSSProperties = {
-  backgroundColor: 'var(--color-card-bg)',
-  border:          '1px solid var(--color-card-border)',
+  backgroundColor: 'var(--color-surface)',
+  border:          '1px solid var(--color-border)',
   borderRadius:    12,
   padding:         24,
   marginBottom:    16,
 }
 
-const label: React.CSSProperties = {
-  fontSize: 12, fontWeight: 600, color: 'var(--color-text-secondary)',
-  textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4, display: 'block',
+const fieldLabel: React.CSSProperties = {
+  display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6,
+  color: 'var(--color-text-primary)',
 }
 
 const input: React.CSSProperties = {
   width: '100%', boxSizing: 'border-box', padding: '8px 12px',
-  border: '1.5px solid var(--color-card-border)', borderRadius: 8,
-  fontSize: 14, color: 'var(--color-text-primary)', backgroundColor: 'var(--color-card-bg)',
+  border: '1px solid var(--color-border)', borderRadius: 8,
+  fontSize: 14, color: 'var(--color-text-primary)', backgroundColor: 'var(--color-input-bg)',
   outline: 'none',
 }
 
@@ -52,9 +52,11 @@ function Btn({ label: lbl, onClick, variant = 'primary', disabled, small }: {
   label: string; onClick: () => void; variant?: 'primary' | 'danger' | 'ghost'
   disabled?: boolean; small?: boolean
 }) {
-  const bg = variant === 'primary' ? 'var(--color-primary)' : variant === 'danger' ? '#ef4444' : 'transparent'
+  const bg    = variant === 'primary' ? 'var(--color-primary)'
+              : variant === 'danger'  ? 'var(--color-error)'
+              : 'transparent'
   const color = variant === 'ghost' ? 'var(--color-text-secondary)' : '#fff'
-  const border = variant === 'ghost' ? '1.5px solid var(--color-card-border)' : 'none'
+  const border = variant === 'ghost' ? '1px solid var(--color-border)' : 'none'
   return (
     <button
       onClick={onClick}
@@ -67,8 +69,8 @@ function Btn({ label: lbl, onClick, variant = 'primary', disabled, small }: {
         color,
         fontSize:        small ? 12 : 13,
         fontWeight:      600,
-        cursor:          disabled ? 'default' : 'pointer',
-        opacity:         disabled ? 0.6 : 1,
+        cursor:          disabled ? 'not-allowed' : 'pointer',
+        opacity:         disabled ? 0.5 : 1,
         transition:      'opacity 0.15s',
       }}
     >{lbl}</button>
@@ -119,43 +121,43 @@ function EditDrawer({ team, tiers, levels, onClose, onSaved }: {
       backgroundColor: 'rgba(0,0,0,0.4)',
     }} onClick={onClose}>
       <div style={{
-        width: 420, height: '100%', backgroundColor: 'var(--color-card-bg)',
-        borderLeft: '1px solid var(--color-card-border)',
+        width: 420, height: '100%', backgroundColor: 'var(--color-surface)',
+        borderLeft: '1px solid var(--color-border)',
         padding: 32, overflowY: 'auto',
         display: 'flex', flexDirection: 'column', gap: 20,
       }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Edit Team</h2>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--color-text-primary)' }}>Edit Team</h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: 'var(--color-text-secondary)' }}>×</button>
         </div>
 
         <div>
-          <span style={label}>Team Name</span>
+          <label style={fieldLabel}>Team Name</label>
           <input style={input} value={name} onChange={e => setName(e.target.value)} />
         </div>
 
         <div>
-          <span style={label}>App Database</span>
+          <label style={fieldLabel}>App Database</label>
           <input style={input} value={appDb} onChange={e => setAppDb(e.target.value)} placeholder="DevLegacyLinkApp_TeamName" />
           <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', margin: '4px 0 0' }}>Name of the tenant App DB on the SQL server.</p>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <div>
-            <span style={label}>Tier</span>
+            <label style={fieldLabel}>Tier</label>
             <select style={select} value={tierId} onChange={e => setTierId(Number(e.target.value))}>
               {tiers.map(t => <option key={t.id} value={t.id}>{t.displayName}</option>)}
             </select>
           </div>
           <div>
-            <span style={label}>Level</span>
+            <label style={fieldLabel}>Level</label>
             <select style={select} value={levelId} onChange={e => setLevelId(Number(e.target.value))}>
               {levels.map(l => <option key={l.id} value={l.id}>{l.displayName}</option>)}
             </select>
           </div>
         </div>
 
-        {error && <p style={{ fontSize: 13, color: '#ef4444', margin: 0 }}>{error}</p>}
+        {error && <p style={{ fontSize: 13, color: 'var(--color-error)', margin: 0 }}>{error}</p>}
 
         <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
           <Btn label={saving ? 'Saving…' : 'Save changes'} onClick={handleSave} disabled={saving} />
@@ -209,35 +211,35 @@ function NewTeamForm({ tiers, levels, onCreated, onCancel }: {
   }
 
   return (
-    <div style={{ ...card, border: '1.5px solid var(--color-primary)' }}>
-      <h3 style={{ margin: '0 0 20px', fontSize: 15, fontWeight: 700 }}>New Client</h3>
+    <div style={{ ...card, border: '1px solid var(--color-primary)', marginBottom: 16 }}>
+      <h3 style={{ margin: '0 0 20px', fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)' }}>New Client</h3>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 560 }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <div>
-            <span style={label}>Team / Program Name</span>
+            <label style={fieldLabel}>Team / Program Name</label>
             <input style={input} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. USF Bulls" />
           </div>
           <div>
-            <span style={label}>App Database Name</span>
+            <label style={fieldLabel}>App Database Name</label>
             <input style={input} value={appDb} onChange={e => setAppDb(e.target.value)} placeholder="DevLegacyLinkApp_USF" />
           </div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <div>
-            <span style={label}>Tier</span>
+            <label style={fieldLabel}>Tier</label>
             <select style={select} value={tierId} onChange={e => setTierId(Number(e.target.value))}>
               {tiers.map(t => <option key={t.id} value={t.id}>{t.displayName}</option>)}
             </select>
           </div>
           <div>
-            <span style={label}>Level</span>
+            <label style={fieldLabel}>Level</label>
             <select style={select} value={levelId} onChange={e => setLevelId(Number(e.target.value))}>
               {levels.map(l => <option key={l.id} value={l.id}>{l.displayName}</option>)}
             </select>
           </div>
         </div>
       </div>
-      {error && <p style={{ fontSize: 13, color: '#ef4444', margin: '12px 0 0' }}>{error}</p>}
+      {error && <p style={{ fontSize: 13, color: 'var(--color-error)', margin: '12px 0 0' }}>{error}</p>}
       <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
         <Btn label={saving ? 'Creating…' : 'Create client'} onClick={handleCreate} disabled={saving} />
         <Btn label="Cancel" onClick={onCancel} variant="ghost" />
@@ -322,7 +324,7 @@ export default function TeamManagementTool({ teams: initialTeams, tiers, levels 
               <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)' }}>{team.name}</span>
               <span style={{
                 fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999,
-                backgroundColor: team.isActive ? 'var(--color-success-light, #dcfce7)' : 'var(--color-card-border)',
+                backgroundColor: team.isActive ? '#dcfce7' : 'var(--color-border)',
                 color: team.isActive ? '#166534' : 'var(--color-text-secondary)',
               }}>
                 {team.isActive ? 'Active' : 'Inactive'}
