@@ -697,7 +697,6 @@ export default function SettingsContent() {
   const [form, setForm] = useState({
     teamName:          '',
     teamAbbr:          '',
-    level:             'college',
     logoUrl:           '',
     colorPrimary:      '#006747',
     colorPrimaryDark:  '#005432',
@@ -721,7 +720,6 @@ export default function SettingsContent() {
         ...prev,
         teamName:          c.teamName          ?? c.name          ?? '',
         teamAbbr:          c.teamAbbr          ?? c.abbr          ?? '',
-        level:             c.level             ?? 'college',
         logoUrl:           c.logoUrl           ?? '',
         colorPrimary:      c.colorPrimary      ?? c.primaryColor  ?? '#006747',
         colorPrimaryDark:  c.colorPrimaryDark  ?? '#005432',
@@ -751,7 +749,6 @@ export default function SettingsContent() {
       const payload = {
         teamName:          form.teamName,
         teamAbbr:          form.teamAbbr,
-        level:             form.level,
         logoUrl:           form.logoUrl || '',
         colorPrimary:      form.colorPrimary,
         colorPrimaryDark:  form.colorPrimaryDark,
@@ -838,7 +835,6 @@ export default function SettingsContent() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
                 <TextInput label="Team / Program Name" value={form.teamName} onChange={set('teamName')} placeholder="USF Bulls" required />
                 <TextInput label="Abbreviation"        value={form.teamAbbr} onChange={set('teamAbbr')} placeholder="USF"      required />
-                <SelectInput label="Level" value={form.level} onChange={v => setForm(p => ({ ...p, level: v }))} options={LEVEL_OPTIONS} />
               </div>
               <div style={{ marginTop: 16 }}>
                 <TextInput
