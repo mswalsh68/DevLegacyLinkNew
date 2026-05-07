@@ -103,8 +103,6 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  if (currentTeamId) userJson.currentTeamId = currentTeamId
-
   // ── Sign new access token ──────────────────────────────────────────────────
   const accessToken = await new SignJWT({ sub: String(userId), userId, ...userJson })
     .setProtectedHeader({ alg: 'HS256' })
