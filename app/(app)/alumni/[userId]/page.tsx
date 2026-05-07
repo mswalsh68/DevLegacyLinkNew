@@ -16,6 +16,7 @@ interface AlumniRecord {
   userId:              string
   firstName:           string
   lastName:            string
+  email:               string | null
   graduationYear:      number | null
   graduationSemester:  string | null
   position:            string
@@ -49,40 +50,16 @@ interface Interaction {
 }
 
 interface EditState {
-  phone:               string
-  personalEmail:       string
-  linkedInUrl:         string
-  twitterUrl:          string
-  currentEmployer:     string
-  currentJobTitle:     string
-  currentCity:         string
-  currentState:        string
-  isDonor:             boolean
-  lastDonationDate:    string
-  totalDonations:      string
-  engagementScore:     string
-  communicationConsent: boolean
-  yearsOnRoster:       string
-  notes:               string
+  phone:      string
+  linkedInUrl: string
+  twitterUrl:  string
 }
 
 function alumniToEditState(a: AlumniRecord): EditState {
   return {
-    phone:               a.phone            ?? '',
-    personalEmail:       a.personalEmail    ?? '',
-    linkedInUrl:         a.linkedInUrl      ?? '',
-    twitterUrl:          a.twitterUrl       ?? '',
-    currentEmployer:     a.currentEmployer  ?? '',
-    currentJobTitle:     a.currentJobTitle  ?? '',
-    currentCity:         a.currentCity      ?? '',
-    currentState:        a.currentState     ?? '',
-    isDonor:             a.isDonor          ?? false,
-    lastDonationDate:    a.lastDonationDate ? a.lastDonationDate.slice(0, 10) : '',
-    totalDonations:      a.totalDonations   != null ? String(a.totalDonations) : '',
-    engagementScore:     a.engagementScore  != null ? String(a.engagementScore) : '',
-    communicationConsent: a.communicationConsent ?? false,
-    yearsOnRoster:       a.yearsOnRoster    != null ? String(a.yearsOnRoster) : '',
-    notes:               a.notes            ?? '',
+    phone:      a.phone      ?? '',
+    linkedInUrl: a.linkedInUrl ?? '',
+    twitterUrl:  a.twitterUrl  ?? '',
   }
 }
 
@@ -138,27 +115,6 @@ function EditField({
   )
 }
 
-function EditCheckbox({
-  label, name, value, onChange,
-}: {
-  label: string
-  name: string
-  value: boolean
-  onChange: (name: string, value: boolean) => void
-}) {
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-        <input
-          type="checkbox"
-          checked={value}
-          onChange={(e) => onChange(name, e.target.checked)}
-        />
-        <span style={{ fontSize: 14, color: theme.gray900 }}>{label}</span>
-      </label>
-    </div>
-  )
-}
 
 function Grid({ children }: { children: React.ReactNode }) {
   return <div className="field-grid-3">{children}</div>
@@ -219,10 +175,6 @@ export default function AlumniDetailPage() {
     setEditState((prev) => prev ? { ...prev, [name]: value } : prev)
   }
 
-  function handleCheckboxChange(name: string, value: boolean) {
-    setEditState((prev) => prev ? { ...prev, [name]: value } : prev)
-  }
-
   async function handleSave() {
     if (!editState || !alumni) return
     setSaving(true)
@@ -233,21 +185,9 @@ export default function AlumniDetailPage() {
         credentials: 'include',
         headers:     { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phone:               editState.phone            || null,
-          personalEmail:       editState.personalEmail    || null,
-          linkedInUrl:         editState.linkedInUrl      || null,
-          twitterUrl:          editState.twitterUrl       || null,
-          currentEmployer:     editState.currentEmployer  || null,
-          currentJobTitle:     editState.currentJobTitle  || null,
-          currentCity:         editState.currentCity      || null,
-          currentState:        editState.currentState     || null,
-          isDonor:             editState.isDonor,
-          lastDonationDate:    editState.lastDonationDate || null,
-          totalDonations:      editState.totalDonations   !== '' ? Number(editState.totalDonations)   : null,
-          engagementScore:     editState.engagementScore  !== '' ? Number(editState.engagementScore)  : null,
-          communicationConsent: editState.communicationConsent,
-          yearsOnRoster:       editState.yearsOnRoster    !== '' ? Number(editState.yearsOnRoster)    : null,
-          notes:               editState.notes            || null,
+          phone:      editState.phone      || null,
+          linkedInUrl: editState.linkedInUrl || null,
+          twitterUrl:  editState.twitterUrl  || null,
         }),
       })
       const result = await res.json() as { success: boolean; error?: string }
@@ -348,12 +288,8 @@ export default function AlumniDetailPage() {
           <Section title="Career">
             {isEditing && editState ? (
               <Grid>
-                <EditField label="Employer"    name="currentEmployer" value={editState.currentEmployer} onChange={handleChange} />
-                <EditField label="Job Title"   name="currentJobTitle" value={editState.currentJobTitle} onChange={handleChange} />
-                <EditField label="City"        name="currentCity"     value={editState.currentCity}     onChange={handleChange} />
-                <EditField label="State"       name="currentState"    value={editState.currentState}    onChange={handleChange} />
-                <EditField label="LinkedIn URL"name="linkedInUrl"     value={editState.linkedInUrl}     onChange={handleChange} />
-                <EditField label="Twitter URL" name="twitterUrl"      value={editState.twitterUrl}      onChange={handleChange} />
+                <EditField label="LinkedIn URL" name="linkedInUrl" value={editState.linkedInUrl} onChange={handleChange} />
+                <EditField label="Twitter URL"  name="twitterUrl"  value={editState.twitterUrl}  onChange={handleChange} />
               </Grid>
             ) : (
               <>
@@ -385,35 +321,18 @@ export default function AlumniDetailPage() {
           <Section title="Contact">
             {isEditing && editState ? (
               <Grid>
-                <EditField label="Phone" name="phone"         value={editState.phone}         onChange={handleChange} type="tel" />
-                <EditField label="Email" name="personalEmail" value={editState.personalEmail} onChange={handleChange} type="email" />
-                <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center' }}>
-                  <EditCheckbox label="Communication Consent" name="communicationConsent" value={editState.communicationConsent} onChange={handleCheckboxChange} />
-                </div>
+                <EditField label="Phone" name="phone" value={editState.phone} onChange={handleChange} type="tel" />
               </Grid>
             ) : (
               <Grid>
                 <Field label="Phone" value={alumni.phone} />
-                <Field label="Email" value={alumni.personalEmail} />
-                <Field label="Communication Consent" value={alumni.communicationConsent} />
+                <Field label="Email" value={alumni.personalEmail ?? alumni.email} />
               </Grid>
             )}
           </Section>
 
           <Section title="Notes">
-            {isEditing && editState ? (
-              <textarea
-                value={editState.notes}
-                onChange={(e) => handleChange('notes', e.target.value)}
-                rows={4}
-                style={{
-                  width: '100%', boxSizing: 'border-box',
-                  fontSize: 14, color: theme.gray900,
-                  border: `1px solid ${theme.gray200}`, borderRadius: 6,
-                  padding: '8px 10px', resize: 'vertical', outline: 'none',
-                }}
-              />
-            ) : alumni.notes ? (
+            {alumni.notes ? (
               <p style={{ fontSize: 14, color: theme.gray700, margin: 0, lineHeight: 1.6 }}>{alumni.notes}</p>
             ) : (
               <p style={{ fontSize: 13, color: theme.gray400, margin: 0 }}>No notes.</p>
@@ -424,25 +343,13 @@ export default function AlumniDetailPage() {
         {/* Right column */}
         <div>
           <Section title="Giving">
-            {isEditing && editState ? (
-              <Grid>
-                <div style={{ marginBottom: 12 }}>
-                  <EditCheckbox label="Donor" name="isDonor" value={editState.isDonor} onChange={handleCheckboxChange} />
-                </div>
-                <EditField label="Total Donations ($)" name="totalDonations"  value={editState.totalDonations}  onChange={handleChange} type="number" />
-                <EditField label="Last Donation Date"  name="lastDonationDate"value={editState.lastDonationDate}onChange={handleChange} type="date" />
-                <EditField label="Engagement Score"    name="engagementScore" value={editState.engagementScore} onChange={handleChange} type="number" />
-                <EditField label="Years on Roster"     name="yearsOnRoster"   value={editState.yearsOnRoster}   onChange={handleChange} type="number" />
-              </Grid>
-            ) : (
-              <Grid>
-                <Field label="Donor"            value={alumni.isDonor ? 'Yes' : 'No'} />
-                <Field label="Total Donations"  value={alumni.totalDonations != null ? `$${alumni.totalDonations.toLocaleString()}` : null} />
-                <Field label="Last Donation"    value={formatDate(alumni.lastDonationDate)} />
-                <Field label="Engagement Score" value={alumni.engagementScore} />
-                <Field label="Years on Roster"  value={alumni.yearsOnRoster} />
-              </Grid>
-            )}
+            <Grid>
+              <Field label="Donor"            value={alumni.isDonor ? 'Yes' : 'No'} />
+              <Field label="Total Donations"  value={alumni.totalDonations != null ? `$${alumni.totalDonations.toLocaleString()}` : null} />
+              <Field label="Last Donation"    value={formatDate(alumni.lastDonationDate)} />
+              <Field label="Engagement Score" value={alumni.engagementScore} />
+              <Field label="Years on Roster"  value={alumni.yearsOnRoster} />
+            </Grid>
           </Section>
 
           {/* Interactions */}
