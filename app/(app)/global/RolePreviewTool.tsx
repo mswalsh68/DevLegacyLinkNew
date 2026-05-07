@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { PROGRAM_ROLE_OPTIONS } from '@/lib/constants'
+import { theme } from '@/lib/theme'
 
 interface Team {
   id:   number
@@ -11,6 +12,14 @@ interface Team {
 
 interface Props {
   teams: Team[]
+}
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <label style={{ fontSize: 12, fontWeight: 600, color: theme.gray700, display: 'block', marginBottom: 6 }}>
+      {children}
+    </label>
+  )
 }
 
 export default function RolePreviewTool({ teams }: Props) {
@@ -39,7 +48,6 @@ export default function RolePreviewTool({ teams }: Props) {
         return
       }
 
-      // Navigate to dashboard as the preview role
       router.push('/dashboard')
       router.refresh()
     } catch {
@@ -51,99 +59,87 @@ export default function RolePreviewTool({ teams }: Props) {
 
   const canSubmit = teamId !== '' && programRoleId !== '' && !loading
 
+  const selectStyle: React.CSSProperties = {
+    width:           '100%',
+    padding:         '8px 12px',
+    borderRadius:    'var(--radius-sm)',
+    border:          `1.5px solid ${theme.gray200}`,
+    fontSize:        13,
+    color:           theme.gray900,
+    backgroundColor: 'var(--color-card-bg)',
+    outline:         'none',
+    boxSizing:       'border-box',
+  }
+
   return (
-    <div
-      style={{
-        backgroundColor: 'var(--color-surface)',
-        border:          '1px solid var(--color-border)',
-        borderRadius:    12,
-        padding:         24,
-        maxWidth:        480,
-      }}
-    >
-      {/* Team selector */}
-      <div style={{ marginBottom: 16 }}>
-        <label
-          htmlFor="preview-team"
-          style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6,
-                   color: 'var(--color-text-primary)' }}
-        >
-          Team
-        </label>
-        <select
-          id="preview-team"
-          value={teamId}
-          onChange={e => setTeamId(e.target.value === '' ? '' : Number(e.target.value))}
-          style={{
-            width:        '100%',
-            padding:      '8px 12px',
-            borderRadius: 8,
-            border:       '1px solid var(--color-border)',
-            fontSize:     14,
-            color:        'var(--color-text-primary)',
-            backgroundColor: 'var(--color-input-bg)',
-          }}
-        >
-          <option value="">Select a team…</option>
-          {teams.map(t => (
-            <option key={t.id} value={t.id}>{t.name}</option>
-          ))}
-        </select>
+    <div style={{
+      backgroundColor: 'var(--color-card-bg)',
+      border:          `1px solid var(--color-card-border)`,
+      borderRadius:    'var(--radius-lg)',
+      boxShadow:       'var(--shadow-sm)',
+      overflow:        'hidden',
+      maxWidth:        480,
+    }}>
+      <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* Team selector */}
+        <div>
+          <FieldLabel>Team</FieldLabel>
+          <select
+            value={teamId}
+            onChange={e => setTeamId(e.target.value === '' ? '' : Number(e.target.value))}
+            style={selectStyle}
+            onFocus={e => { e.target.style.borderColor = theme.primary }}
+            onBlur={e  => { e.target.style.borderColor = theme.gray200 }}
+          >
+            <option value="">Select a team…</option>
+            {teams.map(t => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Role selector */}
+        <div>
+          <FieldLabel>Program Role</FieldLabel>
+          <select
+            value={programRoleId}
+            onChange={e => setProgramRoleId(e.target.value === '' ? '' : Number(e.target.value))}
+            style={selectStyle}
+            onFocus={e => { e.target.style.borderColor = theme.primary }}
+            onBlur={e  => { e.target.style.borderColor = theme.gray200 }}
+          >
+            <option value="">Select a role…</option>
+            {PROGRAM_ROLE_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {error && (
+          <p style={{ margin: 0, fontSize: 13, color: theme.danger }}>{error}</p>
+        )}
+
+        <div>
+          <button
+            onClick={handleStart}
+            disabled={!canSubmit}
+            style={{
+              padding:         '9px 18px',
+              borderRadius:    'var(--radius-sm)',
+              border:          'none',
+              fontSize:        13,
+              fontWeight:      600,
+              cursor:          canSubmit ? 'pointer' : 'not-allowed',
+              backgroundColor: canSubmit ? theme.primary : theme.gray200,
+              color:           canSubmit ? '#fff' : theme.gray500,
+              opacity:         loading ? 0.55 : 1,
+              transition:      'opacity 0.15s',
+            }}
+          >
+            {loading ? 'Starting…' : 'Start Preview'}
+          </button>
+        </div>
       </div>
-
-      {/* Role selector */}
-      <div style={{ marginBottom: 24 }}>
-        <label
-          htmlFor="preview-role"
-          style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6,
-                   color: 'var(--color-text-primary)' }}
-        >
-          Program Role
-        </label>
-        <select
-          id="preview-role"
-          value={programRoleId}
-          onChange={e => setProgramRoleId(e.target.value === '' ? '' : Number(e.target.value))}
-          style={{
-            width:        '100%',
-            padding:      '8px 12px',
-            borderRadius: 8,
-            border:       '1px solid var(--color-border)',
-            fontSize:     14,
-            color:        'var(--color-text-primary)',
-            backgroundColor: 'var(--color-input-bg)',
-          }}
-        >
-          <option value="">Select a role…</option>
-          {PROGRAM_ROLE_OPTIONS.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-      </div>
-
-      {error && (
-        <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--color-error)' }}>
-          {error}
-        </p>
-      )}
-
-      <button
-        onClick={handleStart}
-        disabled={!canSubmit}
-        style={{
-          padding:         '9px 20px',
-          borderRadius:    8,
-          border:          'none',
-          fontSize:        14,
-          fontWeight:      600,
-          cursor:          canSubmit ? 'pointer' : 'not-allowed',
-          backgroundColor: canSubmit ? 'var(--color-primary)' : 'var(--color-border)',
-          color:           canSubmit ? '#fff' : 'var(--color-text-secondary)',
-          transition:      'background-color 150ms',
-        }}
-      >
-        {loading ? 'Starting…' : 'Start Preview'}
-      </button>
     </div>
   )
 }
