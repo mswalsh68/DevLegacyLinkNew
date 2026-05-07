@@ -2,7 +2,7 @@
 // Reads the httpOnly cookie set at login, verifies the JWT signature,
 // and returns the decoded session.
 
-import { jwtVerify } from 'jose'
+import { jwtVerify, SignJWT } from 'jose'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import type { UserSession } from '@/types'
@@ -86,4 +86,96 @@ export function hasAppAccess(session: UserSession, app: string): boolean {
 
 export function isGlobalAdmin(session: UserSession): boolean {
   return session.roleId === 1 || session.roleId === 2 || session.role === 'super_admin' || session.role === 'support_admin'
+}
+
+// ─── Preview token helpers ─────────────────────────────────────────────────────
+// Both helpers sign a 15-minute access token and return it as a string.
+// The caller is responsible for setting the cookie on the response.
+
+function getAccessKeyForSigning(): Uint8Array {
+  const secret = process.env.JWT_ACCESS_SECRET
+  if (!secret) throw new Error('[auth] JWT_ACCESS_SECRET env var is missing.')
+  return new TextEncoder().encode(secret)
+}
+
+/**
+ * Issues a new JWT with preview fields overlaid on top of the admin's real
+ * session claims. The admin's identity (userId, roleId, role) is preserved so
+ * isGlobalAdmin() still returns true on the global settings page.
+ */
+export async function signPreviewToken(params: {
+  session:          UserSession
+  previewProgramRoleId: number
+  previewTeamId:    number
+  previewTeamName:  string
+  previewAppDb:     string
+  previewTierId:    number
+  previewLevelId:   number
+  previewSessionId: number
+  previewApps:      string[]
+}): Promise<string> {
+  const {
+    session,
+    previewProgramRoleId, previewTeamId, previewTeamName,
+    previewAppDb, previewTierId, previewLevelId,
+    previewSessionId, previewApps,
+  } = params
+
+  const payload = {
+    sub:    String(session.userId),
+    userId: session.userId,
+    // Real identity — preserved so isGlobalAdmin() keeps working
+    roleId:         session.roleId,
+    role:           session.role,
+    username:       session.username,
+    email:          session.email,
+    accountClaimed: session.accountClaimed,
+    // Preview overrides (what the app renders)
+    appDb:         previewAppDb,
+    currentTeamId: previewTeamId,
+    tierId:        previewTierId,
+    levelId:       previewLevelId,
+    programRoleId: previewProgramRoleId,
+    apps:          previewApps,
+    // Preview metadata
+    previewActive:        true,
+    previewProgramRoleId,
+    previewTeamId,
+    previewTeamName,
+    previewAppDb,
+    previewSessionId,
+    // Stash the admin's original context for exit restoration
+    originalAppDb:  session.appDb   ?? null,
+    originalTeamId: session.currentTeamId ?? null,
+  }
+
+  return new SignJWT(payload)
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime(process.env.JWT_EXPIRES_IN ?? '15m')
+    .sign(getAccessKeyForSigning())
+}
+
+/**
+ * Issues a new JWT that strips all preview fields, restoring the admin's
+ * original team context. Called by POST /api/internal/preview/end.
+ */
+export async function signExitPreviewToken(session: UserSession): Promise<string> {
+  const payload = {
+    sub:            String(session.userId),
+    userId:         session.userId,
+    roleId:         session.roleId,
+    role:           session.role,
+    username:       session.username,
+    email:          session.email,
+    accountClaimed: session.accountClaimed,
+    appDb:          session.originalAppDb   ?? undefined,
+    currentTeamId:  session.originalTeamId  ?? undefined,
+  }
+
+  return new SignJWT(payload)
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime(process.env.JWT_EXPIRES_IN ?? '15m')
+    .sign(getAccessKeyForSigning())
 }
