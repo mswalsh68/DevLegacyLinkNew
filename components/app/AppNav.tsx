@@ -347,7 +347,6 @@ export function AppNav() {
                         }}
                       />
                       <span style={{ flex: 1 }}>{team.teamName}</span>
-                      <span style={{ fontSize: 11, color: '#9ca3af' }}>{team.sport}</span>
                       {active && (
                         <svg
                           width="14"
