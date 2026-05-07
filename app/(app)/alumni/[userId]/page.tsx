@@ -12,52 +12,51 @@ import { theme } from '@/lib/theme'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+interface SportRow {
+  sportName:     string | null
+  position:      string | null
+  classYear:     number | null
+  seasonsPlayed: number | null
+}
+
 interface AlumniRecord {
-  userId:              string
-  firstName:           string
-  lastName:            string
-  email:               string | null
-  graduationYear:      number | null
-  graduationSemester:  string | null
-  position:            string
-  recruitingClass:     number | null
-  personalEmail:       string | null
-  phone:               string | null
-  linkedInUrl:         string | null
-  twitterUrl:          string | null
-  currentEmployer:     string | null
-  currentJobTitle:     string | null
-  currentCity:         string | null
-  currentState:        string | null
-  isDonor:             boolean
-  lastDonationDate:    string | null
-  totalDonations:      number | null
-  engagementScore:     number | null
-  communicationConsent: boolean
-  yearsOnRoster:       number | null
-  notes:               string | null
-  status:              string
+  userId:           string
+  firstName:        string
+  lastName:         string
+  email:            string | null
+  graduationYear:   number | null
+  status:           string
+  isDonor:          boolean
+  lastDonationDate: string | null
+  totalDonations:   number | null
+  engagementScore:  number | null
+  yearsOnRoster:    number | null
+  notes:            string | null
+  personalEmail:    string | null
+  phone:            string | null
+  linkedInUrl:      string | null
+  twitterUrl:       string | null
+  sportRows:        SportRow[]
 }
 
 interface Interaction {
-  id:          number
-  channel:     string
-  summary:     string
-  outcome:     string | null
-  followUpAt:  string | null
-  loggedAt:    string
-  loggedBy:    string | null
+  id:         number
+  channel:    string
+  summary:    string
+  outcome:    string | null
+  followUpAt: string | null
+  loggedAt:   string
 }
 
 interface EditState {
-  phone:      string
+  phone:       string
   linkedInUrl: string
   twitterUrl:  string
 }
 
 function alumniToEditState(a: AlumniRecord): EditState {
   return {
-    phone:      a.phone      ?? '',
+    phone:       a.phone       ?? '',
     linkedInUrl: a.linkedInUrl ?? '',
     twitterUrl:  a.twitterUrl  ?? '',
   }
@@ -74,13 +73,17 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-function Field({ label, value }: { label: string; value: string | number | boolean | null | undefined }) {
+function Field({ label, value, href }: { label: string; value: string | number | boolean | null | undefined; href?: string }) {
   if (value === null || value === undefined || value === '') return null
   const display = typeof value === 'boolean' ? (value ? 'Yes' : 'No') : String(value)
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{ fontSize: 11, fontWeight: 600, color: theme.gray400, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 14, color: theme.gray900 }}>{display}</div>
+      {href ? (
+        <a href={href} target="_blank" rel="noopener noreferrer" style={{ fontSize: 14, color: 'var(--color-primary)', wordBreak: 'break-all' }}>{display}</a>
+      ) : (
+        <div style={{ fontSize: 14, color: theme.gray900 }}>{display}</div>
+      )}
     </div>
   )
 }
@@ -115,11 +118,6 @@ function EditField({
   )
 }
 
-
-function Grid({ children }: { children: React.ReactNode }) {
-  return <div className="field-grid-3">{children}</div>
-}
-
 function formatDate(iso: string | null): string | null {
   if (!iso) return null
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -133,14 +131,14 @@ export default function AlumniDetailPage() {
   const userId = params.userId as string
   const { user, isLoading } = useAuth()
 
-  const [alumni,        setAlumni]        = useState<AlumniRecord | null>(null)
-  const [interactions,  setInteractions]  = useState<Interaction[]>([])
-  const [loading,       setLoading]       = useState(true)
-  const [error,         setError]         = useState<string | null>(null)
-  const [isEditing,     setIsEditing]     = useState(false)
-  const [editState,     setEditState]     = useState<EditState | null>(null)
-  const [saving,        setSaving]        = useState(false)
-  const [saveError,     setSaveError]     = useState<string | null>(null)
+  const [alumni,       setAlumni]       = useState<AlumniRecord | null>(null)
+  const [interactions, setInteractions] = useState<Interaction[]>([])
+  const [loading,      setLoading]      = useState(true)
+  const [error,        setError]        = useState<string | null>(null)
+  const [isEditing,    setIsEditing]    = useState(false)
+  const [editState,    setEditState]    = useState<EditState | null>(null)
+  const [saving,       setSaving]       = useState(false)
+  const [saveError,    setSaveError]    = useState<string | null>(null)
 
   const canEdit = can(user, 'alumni:edit')
 
@@ -185,7 +183,7 @@ export default function AlumniDetailPage() {
         credentials: 'include',
         headers:     { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phone:      editState.phone      || null,
+          phone:       editState.phone       || null,
           linkedInUrl: editState.linkedInUrl || null,
           twitterUrl:  editState.twitterUrl  || null,
         }),
@@ -202,7 +200,6 @@ export default function AlumniDetailPage() {
       return
     }
     setSaving(false)
-    // Refresh alumni data
     const refresh = await fetch(`/api/alumni/${userId}`, { credentials: 'include' }).then((r) => r.json()) as { success: boolean; data: AlumniRecord; interactions: Interaction[] }
     if (refresh.success) {
       setAlumni(refresh.data)
@@ -216,11 +213,9 @@ export default function AlumniDetailPage() {
   if (!can(user, 'alumni:view')) {
     return <AccessDenied currentRole={roleLabel(user?.role)} requiredRole={requiredRoleLabel('alumni:view')} />
   }
-
   if (loading) {
     return <div style={{ textAlign: 'center', padding: 80, color: theme.gray400 }}>Loading...</div>
   }
-
   if (error || !alumni) {
     return (
       <div style={{ textAlign: 'center', padding: 80 }}>
@@ -230,21 +225,23 @@ export default function AlumniDetailPage() {
     )
   }
 
-  const displayName = `${alumni.firstName} ${alumni.lastName}`
-  const location    = [alumni.currentCity, alumni.currentState].filter(Boolean).join(', ')
-  const gradLabel   = [alumni.graduationSemester, alumni.graduationYear].filter(Boolean).join(' ')
+  const displayName  = `${alumni.firstName} ${alumni.lastName}`
+  const primarySport = alumni.sportRows?.[0]
+  const socialLinks  = [
+    { label: 'LinkedIn',    value: alumni.linkedInUrl },
+    { label: 'X / Twitter', value: alumni.twitterUrl  },
+  ].filter(l => l.value)
 
   return (
     <>
       {/* ── Header ── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-          {/* Class year bubble */}
           <div style={{
             width: 64, height: 64, borderRadius: 14,
-            backgroundColor: 'var(--color-accent-light)',
+            backgroundColor: 'var(--color-primary)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: 'var(--color-accent-dark)', fontSize: 18, fontWeight: 800, flexShrink: 0,
+            color: '#fff', fontSize: 18, fontWeight: 800, flexShrink: 0,
           }}>
             &apos;{String(alumni.graduationYear ?? '').slice(-2) || '—'}
           </div>
@@ -253,9 +250,12 @@ export default function AlumniDetailPage() {
               {displayName}
             </h1>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-primary)' }}>{alumni.position}</span>
-              {gradLabel && <span style={{ fontSize: 13, color: theme.gray500, textTransform: 'capitalize' }}>· {gradLabel}</span>}
-              {alumni.recruitingClass && <span style={{ fontSize: 13, color: theme.gray500 }}>· Class of {alumni.recruitingClass}</span>}
+              {primarySport?.position && (
+                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-primary)' }}>{primarySport.position}</span>
+              )}
+              {alumni.graduationYear && (
+                <span style={{ fontSize: 13, color: theme.gray500 }}>· Class of {alumni.graduationYear}</span>
+              )}
               <Badge label={alumni.status ?? 'active'} variant={alumniStatusBadge(alumni.status ?? 'active')} />
               {alumni.isDonor && <Badge label="Donor" variant="gold" />}
             </div>
@@ -283,94 +283,81 @@ export default function AlumniDetailPage() {
       )}
 
       <div className="detail-grid-2">
-        {/* Left column */}
-        <div>
-          <Section title="Career">
+        {/* ── Sport rows ── */}
+        {(alumni.sportRows ?? []).map((sport, i) => (
+          <Section key={i} title={sport.sportName ?? 'Sport'}>
+            <Field label="Class Year"     value={sport.classYear} />
+            <Field label="Position"       value={sport.position} />
+            <Field label="Seasons Played" value={sport.seasonsPlayed} />
+          </Section>
+        ))}
+
+        {/* ── Contact ── */}
+        <Section title="Contact">
+          {isEditing && editState ? (
+            <EditField label="Phone" name="phone" value={editState.phone} onChange={handleChange} type="tel" />
+          ) : (
+            <>
+              <Field label="Phone" value={alumni.phone} />
+              <Field label="Email" value={alumni.personalEmail ?? alumni.email} />
+            </>
+          )}
+        </Section>
+
+        {/* ── Social & Links ── */}
+        {(socialLinks.length > 0 || isEditing) && (
+          <Section title="Social &amp; Links">
             {isEditing && editState ? (
-              <Grid>
-                <EditField label="LinkedIn URL" name="linkedInUrl" value={editState.linkedInUrl} onChange={handleChange} />
-                <EditField label="Twitter URL"  name="twitterUrl"  value={editState.twitterUrl}  onChange={handleChange} />
-              </Grid>
-            ) : (
               <>
-                <Grid>
-                  <Field label="Employer"  value={alumni.currentEmployer} />
-                  <Field label="Job Title" value={alumni.currentJobTitle} />
-                  <Field label="Location"  value={location || null} />
-                </Grid>
-                {(alumni.linkedInUrl || alumni.twitterUrl) && (
-                  <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-                    {alumni.linkedInUrl && (
-                      <a href={alumni.linkedInUrl} target="_blank" rel="noopener noreferrer"
-                        style={{ fontSize: 13, color: 'var(--color-primary)', textDecoration: 'none', fontWeight: 600 }}>
-                        LinkedIn ↗
-                      </a>
-                    )}
-                    {alumni.twitterUrl && (
-                      <a href={alumni.twitterUrl} target="_blank" rel="noopener noreferrer"
-                        style={{ fontSize: 13, color: 'var(--color-primary)', textDecoration: 'none', fontWeight: 600 }}>
-                        Twitter / X ↗
-                      </a>
-                    )}
-                  </div>
-                )}
+                <EditField label="LinkedIn URL"    name="linkedInUrl" value={editState.linkedInUrl} onChange={handleChange} />
+                <EditField label="X / Twitter URL" name="twitterUrl"  value={editState.twitterUrl}  onChange={handleChange} />
               </>
-            )}
-          </Section>
-
-          <Section title="Contact">
-            {isEditing && editState ? (
-              <Grid>
-                <EditField label="Phone" name="phone" value={editState.phone} onChange={handleChange} type="tel" />
-              </Grid>
             ) : (
-              <Grid>
-                <Field label="Phone" value={alumni.phone} />
-                <Field label="Email" value={alumni.personalEmail ?? alumni.email} />
-              </Grid>
-            )}
-          </Section>
-
-          <Section title="Notes">
-            {alumni.notes ? (
-              <p style={{ fontSize: 14, color: theme.gray700, margin: 0, lineHeight: 1.6 }}>{alumni.notes}</p>
-            ) : (
-              <p style={{ fontSize: 13, color: theme.gray400, margin: 0 }}>No notes.</p>
-            )}
-          </Section>
-        </div>
-
-        {/* Right column */}
-        <div>
-          <Section title="Giving">
-            <Grid>
-              <Field label="Donor"            value={alumni.isDonor ? 'Yes' : 'No'} />
-              <Field label="Total Donations"  value={alumni.totalDonations != null ? `$${alumni.totalDonations.toLocaleString()}` : null} />
-              <Field label="Last Donation"    value={formatDate(alumni.lastDonationDate)} />
-              <Field label="Engagement Score" value={alumni.engagementScore} />
-              <Field label="Years on Roster"  value={alumni.yearsOnRoster} />
-            </Grid>
-          </Section>
-
-          {/* Interactions */}
-          {interactions.length > 0 && (
-            <Section title={`Interactions (${interactions.length})`}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {interactions.map((i) => (
-                  <div key={i.id} style={{ backgroundColor: theme.gray50, borderRadius: 8, padding: '10px 14px', border: `1px solid ${theme.gray200}` }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-primary)', textTransform: 'capitalize' }}>{i.channel}</span>
-                      <span style={{ fontSize: 11, color: theme.gray400 }}>{formatDate(i.loggedAt)}</span>
-                    </div>
-                    <p style={{ fontSize: 13, color: theme.gray700, margin: 0, lineHeight: 1.5 }}>{i.summary}</p>
-                    {i.outcome && <p style={{ fontSize: 12, color: theme.gray500, margin: '4px 0 0' }}>Outcome: {i.outcome}</p>}
-                    {i.followUpAt && <p style={{ fontSize: 12, color: theme.gray500, margin: '4px 0 0' }}>Follow up: {formatDate(i.followUpAt)}</p>}
-                  </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {socialLinks.map((l, i) => (
+                  <Field key={i} label={l.label} value={l.value} href={l.value ?? undefined} />
                 ))}
               </div>
-            </Section>
+            )}
+          </Section>
+        )}
+
+        {/* ── Giving ── */}
+        <Section title="Giving">
+          <Field label="Donor"            value={alumni.isDonor ? 'Yes' : 'No'} />
+          <Field label="Total Donations"  value={alumni.totalDonations != null ? `$${alumni.totalDonations.toLocaleString()}` : null} />
+          <Field label="Last Donation"    value={formatDate(alumni.lastDonationDate)} />
+          <Field label="Engagement Score" value={alumni.engagementScore} />
+          <Field label="Years on Roster"  value={alumni.yearsOnRoster} />
+        </Section>
+
+        {/* ── Notes ── */}
+        <Section title="Notes">
+          {alumni.notes ? (
+            <p style={{ fontSize: 14, color: theme.gray700, margin: 0, lineHeight: 1.6 }}>{alumni.notes}</p>
+          ) : (
+            <p style={{ fontSize: 13, color: theme.gray400, margin: 0 }}>No notes.</p>
           )}
-        </div>
+        </Section>
+
+        {/* ── Interactions ── */}
+        {interactions.length > 0 && (
+          <Section title={`Interactions (${interactions.length})`}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {interactions.map((i) => (
+                <div key={i.id} style={{ backgroundColor: theme.gray50, borderRadius: 8, padding: '10px 14px', border: `1px solid ${theme.gray200}` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-primary)', textTransform: 'capitalize' }}>{i.channel}</span>
+                    <span style={{ fontSize: 11, color: theme.gray400 }}>{formatDate(i.loggedAt)}</span>
+                  </div>
+                  <p style={{ fontSize: 13, color: theme.gray700, margin: 0, lineHeight: 1.5 }}>{i.summary}</p>
+                  {i.outcome   && <p style={{ fontSize: 12, color: theme.gray500, margin: '4px 0 0' }}>Outcome: {i.outcome}</p>}
+                  {i.followUpAt && <p style={{ fontSize: 12, color: theme.gray500, margin: '4px 0 0' }}>Follow up: {formatDate(i.followUpAt)}</p>}
+                </div>
+              ))}
+            </div>
+          </Section>
+        )}
       </div>
     </>
   )
