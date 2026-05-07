@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { theme } from '@/lib/theme'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -24,56 +25,118 @@ interface Props {
   levels: { id: number; name: string; displayName: string }[]
 }
 
-// ─── Inline style helpers ─────────────────────────────────────────────────────
+// ─── Shared sub-components ────────────────────────────────────────────────────
 
-const card: React.CSSProperties = {
-  backgroundColor: 'var(--color-surface)',
-  border:          '1px solid var(--color-border)',
-  borderRadius:    12,
-  padding:         24,
-  marginBottom:    16,
-}
-
-const fieldLabel: React.CSSProperties = {
-  display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6,
-  color: 'var(--color-text-primary)',
-}
-
-const input: React.CSSProperties = {
-  width: '100%', boxSizing: 'border-box', padding: '8px 12px',
-  border: '1px solid var(--color-border)', borderRadius: 8,
-  fontSize: 14, color: 'var(--color-text-primary)', backgroundColor: 'var(--color-input-bg)',
-  outline: 'none',
-}
-
-const select: React.CSSProperties = { ...input }
-
-function Btn({ label: lbl, onClick, variant = 'primary', disabled, small }: {
-  label: string; onClick: () => void; variant?: 'primary' | 'danger' | 'ghost'
-  disabled?: boolean; small?: boolean
-}) {
-  const bg    = variant === 'primary' ? 'var(--color-primary)'
-              : variant === 'danger'  ? 'var(--color-error)'
-              : 'transparent'
-  const color = variant === 'ghost' ? 'var(--color-text-secondary)' : '#fff'
-  const border = variant === 'ghost' ? '1px solid var(--color-border)' : 'none'
+function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <button
-      onClick={onClick}
+    <label style={{ fontSize: 12, fontWeight: 600, color: theme.gray700, display: 'block', marginBottom: 6 }}>
+      {children}
+    </label>
+  )
+}
+
+function TextInput({ value, onChange, placeholder, disabled }: {
+  value: string; onChange: (v: string) => void
+  placeholder?: string; disabled?: boolean
+}) {
+  return (
+    <input
+      type="text"
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      placeholder={placeholder}
       disabled={disabled}
       style={{
-        padding:         small ? '6px 12px' : '9px 18px',
-        borderRadius:    8,
-        border,
-        backgroundColor: bg,
-        color,
-        fontSize:        small ? 12 : 13,
-        fontWeight:      600,
-        cursor:          disabled ? 'not-allowed' : 'pointer',
-        opacity:         disabled ? 0.5 : 1,
-        transition:      'opacity 0.15s',
+        border:          `1.5px solid ${theme.gray200}`,
+        borderRadius:    'var(--radius-sm)',
+        padding:         '8px 12px',
+        fontSize:        13,
+        color:           theme.gray900,
+        backgroundColor: 'var(--color-card-bg)',
+        outline:         'none',
+        width:           '100%',
+        boxSizing:       'border-box',
+        opacity:         disabled ? 0.6 : 1,
       }}
-    >{lbl}</button>
+      onFocus={e  => { if (!disabled) e.target.style.borderColor = theme.primary }}
+      onBlur={e   => { e.target.style.borderColor = theme.gray200 }}
+    />
+  )
+}
+
+function SelectInput({ value, onChange, options }: {
+  value: number; onChange: (v: number) => void
+  options: { id: number; displayName: string }[]
+}) {
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(Number(e.target.value))}
+      style={{
+        border:          `1.5px solid ${theme.gray200}`,
+        borderRadius:    'var(--radius-sm)',
+        padding:         '8px 12px',
+        fontSize:        13,
+        color:           theme.gray900,
+        backgroundColor: 'var(--color-card-bg)',
+        outline:         'none',
+        width:           '100%',
+        boxSizing:       'border-box',
+      }}
+      onFocus={e => { e.target.style.borderColor = theme.primary }}
+      onBlur={e  => { e.target.style.borderColor = theme.gray200 }}
+    >
+      {options.map(o => <option key={o.id} value={o.id}>{o.displayName}</option>)}
+    </select>
+  )
+}
+
+function Btn({ label, onClick, disabled, variant = 'primary', small }: {
+  label: string; onClick: () => void
+  variant?: 'primary' | 'danger' | 'ghost'
+  disabled?: boolean; small?: boolean
+}) {
+  const styles: React.CSSProperties = {
+    padding:         small ? '6px 12px' : '9px 18px',
+    borderRadius:    'var(--radius-sm)',
+    fontSize:        small ? 12 : 13,
+    fontWeight:      600,
+    cursor:          disabled ? 'not-allowed' : 'pointer',
+    opacity:         disabled ? 0.55 : 1,
+    transition:      'opacity 0.15s',
+    ...(variant === 'primary' && {
+      border:          'none',
+      backgroundColor: theme.primary,
+      color:           '#fff',
+    }),
+    ...(variant === 'danger' && {
+      border:          `1.5px solid ${theme.danger}`,
+      backgroundColor: 'transparent',
+      color:           theme.danger,
+    }),
+    ...(variant === 'ghost' && {
+      border:          `1.5px solid ${theme.gray200}`,
+      backgroundColor: 'transparent',
+      color:           theme.gray600,
+    }),
+  }
+  return <button onClick={onClick} disabled={disabled} style={styles}>{label}</button>
+}
+
+// ─── Card wrapper ─────────────────────────────────────────────────────────────
+
+function Card({ children, highlighted }: { children: React.ReactNode; highlighted?: boolean }) {
+  return (
+    <div style={{
+      backgroundColor: 'var(--color-card-bg)',
+      border:          highlighted ? `1.5px solid ${theme.primary}` : `1px solid var(--color-card-border)`,
+      borderRadius:    'var(--radius-lg)',
+      boxShadow:       'var(--shadow-sm)',
+      overflow:        'hidden',
+      marginBottom:    12,
+    }}>
+      {children}
+    </div>
   )
 }
 
@@ -115,51 +178,59 @@ function EditDrawer({ team, tiers, levels, onClose, onSaved }: {
   }
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 50,
-      display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end',
-      backgroundColor: 'rgba(0,0,0,0.4)',
-    }} onClick={onClose}>
-      <div style={{
-        width: 420, height: '100%', backgroundColor: 'var(--color-surface)',
-        borderLeft: '1px solid var(--color-border)',
-        padding: 32, overflowY: 'auto',
-        display: 'flex', flexDirection: 'column', gap: 20,
-      }} onClick={e => e.stopPropagation()}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--color-text-primary)' }}>Edit Team</h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: 'var(--color-text-secondary)' }}>×</button>
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 50,
+        display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end',
+        backgroundColor: 'rgba(0,0,0,0.35)',
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          width: 440, height: '100%',
+          backgroundColor: 'var(--color-card-bg)',
+          borderLeft: `1px solid var(--color-card-border)`,
+          boxShadow: 'var(--shadow-lg)',
+          padding: 32, overflowY: 'auto',
+          display: 'flex', flexDirection: 'column', gap: 20,
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 20, borderBottom: `1px solid var(--color-card-border)` }}>
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: theme.gray900 }}>Edit Team</h2>
+          <button
+            onClick={onClose}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: theme.gray400, lineHeight: 1 }}
+          >×</button>
         </div>
 
         <div>
-          <label style={fieldLabel}>Team Name</label>
-          <input style={input} value={name} onChange={e => setName(e.target.value)} />
+          <FieldLabel>Team Name</FieldLabel>
+          <TextInput value={name} onChange={setName} />
         </div>
 
         <div>
-          <label style={fieldLabel}>App Database</label>
-          <input style={input} value={appDb} onChange={e => setAppDb(e.target.value)} placeholder="DevLegacyLinkApp_TeamName" />
-          <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', margin: '4px 0 0' }}>Name of the tenant App DB on the SQL server.</p>
+          <FieldLabel>App Database</FieldLabel>
+          <TextInput value={appDb} onChange={setAppDb} placeholder="DevLegacyLinkApp_TeamName" />
+          <p style={{ fontSize: 12, color: theme.gray500, margin: '4px 0 0' }}>Name of the tenant App DB on the SQL server.</p>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <div>
-            <label style={fieldLabel}>Tier</label>
-            <select style={select} value={tierId} onChange={e => setTierId(Number(e.target.value))}>
-              {tiers.map(t => <option key={t.id} value={t.id}>{t.displayName}</option>)}
-            </select>
+            <FieldLabel>Tier</FieldLabel>
+            <SelectInput value={tierId} onChange={setTierId} options={tiers} />
           </div>
           <div>
-            <label style={fieldLabel}>Level</label>
-            <select style={select} value={levelId} onChange={e => setLevelId(Number(e.target.value))}>
-              {levels.map(l => <option key={l.id} value={l.id}>{l.displayName}</option>)}
-            </select>
+            <FieldLabel>Level</FieldLabel>
+            <SelectInput value={levelId} onChange={setLevelId} options={levels} />
           </div>
         </div>
 
-        {error && <p style={{ fontSize: 13, color: 'var(--color-error)', margin: 0 }}>{error}</p>}
+        {error && <p style={{ fontSize: 13, color: theme.danger, margin: 0 }}>{error}</p>}
 
-        <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+        <div style={{ display: 'flex', gap: 10, paddingTop: 4 }}>
           <Btn label={saving ? 'Saving…' : 'Save changes'} onClick={handleSave} disabled={saving} />
           <Btn label="Cancel" onClick={onClose} variant="ghost" />
         </div>
@@ -178,8 +249,8 @@ function NewTeamForm({ tiers, levels, onCreated, onCancel }: {
 }) {
   const [name,    setName]    = useState('')
   const [appDb,   setAppDb]   = useState('')
-  const [tierId,  setTierId]  = useState(1)
-  const [levelId, setLevelId] = useState(1)
+  const [tierId,  setTierId]  = useState(tiers[0]?.id ?? 1)
+  const [levelId, setLevelId] = useState(levels[0]?.id ?? 1)
   const [saving,  setSaving]  = useState(false)
   const [error,   setError]   = useState('')
 
@@ -211,50 +282,107 @@ function NewTeamForm({ tiers, levels, onCreated, onCancel }: {
   }
 
   return (
-    <div style={{ ...card, border: '1px solid var(--color-primary)', marginBottom: 16 }}>
-      <h3 style={{ margin: '0 0 20px', fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)' }}>New Client</h3>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 560 }}>
+    <Card highlighted>
+      {/* Card header */}
+      <div style={{ padding: '16px 24px', borderBottom: `1px solid var(--color-card-border)` }}>
+        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: theme.gray900 }}>New Client</h3>
+        <p style={{ margin: '2px 0 0', fontSize: 13, color: theme.gray500 }}>Provision a new team on the platform.</p>
+      </div>
+
+      {/* Card body */}
+      <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <div>
-            <label style={fieldLabel}>Team / Program Name</label>
-            <input style={input} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. USF Bulls" />
+            <FieldLabel>Team / Program Name</FieldLabel>
+            <TextInput value={name} onChange={setName} placeholder="e.g. USF Bulls" />
           </div>
           <div>
-            <label style={fieldLabel}>App Database Name</label>
-            <input style={input} value={appDb} onChange={e => setAppDb(e.target.value)} placeholder="DevLegacyLinkApp_USF" />
+            <FieldLabel>App Database Name</FieldLabel>
+            <TextInput value={appDb} onChange={setAppDb} placeholder="DevLegacyLinkApp_USF" />
           </div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <div>
-            <label style={fieldLabel}>Tier</label>
-            <select style={select} value={tierId} onChange={e => setTierId(Number(e.target.value))}>
-              {tiers.map(t => <option key={t.id} value={t.id}>{t.displayName}</option>)}
-            </select>
+            <FieldLabel>Tier</FieldLabel>
+            <SelectInput value={tierId} onChange={setTierId} options={tiers} />
           </div>
           <div>
-            <label style={fieldLabel}>Level</label>
-            <select style={select} value={levelId} onChange={e => setLevelId(Number(e.target.value))}>
-              {levels.map(l => <option key={l.id} value={l.id}>{l.displayName}</option>)}
-            </select>
+            <FieldLabel>Level</FieldLabel>
+            <SelectInput value={levelId} onChange={setLevelId} options={levels} />
           </div>
         </div>
+
+        {error && <p style={{ fontSize: 13, color: theme.danger, margin: 0 }}>{error}</p>}
+
+        <div style={{ display: 'flex', gap: 10 }}>
+          <Btn label={saving ? 'Creating…' : 'Create client'} onClick={handleCreate} disabled={saving} />
+          <Btn label="Cancel" onClick={onCancel} variant="ghost" />
+        </div>
       </div>
-      {error && <p style={{ fontSize: 13, color: 'var(--color-error)', margin: '12px 0 0' }}>{error}</p>}
-      <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-        <Btn label={saving ? 'Creating…' : 'Create client'} onClick={handleCreate} disabled={saving} />
-        <Btn label="Cancel" onClick={onCancel} variant="ghost" />
+    </Card>
+  )
+}
+
+// ─── Team Row ─────────────────────────────────────────────────────────────────
+
+function TeamRow({ team, toggling, onEdit, onToggle }: {
+  team:      Team
+  toggling:  boolean
+  onEdit:    () => void
+  onToggle:  () => void
+}) {
+  return (
+    <Card>
+      <div style={{
+        padding:        '16px 24px',
+        display:        'flex',
+        alignItems:     'center',
+        justifyContent: 'space-between',
+        gap:            16,
+        opacity:        team.isActive ? 1 : 0.55,
+      }}>
+        {/* Info */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: theme.gray900 }}>{team.name}</span>
+            <span style={{
+              fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--radius-full)',
+              backgroundColor: team.isActive ? 'var(--color-success-light)' : 'var(--color-gray-100)',
+              color:           team.isActive ? 'var(--color-success)'       : theme.gray500,
+            }}>
+              {team.isActive ? 'Active' : 'Inactive'}
+            </span>
+          </div>
+          <div style={{ fontSize: 12, color: theme.gray500, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+            <span>DB: <strong style={{ color: theme.gray700 }}>{team.appDb}</strong></span>
+            <span>Tier: <strong style={{ color: theme.gray700 }}>{team.tierDisplayName}</strong></span>
+            <span>Level: <strong style={{ color: theme.gray700 }}>{team.levelDisplayName}</strong></span>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          <Btn label="Edit" onClick={onEdit} variant="ghost" small />
+          <Btn
+            label={toggling ? '…' : team.isActive ? 'Deactivate' : 'Activate'}
+            onClick={onToggle}
+            variant={team.isActive ? 'danger' : 'primary'}
+            disabled={toggling}
+            small
+          />
+        </div>
       </div>
-    </div>
+    </Card>
   )
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function TeamManagementTool({ teams: initialTeams, tiers, levels }: Props) {
-  const [teams,     setTeams]     = useState<Team[]>(initialTeams)
-  const [editing,   setEditing]   = useState<Team | null>(null)
-  const [showNew,   setShowNew]   = useState(false)
-  const [toggling,  setToggling]  = useState<number | null>(null)
+  const [teams,    setTeams]    = useState<Team[]>(initialTeams)
+  const [editing,  setEditing]  = useState<Team | null>(null)
+  const [showNew,  setShowNew]  = useState(false)
+  const [toggling, setToggling] = useState<number | null>(null)
 
   const handleToggleActive = async (team: Team) => {
     setToggling(team.id)
@@ -289,9 +417,9 @@ export default function TeamManagementTool({ teams: initialTeams, tiers, levels 
     <>
       {/* Header row */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-secondary)' }}>
+        <span style={{ fontSize: 13, color: theme.gray500 }}>
           {active.length} active · {inactive.length} inactive
-        </p>
+        </span>
         {!showNew && (
           <Btn label="+ New Client" onClick={() => setShowNew(true)} />
         )}
@@ -309,45 +437,17 @@ export default function TeamManagementTool({ teams: initialTeams, tiers, levels 
 
       {/* Team list */}
       {teams.length === 0 && (
-        <p style={{ fontSize: 14, color: 'var(--color-text-secondary)', textAlign: 'center', padding: '40px 0' }}>No teams yet.</p>
+        <p style={{ fontSize: 14, color: theme.gray500, textAlign: 'center', padding: '40px 0' }}>No teams yet.</p>
       )}
 
       {[...active, ...inactive].map(team => (
-        <div key={team.id} style={{
-          ...card,
-          marginBottom: 8,
-          opacity: team.isActive ? 1 : 0.6,
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
-        }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-              <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)' }}>{team.name}</span>
-              <span style={{
-                fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999,
-                backgroundColor: team.isActive ? '#dcfce7' : 'var(--color-border)',
-                color: team.isActive ? '#166534' : 'var(--color-text-secondary)',
-              }}>
-                {team.isActive ? 'Active' : 'Inactive'}
-              </span>
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-              <span>DB: <strong style={{ color: 'var(--color-text-primary)' }}>{team.appDb}</strong></span>
-              <span>Tier: <strong style={{ color: 'var(--color-text-primary)' }}>{team.tierDisplayName}</strong></span>
-              <span>Level: <strong style={{ color: 'var(--color-text-primary)' }}>{team.levelDisplayName}</strong></span>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-            <Btn label="Edit" onClick={() => setEditing(team)} variant="ghost" small />
-            <Btn
-              label={toggling === team.id ? '…' : team.isActive ? 'Deactivate' : 'Activate'}
-              onClick={() => handleToggleActive(team)}
-              variant={team.isActive ? 'danger' : 'primary'}
-              disabled={toggling === team.id}
-              small
-            />
-          </div>
-        </div>
+        <TeamRow
+          key={team.id}
+          team={team}
+          toggling={toggling === team.id}
+          onEdit={() => setEditing(team)}
+          onToggle={() => handleToggleActive(team)}
+        />
       ))}
 
       {/* Edit drawer */}
