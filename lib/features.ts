@@ -32,8 +32,9 @@ const FEATURE_MATRIX: Record<string, Tier[]> = {
 }
 
 export function normalizeTier(raw: string | undefined | null): Tier {
-  if (raw === 'enterprise' || raw === 'elite') return 'elite'
-  if (raw === 'pro')                           return 'pro'
+  const t = raw?.toLowerCase()
+  if (t === 'enterprise' || t === 'elite') return 'elite'
+  if (t === 'pro')                         return 'pro'
   return 'starter'
 }
 
