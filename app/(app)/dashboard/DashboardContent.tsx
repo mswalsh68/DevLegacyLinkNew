@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useTeamConfig } from '@/providers/ThemeProvider'
 import { useAuth } from '@/providers/AuthProvider'
 import { can } from '@/lib/permissions'
-import { hasFeature, normalizeTier } from '@/lib/features'
+import { hasFeature, normalizeTierById } from '@/lib/features'
 import { theme } from '@/lib/theme'
 import { AddMembersWizard } from '@/components/app/AddMembersWizard'
 import AllEngagementTab from './AllEngagementTab'
@@ -204,7 +204,7 @@ export default function DashboardContent() {
   const searchParams = useSearchParams()
   const { user, isLoading } = useAuth()
   const config       = useTeamConfig()
-  const tier         = normalizeTier(config.subscriptionTier ?? 'starter')
+  const tier         = normalizeTierById(config.tierId)
 
   const [wizardOpen,            setWizardOpen]            = useState(false)
   const [sports,                setSports]                = useState<SportOption[]>([])
