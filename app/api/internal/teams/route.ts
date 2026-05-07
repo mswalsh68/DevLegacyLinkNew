@@ -30,9 +30,13 @@ const createSchema = z.object({
   appDb:        z.string().min(1).max(150),
   tierId:       z.number().int().min(1).default(1),
   levelId:      z.number().int().min(1).default(1),
-  logoUrl:      z.string().url().max(500).optional().or(z.literal('')),
-  colorPrimary: hexColor,
-  colorAccent:  hexColor,
+  logoUrl:            z.string().url().max(500).optional().or(z.literal('')),
+  colorPrimary:       hexColor,
+  colorPrimaryDark:   hexColor,
+  colorPrimaryLight:  hexColor,
+  colorAccent:        hexColor,
+  colorAccentDark:    hexColor,
+  colorAccentLight:   hexColor,
 })
 
 export async function POST(req: NextRequest) {
@@ -64,13 +68,17 @@ export async function POST(req: NextRequest) {
     if (errorCode) return NextResponse.json({ success: false, error: errorCode }, { status: 400 })
 
     // Seed initial branding if provided
-    const { logoUrl, colorPrimary, colorAccent } = p.data
+    const { logoUrl, colorPrimary, colorPrimaryDark, colorPrimaryLight, colorAccent, colorAccentDark, colorAccentLight } = p.data
     if (logoUrl || colorPrimary || colorAccent) {
       await sp_UpdateTeamConfig({
-        teamId:       teamId!,
-        logoUrl:      logoUrl   || null,
-        colorPrimary: colorPrimary || null,
-        colorAccent:  colorAccent  || null,
+        teamId:            teamId!,
+        logoUrl:           logoUrl           || null,
+        colorPrimary:      colorPrimary      || null,
+        colorPrimaryDark:  colorPrimaryDark  || null,
+        colorPrimaryLight: colorPrimaryLight || null,
+        colorAccent:       colorAccent       || null,
+        colorAccentDark:   colorAccentDark   || null,
+        colorAccentLight:  colorAccentLight  || null,
       })
     }
 

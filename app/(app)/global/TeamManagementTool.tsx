@@ -286,9 +286,13 @@ function NewTeamForm({ tiers, levels, onCreated, onCancel }: {
   const [appDb,        setAppDb]        = useState('')
   const [tierId,       setTierId]       = useState(tiers[0]?.id ?? 1)
   const [levelId,      setLevelId]      = useState(levels[0]?.id ?? 1)
-  const [logoUrl,      setLogoUrl]      = useState('')
-  const [colorPrimary, setColorPrimary] = useState('#000000')
-  const [colorAccent,  setColorAccent]  = useState('#000000')
+  const [logoUrl,            setLogoUrl]            = useState('')
+  const [colorPrimary,      setColorPrimary]      = useState('#000000')
+  const [colorPrimaryDark,  setColorPrimaryDark]  = useState('#000000')
+  const [colorPrimaryLight, setColorPrimaryLight] = useState('#000000')
+  const [colorAccent,       setColorAccent]       = useState('#000000')
+  const [colorAccentDark,   setColorAccentDark]   = useState('#000000')
+  const [colorAccentLight,  setColorAccentLight]  = useState('#000000')
   const [saving,       setSaving]       = useState(false)
   const [error,        setError]        = useState('')
 
@@ -307,9 +311,13 @@ function NewTeamForm({ tiers, levels, onCreated, onCancel }: {
         credentials: 'include',
         body: JSON.stringify({
           name: name.trim(), abbr: abbr.trim(), appDb: appDb.trim(), tierId, levelId,
-          ...(logoUrl.trim()              && { logoUrl:      logoUrl.trim() }),
-          ...(HEX_RE.test(colorPrimary)   && { colorPrimary }),
-          ...(HEX_RE.test(colorAccent)    && { colorAccent }),
+          ...(logoUrl.trim()                   && { logoUrl:            logoUrl.trim() }),
+          ...(HEX_RE.test(colorPrimary)        && { colorPrimary }),
+          ...(HEX_RE.test(colorPrimaryDark)    && { colorPrimaryDark }),
+          ...(HEX_RE.test(colorPrimaryLight)   && { colorPrimaryLight }),
+          ...(HEX_RE.test(colorAccent)         && { colorAccent }),
+          ...(HEX_RE.test(colorAccentDark)     && { colorAccentDark }),
+          ...(HEX_RE.test(colorAccentLight)    && { colorAccentLight }),
         }),
       })
       const json = await res.json()
@@ -378,9 +386,15 @@ function NewTeamForm({ tiers, levels, onCreated, onCancel }: {
               <TextInput value={logoUrl} onChange={setLogoUrl} placeholder="https://example.com/logo.png" />
               <p style={{ fontSize: 11, color: theme.gray400, margin: '3px 0 0' }}>Leave blank to show the abbreviation badge instead.</p>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <ColorPicker label="Primary Color" value={colorPrimary} onChange={setColorPrimary} />
-              <ColorPicker label="Accent Color"  value={colorAccent}  onChange={setColorAccent}  />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+              <ColorPicker label="Primary"       value={colorPrimary}      onChange={setColorPrimary}      />
+              <ColorPicker label="Primary Dark"  value={colorPrimaryDark}  onChange={setColorPrimaryDark}  />
+              <ColorPicker label="Primary Light" value={colorPrimaryLight} onChange={setColorPrimaryLight} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+              <ColorPicker label="Accent"        value={colorAccent}       onChange={setColorAccent}       />
+              <ColorPicker label="Accent Dark"   value={colorAccentDark}   onChange={setColorAccentDark}   />
+              <ColorPicker label="Accent Light"  value={colorAccentLight}  onChange={setColorAccentLight}  />
             </div>
           </div>
         </div>
