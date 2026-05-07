@@ -294,11 +294,11 @@ function NewTeamForm({ tiers, levels, onCreated, onCancel }: {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <div>
             <FieldLabel>Team / Program Name</FieldLabel>
-            <TextInput value={name} onChange={setName} placeholder="e.g. USF Bulls" />
+            <TextInput value={name} onChange={setName} placeholder="e.g. Legacy Link" />
           </div>
           <div>
             <FieldLabel>App Database Name</FieldLabel>
-            <TextInput value={appDb} onChange={setAppDb} placeholder="DevLegacyLinkApp_USF" />
+            <TextInput value={appDb} onChange={setAppDb} placeholder="LegacyLinkApp" />
           </div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
