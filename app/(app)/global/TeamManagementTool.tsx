@@ -25,6 +25,10 @@ interface Props {
   levels: { id: number; name: string; displayName: string }[]
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const HEX_RE = /^#[0-9a-fA-F]{6}$/
+
 // ─── Shared sub-components ────────────────────────────────────────────────────
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
@@ -88,6 +92,36 @@ function SelectInput({ value, onChange, options }: {
     >
       {options.map(o => <option key={o.id} value={o.id}>{o.displayName}</option>)}
     </select>
+  )
+}
+
+function ColorPicker({ label: lbl, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <FieldLabel>{lbl}</FieldLabel>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <input
+          type="color"
+          value={HEX_RE.test(value) ? value : '#000000'}
+          onChange={e => onChange(e.target.value)}
+          style={{ width: 40, height: 36, border: `1px solid ${theme.gray200}`, borderRadius: 'var(--radius-sm)', cursor: 'pointer', padding: 2, flexShrink: 0 }}
+        />
+        <input
+          type="text"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder="#000000"
+          maxLength={7}
+          style={{
+            flex: 1, border: `1.5px solid ${theme.gray200}`, borderRadius: 'var(--radius-sm)',
+            padding: '8px 12px', fontSize: 13, color: theme.gray900,
+            backgroundColor: 'var(--color-card-bg)', outline: 'none', fontFamily: 'monospace',
+          }}
+          onFocus={e  => { e.target.style.borderColor = theme.primary }}
+          onBlur={e   => { e.target.style.borderColor = theme.gray200 }}
+        />
+      </div>
+    </div>
   )
 }
 
@@ -247,13 +281,16 @@ function NewTeamForm({ tiers, levels, onCreated, onCancel }: {
   onCreated: (team: Team) => void
   onCancel:  () => void
 }) {
-  const [name,    setName]    = useState('')
-  const [abbr,    setAbbr]    = useState('')
-  const [appDb,   setAppDb]   = useState('')
-  const [tierId,  setTierId]  = useState(tiers[0]?.id ?? 1)
-  const [levelId, setLevelId] = useState(levels[0]?.id ?? 1)
-  const [saving,  setSaving]  = useState(false)
-  const [error,   setError]   = useState('')
+  const [name,         setName]         = useState('')
+  const [abbr,         setAbbr]         = useState('')
+  const [appDb,        setAppDb]        = useState('')
+  const [tierId,       setTierId]       = useState(tiers[0]?.id ?? 1)
+  const [levelId,      setLevelId]      = useState(levels[0]?.id ?? 1)
+  const [logoUrl,      setLogoUrl]      = useState('')
+  const [colorPrimary, setColorPrimary] = useState('#000000')
+  const [colorAccent,  setColorAccent]  = useState('#000000')
+  const [saving,       setSaving]       = useState(false)
+  const [error,        setError]        = useState('')
 
   const handleNameChange = (v: string) => {
     setName(v)
@@ -268,7 +305,12 @@ function NewTeamForm({ tiers, levels, onCreated, onCancel }: {
       const res = await fetch('/api/internal/teams', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ name: name.trim(), abbr: abbr.trim(), appDb: appDb.trim(), tierId, levelId }),
+        body: JSON.stringify({
+          name: name.trim(), abbr: abbr.trim(), appDb: appDb.trim(), tierId, levelId,
+          ...(logoUrl.trim()              && { logoUrl:      logoUrl.trim() }),
+          ...(HEX_RE.test(colorPrimary)   && { colorPrimary }),
+          ...(HEX_RE.test(colorAccent)    && { colorAccent }),
+        }),
       })
       const json = await res.json()
       if (!res.ok) { setError(json.error ?? 'Failed to create'); return }
@@ -319,6 +361,27 @@ function NewTeamForm({ tiers, levels, onCreated, onCancel }: {
           <div>
             <FieldLabel>Level</FieldLabel>
             <SelectInput value={levelId} onChange={setLevelId} options={levels} />
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div style={{ borderTop: `1px solid var(--color-card-border)`, marginTop: 4 }} />
+
+        {/* Branding */}
+        <div>
+          <p style={{ margin: '0 0 12px', fontSize: 12, fontWeight: 700, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+            Branding
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div>
+              <FieldLabel>Logo URL</FieldLabel>
+              <TextInput value={logoUrl} onChange={setLogoUrl} placeholder="https://example.com/logo.png" />
+              <p style={{ fontSize: 11, color: theme.gray400, margin: '3px 0 0' }}>Leave blank to show the abbreviation badge instead.</p>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <ColorPicker label="Primary Color" value={colorPrimary} onChange={setColorPrimary} />
+              <ColorPicker label="Accent Color"  value={colorAccent}  onChange={setColorAccent}  />
+            </div>
           </div>
         </div>
 

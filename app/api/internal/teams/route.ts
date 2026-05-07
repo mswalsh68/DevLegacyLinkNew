@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getServerSession, isGlobalAdmin } from '@/lib/auth'
-import { sp_GetTeams, sp_CreateTeam } from '@/lib/db/procedures'
+import { sp_GetTeams, sp_CreateTeam, sp_UpdateTeamConfig } from '@/lib/db/procedures'
 
 // ─── GET /api/internal/teams ──────────────────────────────────────────────────
 
@@ -22,12 +22,17 @@ export async function GET() {
 
 // ─── POST /api/internal/teams ─────────────────────────────────────────────────
 
+const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/).optional()
+
 const createSchema = z.object({
-  name:    z.string().min(1).max(100),
-  abbr:    z.string().min(1).max(20),
-  appDb:   z.string().min(1).max(150),
-  tierId:  z.number().int().min(1).default(1),
-  levelId: z.number().int().min(1).default(1),
+  name:         z.string().min(1).max(100),
+  abbr:         z.string().min(1).max(20),
+  appDb:        z.string().min(1).max(150),
+  tierId:       z.number().int().min(1).default(1),
+  levelId:      z.number().int().min(1).default(1),
+  logoUrl:      z.string().url().max(500).optional().or(z.literal('')),
+  colorPrimary: hexColor,
+  colorAccent:  hexColor,
 })
 
 export async function POST(req: NextRequest) {
@@ -57,6 +62,18 @@ export async function POST(req: NextRequest) {
     })
 
     if (errorCode) return NextResponse.json({ success: false, error: errorCode }, { status: 400 })
+
+    // Seed initial branding if provided
+    const { logoUrl, colorPrimary, colorAccent } = p.data
+    if (logoUrl || colorPrimary || colorAccent) {
+      await sp_UpdateTeamConfig({
+        teamId:       teamId!,
+        logoUrl:      logoUrl   || null,
+        colorPrimary: colorPrimary || null,
+        colorAccent:  colorAccent  || null,
+      })
+    }
+
     return NextResponse.json({ success: true, data: { teamId } }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/internal/teams]', err)
