@@ -78,6 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   function clearSession() {
     localStorage.removeItem('cfb_user')
+    try { sessionStorage.removeItem('dll_team_config') } catch { /* ignore */ }
     setUser(null)
   }
 

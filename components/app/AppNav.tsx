@@ -60,6 +60,7 @@ export function AppNav() {
     try {
       await fetch('/api/auth', { method: 'DELETE', credentials: 'include' })
     } catch { /* best-effort — clear client state regardless */ }
+    try { sessionStorage.removeItem('dll_team_config') } catch { /* ignore */ }
     clearSession()
     router.push('/login')
   }
