@@ -39,7 +39,8 @@ export interface CreateCoachStaffInput {
   teamId:    number
   teamName?: string   // for invite email
   role:      'athletic_director' | 'app_admin' | 'alumni_director' | 'head_coach' | 'position_coach' | 'support_staff'
-  sportId?:  number | null   // required to write a users_sports row in AppDB
+  sportId?:  number | null
+  appDb:     string   // tenant App DB name — must come from the wizard, not session
 }
 
 export interface GenerateInviteCodeInput {
@@ -89,10 +90,9 @@ export async function createCoachStaff(
 
     // Write to AppDB: sync user record then upsert users_sports row
     const programRoleId = ROLE_TO_PROGRAM_ROLE_ID[input.role]
-    const appDb = (session as unknown as Record<string, unknown>).appDb as string | undefined
-    if (userId && programRoleId && appDb) {
+    if (userId && programRoleId) {
       try {
-        await appDbContext.run(appDb, async () => {
+        await appDbContext.run(input.appDb, async () => {
           await sp_UpsertUser({
             userId: userId!,
             email:     input.email,

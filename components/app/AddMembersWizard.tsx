@@ -346,7 +346,7 @@ export function AddMembersWizard({
 
     } else if (memberType === 'staff') {
       const res = await createCoachStaff({
-        email, firstName, lastName, teamId, teamName,
+        email, firstName, lastName, teamId, teamName, appDb,
         role:    selectedRole.roleKey as Parameters<typeof createCoachStaff>[0]['role'],
         sportId: selSportId,
       })
@@ -425,7 +425,7 @@ export function AddMembersWizard({
           email:     r.email,
           firstName: r.firstName || r.first_name || '',
           lastName:  r.lastName  || r.last_name  || '',
-          teamId,
+          teamId, appDb,
           role:    selectedRole.roleKey as Parameters<typeof createCoachStaff>[0]['role'],
           sportId: selSportId,
         })
