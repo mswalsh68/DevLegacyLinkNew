@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/providers/AuthProvider'
 import { useTeamConfig } from '@/providers/ThemeProvider'
 import { requiredRoleLabel, roleLabel } from '@/lib/permissions'
+import { hasFeature } from '@/lib/features'
 import { resolvePostTokens } from '@/lib/feedTokens'
 import { AUDIENCE_BADGE } from '@/lib/statusMappings'
 import { useSafeHtml } from '@/hooks/useSafeHtml'
@@ -550,7 +551,7 @@ export default function FeedContent({ canView, canPost, canDeleteAny, canPin }: 
 
           {/* Recipient filter */}
           <div style={{ display: 'flex', gap: 0, border: '1px solid var(--color-card-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-            {TARGET_FILTER_OPTIONS.map((opt, i) => {
+            {TARGET_FILTER_OPTIONS.filter(opt => opt.value !== 8 || hasFeature(config.subscriptionTier, 'roster_management')).map((opt, i, arr) => {
               const active = targetGroupFilter === opt.value
               return (
                 <button
@@ -559,7 +560,7 @@ export default function FeedContent({ canView, canPost, canDeleteAny, canPin }: 
                   style={{
                     padding:         '6px 16px',
                     border:          'none',
-                    borderRight:     i < TARGET_FILTER_OPTIONS.length - 1 ? '1px solid var(--color-card-border)' : 'none',
+                    borderRight:     i < arr.length - 1 ? '1px solid var(--color-card-border)' : 'none',
                     fontSize:        13,
                     fontWeight:      active ? 600 : 400,
                     cursor:          'pointer',
