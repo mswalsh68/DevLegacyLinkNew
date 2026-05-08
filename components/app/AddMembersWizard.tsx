@@ -340,7 +340,8 @@ export function AddMembersWizard({
     } else if (memberType === 'staff') {
       const res = await createCoachStaff({
         email, firstName, lastName, teamId, teamName,
-        role: selectedRole.roleKey as Parameters<typeof createCoachStaff>[0]['role'],
+        role:    selectedRole.roleKey as Parameters<typeof createCoachStaff>[0]['role'],
+        sportId: selSportId,
       })
       if (res.success) {
         setResult({ success: true, message: `${firstName} ${lastName} added as ${selectedRole.label}.` })
@@ -418,7 +419,8 @@ export function AddMembersWizard({
           firstName: r.firstName || r.first_name || '',
           lastName:  r.lastName  || r.last_name  || '',
           teamId,
-          role: selectedRole.roleKey as Parameters<typeof createCoachStaff>[0]['role'],
+          role:    selectedRole.roleKey as Parameters<typeof createCoachStaff>[0]['role'],
+          sportId: selSportId,
         })
         if (res.success) success++; else failed++
       }
