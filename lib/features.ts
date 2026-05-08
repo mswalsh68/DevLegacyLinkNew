@@ -20,7 +20,8 @@ const FEATURE_MATRIX: Record<string, Tier[]> = {
   login_frequency:   ['starter', 'pro', 'elite'],
   email_open_rate:   ['starter', 'pro', 'elite'],
 
-  // Pro and above — player comms + full engagement tabs
+  // Pro and above — roster management + player comms + full engagement tabs
+  roster_management: ['pro', 'elite'],
   player_dashboard:  ['pro', 'elite'],
 
   // Elite only

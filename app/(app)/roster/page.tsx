@@ -15,6 +15,7 @@ import { TableRow }      from '@/components/ui/TableRow'
 import { Pagination }    from '@/components/ui/Pagination'
 import { AccessDenied }  from '@/components/ui/AccessDenied'
 import { can, roleLabel, requiredRoleLabel } from '@/lib/permissions'
+import { hasFeature } from '@/lib/features'
 import { theme } from '@/lib/theme'
 import { resendInvite, notifyTeamAdded, generateInviteCode } from '@/app/actions/members'
 
@@ -167,6 +168,9 @@ export default function RosterPage() {
   if (isLoading) return null
   if (!can(user, 'roster:view')) {
     return <AccessDenied currentRole={roleLabel(user?.role)} requiredRole={requiredRoleLabel('roster:view')} />
+  }
+  if (!hasFeature(config.subscriptionTier, 'roster_management')) {
+    return <AccessDenied currentRole={roleLabel(user?.role)} requiredRole="Pro tier or above" />
   }
 
   return (

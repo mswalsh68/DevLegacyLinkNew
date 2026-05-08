@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/Button'
 import { addPlayerToRoster, bulkAddPlayersToRoster } from '@/app/actions/players'
 import { addAlumniRecord, bulkAddAlumni }           from '@/app/actions/alumni'
 import { createCoachStaff, generateInviteCode }     from '@/app/actions/members'
+import { hasFeature } from '@/lib/features'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -64,6 +65,7 @@ export interface AddMembersWizardProps {
   userId:               number
   appDb:                string
   creatorProgramRoleId: number
+  subscriptionTier?:    string
   sports:               SportOption[]
 }
 
@@ -202,6 +204,7 @@ export function AddMembersWizard({
   isOpen, onClose,
   teamId, teamName, replyToEmail, academicYears, userId, appDb,
   creatorProgramRoleId,
+  subscriptionTier,
   sports,
 }: AddMembersWizardProps) {
   const showSportPicker = sports.length > 1
@@ -260,7 +263,10 @@ export function AddMembersWizard({
   // ── Derived ───────────────────────────────────────────────────────────────
   const selectedRole   = PROGRAM_ROLES.find(r => r.id === selectedRoleId) ?? null
   const memberType: MemberType | null = selectedRole?.memberType ?? null
-  const assignableRoles = PROGRAM_ROLES.filter(r => r.id >= creatorProgramRoleId)
+  const canManageRoster = hasFeature(subscriptionTier, 'roster_management')
+  const assignableRoles = PROGRAM_ROLES.filter(r =>
+    r.id >= creatorProgramRoleId && (canManageRoster || r.id !== 8),
+  )
   const isAlumniCreator = creatorProgramRoleId === 7
   const isPlayerCreator = creatorProgramRoleId === 8
   // Roles 4-6 (head_coach, position_coach, support_staff) are sport-scoped.
