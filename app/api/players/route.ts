@@ -41,6 +41,7 @@ export async function GET(req: Request) {
     try {
       const { roster, totalCount } = await sp_GetRoster({
         sportId,
+        requestingUserId: session.userId,
         search,
         positionId,
         classYear,
