@@ -1,15 +1,18 @@
-// GET /api/invite/[token]
+// GET /api/invite/[token]?e=email
 // Validates an invite code and returns team + role info.
+// Optional ?e= email param: looks up the pre-created user's first name for claim flows.
 // Unauthenticated — used for the /join preview card.
 // Does NOT increment use_count; that happens on request submission.
 import { NextRequest, NextResponse } from 'next/server'
 import { sp_ValidateInviteCode } from '@/lib/db/procedures'
+import { getPool } from '@/lib/db/connection'
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params
+  const email = req.nextUrl.searchParams.get('e') ?? undefined
 
   if (!token) {
     return NextResponse.json({ error: 'Token is required.' }, { status: 400 })
@@ -36,13 +39,26 @@ export async function GET(
       )
     }
 
+    // Optionally look up first name for claim-link flows
+    let firstName: string | undefined
+    if (email) {
+      try {
+        const pool = await getPool('global')
+        const result = await pool.request()
+          .input('Email', email)
+          .query('SELECT TOP 1 first_name FROM dbo.users WHERE email = @Email AND is_active = 1')
+        firstName = result.recordset[0]?.first_name as string | undefined
+      } catch { /* non-fatal */ }
+    }
+
     return NextResponse.json({
       success: true,
       data: {
-        teamName: row.teamName   as string,
-        teamAbbr: row.teamAbbr   as string,
-        sport:    row.sport      as string,
-        role:     row.role       as string,
+        teamName:  row.teamName  as string,
+        teamAbbr:  row.teamAbbr  as string,
+        sport:     row.sport     as string,
+        role:      row.role      as string,
+        firstName,
       },
     })
   } catch (err) {

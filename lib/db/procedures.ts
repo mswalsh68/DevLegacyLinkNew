@@ -100,10 +100,74 @@ export async function sp_GetTeamConfig(params?: { teamId?: number }): Promise<Te
   return (rows as unknown as TeamConfigRow[])[0] ?? null
 }
 
-/** Returns all active teams. */
-export async function sp_GetTeams(): Promise<TeamConfigRow[]> {
-  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_GetTeams')
+/** Returns teams. Pass includeInactive=true to include deactivated teams. */
+export async function sp_GetTeams(params?: { includeInactive?: boolean }): Promise<TeamConfigRow[]> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_GetTeams', (r) => {
+    r.input('IncludeInactive', sql.Bit, params?.includeInactive ? 1 : 0)
+  })
   return rows as unknown as TeamConfigRow[]
+}
+
+export interface LookupRow { id: number; name: string; displayName: string }
+
+/** Returns all active subscription tiers. */
+export async function sp_GetTiers(): Promise<LookupRow[]> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_GetTiers')
+  return rows as unknown as LookupRow[]
+}
+
+/** Returns all active program levels. */
+export async function sp_GetLevels(): Promise<LookupRow[]> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_GetLevels')
+  return rows as unknown as LookupRow[]
+}
+
+/** Creates a new team. Returns the new teamId or an errorCode. */
+export async function sp_CreateTeam(params: {
+  name:      string
+  abbr:      string
+  appDb:     string
+  tierId:    number
+  levelId:   number
+  createdBy: number
+}): Promise<{ teamId: number | null; errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_CreateTeam', (r) => {
+    r.input ('Name',      sql.NVarChar(100), params.name)
+    r.input ('Abbr',      sql.NVarChar(20),  params.abbr)
+    r.input ('AppDb',     sql.NVarChar(150), params.appDb)
+    r.input ('TierId',    sql.Int,           params.tierId)
+    r.input ('LevelId',   sql.Int,           params.levelId)
+    r.input ('CreatedBy', sql.BigInt,        params.createdBy)
+    r.output('NewTeamId', sql.Int)
+    r.output('ErrorCode', sql.NVarChar(50))
+  })
+  return {
+    teamId:    (output.NewTeamId as number | null) ?? null,
+    errorCode: (output.ErrorCode as string | null) ?? null,
+  }
+}
+
+/** Updates team metadata. Pass only the fields to change (null = no change). */
+export async function sp_UpdateTeam(params: {
+  teamId:   number
+  name?:    string | null
+  tierId?:  number | null
+  levelId?: number | null
+  appDb?:   string | null
+  isActive?: boolean | null
+  actorId:  number
+}): Promise<{ errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_UpdateTeam', (r) => {
+    r.input ('TeamId',    sql.Int,           params.teamId)
+    r.input ('Name',      sql.NVarChar(100), params.name     ?? null)
+    r.input ('TierId',    sql.Int,           params.tierId   ?? null)
+    r.input ('LevelId',   sql.Int,           params.levelId  ?? null)
+    r.input ('AppDb',     sql.NVarChar(150), params.appDb    ?? null)
+    r.input ('IsActive',  sql.Bit,           params.isActive ?? null)
+    r.input ('ActorId',   sql.BigInt,        params.actorId)
+    r.output('ErrorCode', sql.NVarChar(50))
+  })
+  return { errorCode: (output.ErrorCode as string | null) ?? null }
 }
 
 /** Returns the teams a specific user has access to. */
@@ -270,6 +334,47 @@ export async function sp_GetAlumniRoster(params: {
   })
   return {
     alumni:     recordset as unknown as RosterRow[],
+    totalCount: (output.TotalCount as number) ?? 0,
+  }
+}
+
+export interface StaffRow {
+  userSportId:     number
+  userId:          number
+  firstName:       string
+  lastName:        string
+  email:           string
+  sportId:         number
+  sportName:       string
+  programRoleId:   number
+  programRoleName: string
+  positionId:      number | null
+  position:        string | null
+  createdAt:       string
+  updatedAt:       string | null
+  accountClaimed:  boolean
+}
+
+/**
+ * Returns paginated staff members (program_role_id 1–6).
+ */
+export async function sp_GetStaff(params: {
+  sportId?:  number | null
+  roleId?:   number | null
+  search?:   string
+  page?:     number
+  pageSize?: number
+}): Promise<{ staff: StaffRow[]; totalCount: number }> {
+  const { recordset, output } = await execFull('app', 'sp_GetStaff', (r) => {
+    r.input ('SportId',  sql.Int,          params.sportId ?? null)
+    r.input ('RoleId',   sql.Int,          params.roleId  ?? null)
+    r.input ('Search',   sql.NVarChar(255), params.search  ?? null)
+    r.input ('Page',     sql.Int,          params.page     ?? 1)
+    r.input ('PageSize', sql.Int,          params.pageSize ?? 50)
+    r.output('TotalCount', sql.Int)
+  })
+  return {
+    staff:      recordset as unknown as StaffRow[],
     totalCount: (output.TotalCount as number) ?? 0,
   }
 }

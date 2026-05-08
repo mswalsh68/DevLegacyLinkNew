@@ -218,8 +218,13 @@ export default function DashboardContent() {
   const canSeeFeed    = can(user, 'feed:players') || can(user, 'feed:alumni')
   const canSettings   = can(user, 'settings:view')
 
-  // Staff = anyone who can view roster or alumni (coaches, alumni directors, etc.)
-  const isStaff = canViewRoster || canViewAlumni
+  // Identify client sub-roles for the stripped dashboard
+  const programRoleId = user?.programRoleId as number | undefined
+  const isPlayer      = user?.role === 'client' && programRoleId === 8
+  const isAlumnus     = user?.role === 'client' && programRoleId === 7
+
+  // Full admin/staff = internal users OR client program roles 1-6
+  const isStaff = !isPlayer && !isAlumnus && (canViewRoster || canViewAlumni || user?.roleId === 1 || user?.roleId === 2)
 
   // Tab visibility:
   //   Alumni Engagement — starter+ (all tiers) and user has alumni:view
@@ -311,6 +316,7 @@ export default function DashboardContent() {
             {canViewAlumni && (
               <NavTile href="/alumni"  icon="🎓" title={config.alumniLabel ?? 'Alumni'} />
             )}
+            <NavTile href="/staff" icon="👥" title="Staff" />
             {canSettings && (
               <NavTile href="/settings" icon="⚙️" title="Team Settings" />
             )}
@@ -336,38 +342,57 @@ export default function DashboardContent() {
           {activeTab === 'alumni' && <AlumniTab        sportId={sportId} />}
           {activeTab === 'players'&& <PlayerTab        sportId={sportId} />}
         </>
-      ) : (
-        /* ── Non-staff: module access cards ── */
+      ) : isPlayer ? (
+        /* ── Player: Roster · Staff · Feed ── */
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 24 }}>
-          {canViewRoster && (
-            <NavCard
-              href="/roster"
-              icon="🏈"
-              title={config.rosterLabel ?? 'Active Roster'}
-              description="View current players"
-              hoverColor={theme.primary}
-            />
-          )}
-          {can(user, 'feed:players') && (
-            <NavCard
-              href="/feed"
-              icon="📬"
-              title="Team Feed"
-              description="View announcements and messages from your coaches"
-              hoverColor={theme.primary}
-            />
-          )}
-          {can(user, 'feed:alumni') && (
-            <NavCard
-              href="/feed"
-              icon="🎓"
-              title="Alumni Feed"
-              description="Stay connected with alumni news and outreach"
-              hoverColor={theme.accent}
-            />
-          )}
+          <NavCard
+            href="/roster"
+            icon="🏈"
+            title={config.rosterLabel ?? 'Roster'}
+            description="View your team's current roster"
+            hoverColor={theme.primary}
+          />
+          <NavCard
+            href="/staff"
+            icon="👥"
+            title="Staff"
+            description="See your coaches and program staff"
+            hoverColor={theme.primary}
+          />
+          <NavCard
+            href="/feed"
+            icon="📬"
+            title="Team Feed"
+            description="Announcements and updates from your program"
+            hoverColor={theme.primary}
+          />
         </div>
-      )}
+      ) : isAlumnus ? (
+        /* ── Alumni: Alumni · Staff · Feed ── */
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 24 }}>
+          <NavCard
+            href="/alumni"
+            icon="🎓"
+            title={config.alumniLabel ?? 'Alumni'}
+            description="Connect with your alumni network"
+            hoverColor={theme.accent}
+          />
+          <NavCard
+            href="/staff"
+            icon="👥"
+            title="Staff"
+            description="See your coaches and program staff"
+            hoverColor={theme.primary}
+          />
+          <NavCard
+            href="/feed"
+            icon="📬"
+            title="Alumni Feed"
+            description="Stay connected with news and outreach from your program"
+            hoverColor={theme.accent}
+          />
+        </div>
+      ) : null}
 
       {/* ── Add Member Wizard ── */}
       {(config.teamId ?? user.currentTeamId) && user.appDb && creatorProgramRoleId !== null && (

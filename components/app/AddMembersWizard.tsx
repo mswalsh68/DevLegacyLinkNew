@@ -223,6 +223,13 @@ export function AddMembersWizard({
   const [selSportId,      setSelSportId]      = useState<number | null>(() => sports[0]?.id ?? null)
   const [formError,       setFormError]       = useState('')
 
+  // ── Sync selSportId when sports prop loads (async) ───────────────────────
+  useEffect(() => {
+    if (selSportId === null && sports.length > 0) {
+      setSelSportId(sports[0].id)
+    }
+  }, [sports]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Positions (fetched per sport) ─────────────────────────────────────────
   const [sportPositions,     setSportPositions]     = useState<PositionOption[]>([])
   const [positionsLoading,   setPositionsLoading]   = useState(false)
