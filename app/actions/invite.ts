@@ -61,14 +61,15 @@ export async function approveAccessRequest(params: {
       return { success: false, error: messages[errorCode] ?? errorCode }
     }
 
-    // Sync approved user into tenant App DB and create sport membership
+    // Sync approved user into tenant App DB and create sport membership.
+    // Anchor the query to @RequestId only — avoids depending on the BigInt
+    // output params from sp_ReviewAccessRequest which can lose type fidelity.
     try {
       const db      = await getPool('global')
       const infoReq = db.request()
-      infoReq.input('UserId',    sql.BigInt, userId)
-      infoReq.input('TeamId',    sql.Int,    teamId)
       infoReq.input('RequestId', sql.BigInt, params.requestId)
       const infoRes = await infoReq.query<{
+        userId:     number
         email:      string
         firstName:  string
         lastName:   string
@@ -77,33 +78,33 @@ export async function approveAccessRequest(params: {
         inviteRole: string | null
       }>(
         `SELECT
+           u.user_id        AS userId,
            u.email          AS email,
            u.first_name     AS firstName,
            u.last_name      AS lastName,
            t.app_db         AS appDb,
            ic.sport_id      AS sportId,
            ic.role          AS inviteRole
-         FROM dbo.users u
-         CROSS JOIN dbo.teams t
-         LEFT JOIN dbo.access_requests ar ON ar.id = @RequestId
-         LEFT JOIN dbo.invite_codes    ic ON ic.id  = ar.invite_code_id
-         WHERE u.user_id = @UserId AND t.id = @TeamId`
+         FROM dbo.access_requests ar
+         JOIN  dbo.users u  ON u.user_id = ar.user_id
+         JOIN  dbo.teams t  ON t.id      = ar.team_id
+         LEFT JOIN dbo.invite_codes ic ON ic.id = ar.invite_code_id
+         WHERE ar.id = @RequestId`
       )
       const info = infoRes.recordset[0]
       if (info?.appDb) {
         await appDbContext.run(info.appDb, async () => {
           await sp_UpsertUser({
-            userId:       userId!,
+            userId:       info.userId,
             email:        info.email,
             firstName:    info.firstName,
             lastName:     info.lastName,
             globalRoleId: 3,
           })
 
-          // Look up programRoleId from the invite code's role name
           if (info.inviteRole) {
-            const appDb   = await getPool('app')
-            const roleReq = appDb.request()
+            const appPool = await getPool('app')
+            const roleReq = appPool.request()
             roleReq.input('RoleName', sql.NVarChar(50), info.inviteRole)
             const roleRes = await roleReq.query<{ id: number }>(
               `SELECT id FROM dbo.program_role WHERE role_name = @RoleName`
@@ -111,7 +112,7 @@ export async function approveAccessRequest(params: {
             const programRoleId = roleRes.recordset[0]?.id ?? null
             if (programRoleId) {
               await sp_AddUserRole({
-                userId:       userId!,
+                userId:       info.userId,
                 programRoleId,
                 sportId:      info.sportId ?? null,
                 adminUserId:  session.userId,
@@ -121,7 +122,7 @@ export async function approveAccessRequest(params: {
         })
       }
     } catch (upsertErr) {
-      console.warn('[approveAccessRequest] App DB sync failed:', (upsertErr as Error).message)
+      console.error('[approveAccessRequest] App DB sync failed:', upsertErr)
     }
 
     // Notify user
