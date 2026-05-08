@@ -15,9 +15,10 @@ type Step = 'code' | 'form' | 'submitting' | 'claimed'
 type FormMode = 'signup' | 'login' | 'claim'
 
 interface TeamPreview {
-  teamName: string
-  sport:    string
-  role:     string
+  teamName:  string
+  sport:     string
+  role:      string
+  firstName?: string
 }
 
 const inputClass = `
@@ -52,7 +53,8 @@ export function JoinContent({ initialCode, initialEmail }: { initialCode: string
   useEffect(() => {
     if (!isClaim) return
     setChecking(true)
-    fetch(`/api/invite/${encodeURIComponent(initialCode.trim())}`)
+    const qs = initialEmail ? `?e=${encodeURIComponent(initialEmail)}` : ''
+    fetch(`/api/invite/${encodeURIComponent(initialCode.trim())}${qs}`)
       .then(r => r.json())
       .then(body => {
         if (body.data) setPreview(body.data as TeamPreview)
@@ -229,9 +231,23 @@ export function JoinContent({ initialCode, initialEmail }: { initialCode: string
           </div>
         )}
 
-        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', margin: 0 }}>
-          Your account has been set up. Create a password to activate it.
+        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', margin: 0 }}>
+          {preview?.firstName ? `Hi ${preview.firstName}, your` : 'Your'} account has been set up. Create a password to activate it.
         </p>
+
+        {initialEmail && (
+          <div>
+            <label className={labelClass}>Email</label>
+            <input
+              type="email"
+              value={initialEmail}
+              readOnly
+              disabled
+              className={inputClass}
+              style={{ opacity: 0.5, cursor: 'not-allowed' }}
+            />
+          </div>
+        )}
 
         {error && <ErrorBanner message={error} />}
 
