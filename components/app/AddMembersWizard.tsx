@@ -263,6 +263,9 @@ export function AddMembersWizard({
   const assignableRoles = PROGRAM_ROLES.filter(r => r.id >= creatorProgramRoleId)
   const isAlumniCreator = creatorProgramRoleId === 7
   const isPlayerCreator = creatorProgramRoleId === 8
+  // Roles 4-6 (head_coach, position_coach, support_staff) are sport-scoped.
+  // Roles 1-3 (AD, admin, alumni_director) are program-wide → sportId = null.
+  const isSportScopedStaff = selectedRoleId !== null && selectedRoleId >= 4 && selectedRoleId <= 6
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   function resetWizard() {
@@ -348,7 +351,7 @@ export function AddMembersWizard({
       const res = await createCoachStaff({
         email, firstName, lastName, teamId, teamName, appDb,
         role:    selectedRole.roleKey as Parameters<typeof createCoachStaff>[0]['role'],
-        sportId: selSportId,
+        sportId: isSportScopedStaff ? selSportId : null,
       })
       if (res.success) {
         setResult({ success: true, message: `${firstName} ${lastName} added as ${selectedRole.label}.` })
@@ -427,7 +430,7 @@ export function AddMembersWizard({
           lastName:  r.lastName  || r.last_name  || '',
           teamId, appDb,
           role:    selectedRole.roleKey as Parameters<typeof createCoachStaff>[0]['role'],
-          sportId: selSportId,
+          sportId: isSportScopedStaff ? selSportId : null,
         })
         if (res.success) success++; else failed++
       }
@@ -661,6 +664,11 @@ export function AddMembersWizard({
                     <TextInput value={email} onChange={setEmail} placeholder="member@example.com" type="email" />
                   </Field>
 
+                  {/* Sport picker for sport-scoped staff (head_coach, position_coach, support_staff) */}
+                  {memberType === 'staff' && isSportScopedStaff && showSportPicker && (
+                    <SportPicker />
+                  )}
+
                   {memberType === 'player' && (
                     <>
                       {showSportPicker && <SportPicker />}
@@ -707,7 +715,7 @@ export function AddMembersWizard({
                     </div>
                   )}
 
-                  {memberType !== 'staff' && showSportPicker && <SportPicker />}
+                  {(memberType !== 'staff' || isSportScopedStaff) && showSportPicker && <SportPicker />}
 
                   {memberType !== 'staff' && sportPositions.length > 0 && (
                     <p style={{ fontSize: 12, color: 'var(--color-gray-500)', margin: 0 }}>

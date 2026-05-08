@@ -39,8 +39,8 @@ export interface CreateCoachStaffInput {
   teamId:    number
   teamName?: string   // for invite email
   role:      'athletic_director' | 'app_admin' | 'alumni_director' | 'head_coach' | 'position_coach' | 'support_staff'
-  sportId?:  number | null
-  appDb:     string   // tenant App DB name — must come from the wizard, not session
+  sportId?:  number | null   // null = all sports (roles 1-3); required for roles 4-6
+  appDb:     string          // tenant App DB name — must come from the wizard, not session
 }
 
 export interface GenerateInviteCodeInput {
