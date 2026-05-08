@@ -16,7 +16,7 @@
 
 import { randomUUID } from 'crypto'
 import { getServerSession } from '@/lib/auth'
-import { sp_CreateTeamMember, sp_CreateInviteCode, sp_AddUserRole } from '@/lib/db/procedures'
+import { sp_CreateTeamMember, sp_CreateInviteCode, sp_AddUserRole, sp_UpsertUser } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 import { sendTransactionalEmail, buildInviteEmailHtml, buildTeamAddedEmailHtml } from '@/lib/resend'
 
@@ -87,12 +87,18 @@ export async function createCoachStaff(
       return { success: false, error: messages[errorCode] ?? errorCode }
     }
 
-    // Write to AppDB so the staff member appears in users_sports (program_role_id 1-6)
+    // Write to AppDB: sync user record then upsert users_sports row
     const programRoleId = ROLE_TO_PROGRAM_ROLE_ID[input.role]
     const appDb = (session as unknown as Record<string, unknown>).appDb as string | undefined
-    if (userId && programRoleId && input.sportId && appDb) {
+    if (userId && programRoleId && appDb) {
       try {
         await appDbContext.run(appDb, async () => {
+          await sp_UpsertUser({
+            userId: userId!,
+            email:     input.email,
+            firstName: input.firstName,
+            lastName:  input.lastName,
+          })
           await sp_AddUserRole({
             userId:        userId!,
             programRoleId,
@@ -101,7 +107,7 @@ export async function createCoachStaff(
           })
         })
       } catch (appErr) {
-        console.warn('[createCoachStaff] AppDB sp_AddUserRole failed:', appErr)
+        console.warn('[createCoachStaff] AppDB write failed:', appErr)
       }
     }
 
