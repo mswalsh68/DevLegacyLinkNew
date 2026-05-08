@@ -338,6 +338,47 @@ export async function sp_GetAlumniRoster(params: {
   }
 }
 
+export interface StaffRow {
+  userSportId:     number
+  userId:          number
+  firstName:       string
+  lastName:        string
+  email:           string
+  sportId:         number
+  sportName:       string
+  programRoleId:   number
+  programRoleName: string
+  positionId:      number | null
+  position:        string | null
+  createdAt:       string
+  updatedAt:       string | null
+  accountClaimed:  boolean
+}
+
+/**
+ * Returns paginated staff members (program_role_id 1–6).
+ */
+export async function sp_GetStaff(params: {
+  sportId?:  number | null
+  roleId?:   number | null
+  search?:   string
+  page?:     number
+  pageSize?: number
+}): Promise<{ staff: StaffRow[]; totalCount: number }> {
+  const { recordset, output } = await execFull('app', 'sp_GetStaff', (r) => {
+    r.input ('SportId',  sql.Int,          params.sportId ?? null)
+    r.input ('RoleId',   sql.Int,          params.roleId  ?? null)
+    r.input ('Search',   sql.NVarChar(255), params.search  ?? null)
+    r.input ('Page',     sql.Int,          params.page     ?? 1)
+    r.input ('PageSize', sql.Int,          params.pageSize ?? 50)
+    r.output('TotalCount', sql.Int)
+  })
+  return {
+    staff:      recordset as unknown as StaffRow[],
+    totalCount: (output.TotalCount as number) ?? 0,
+  }
+}
+
 export interface MemberDetailsRow {
   userId:             number
   email:              string
