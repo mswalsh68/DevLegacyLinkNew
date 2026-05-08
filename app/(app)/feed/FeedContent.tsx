@@ -18,22 +18,24 @@ import type { TeamConfig } from '@/types'
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface FeedPost {
-  id:            string
-  title:         string | null
-  bodyHtml:      string
-  audience:      string
-  sportId:       number | null
-  sportName:     string | null
-  isPinned:      boolean
-  isWelcomePost: boolean
-  imageUrl:      string | null
-  createdBy:     number
-  createdByName: string
-  publishedAt:   string
-  updatedAt:     string | null
-  isRead:        boolean
-  likeCount:     number
-  userHasLiked:  boolean
+  id:                  string
+  title:               string | null
+  bodyHtml:            string
+  audience:            string
+  audienceJson:        string | null
+  sportId:             number | null
+  sportName:           string | null
+  isPinned:            boolean
+  isWelcomePost:       boolean
+  imageUrl:            string | null
+  createdBy:           number
+  createdByName:       string
+  targetProgramRoleId: number | null
+  publishedAt:         string
+  updatedAt:           string | null
+  isRead:              boolean
+  likeCount:           number
+  userHasLiked:        boolean
 }
 
 interface FeedContentProps {
@@ -49,6 +51,7 @@ interface FeedContentProps {
 const AUDIENCE_LABEL: Record<string, string> = {
   all_sports:     'All Sports',
   sport_specific: 'Sport',
+  multi_sport:    'Multi-Sport',
   all:            'All',
   players_only:   'Players',
   alumni_only:    'Alumni',
@@ -56,6 +59,17 @@ const AUDIENCE_LABEL: Record<string, string> = {
   by_grad_year:   'By Grad Year',
   custom:         'Custom',
 }
+
+const RECIPIENT_LABEL: Record<number, string> = {
+  7: 'Alumni',
+  8: 'Roster',
+}
+
+const TARGET_FILTER_OPTIONS: { value: number | null; label: string }[] = [
+  { value: null, label: 'Everyone'    },
+  { value: 8,    label: 'Roster only' },
+  { value: 7,    label: 'Alumni only' },
+]
 
 const PAGE_SIZE = 20
 
@@ -130,7 +144,18 @@ function FeedCard({
 
   const audienceLabel = post.audience === 'sport_specific' && post.sportName
     ? post.sportName
-    : (AUDIENCE_LABEL[post.audience] ?? post.audience)
+    : post.audience === 'multi_sport'
+      ? (() => {
+          try {
+            const ids: number[] = post.audienceJson ? JSON.parse(post.audienceJson) : []
+            return ids.length > 0 ? `${ids.length} Sports` : 'Multi-Sport'
+          } catch { return 'Multi-Sport' }
+        })()
+      : (AUDIENCE_LABEL[post.audience] ?? post.audience)
+
+  const recipientLabel = post.targetProgramRoleId != null
+    ? RECIPIENT_LABEL[post.targetProgramRoleId] ?? null
+    : null
 
   const resolvedImageUrl = post.isWelcomePost && post.imageUrl
     ? resolvePostTokens(post.imageUrl, config)
@@ -214,6 +239,9 @@ function FeedCard({
           label={audienceLabel}
           variant={AUDIENCE_BADGE[post.audience] ?? 'gray'}
         />
+        {recipientLabel && (
+          <Badge label={recipientLabel} variant="gray" />
+        )}
         <span style={{ fontSize: 12, color: theme.gray500 }}>
           {post.createdByName}
         </span>
@@ -345,17 +373,29 @@ export default function FeedContent({ canView, canPost, canDeleteAny, canPin }: 
   const config              = useTeamConfig()
   const { user, isLoading } = useAuth()
 
-  const [posts,   setPosts]   = useState<FeedPost[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error,   setError]   = useState('')
-  const [page,    setPage]    = useState(1)
-  const [total,   setTotal]   = useState(0)
-  const [mySport, setMySport] = useState(false)
+  const [posts,             setPosts]             = useState<FeedPost[]>([])
+  const [loading,           setLoading]           = useState(true)
+  const [error,             setError]             = useState('')
+  const [page,              setPage]              = useState(1)
+  const [total,             setTotal]             = useState(0)
+  const [mySport,           setMySport]           = useState(false)
+  const [targetGroupFilter, setTargetGroupFilter] = useState<number | null>(null)
 
-  const fetchFeed = useCallback(async (p: number, sport: boolean) => {
+  // Program role 1-6 or internal (global role 1/2): all-sports viewer with filter controls.
+  // Program role 7/8: sport-scoped, no filter controls.
+  const programRoleId  = user?.programRoleId ?? null
+  const globalRoleId   = user?.roleId        ?? null
+  const isAllSportsViewer =
+    (globalRoleId === 1 || globalRoleId === 2) ||
+    (programRoleId !== null && programRoleId >= 1 && programRoleId <= 6)
+  const isScopedViewer = programRoleId === 7 || programRoleId === 8
+
+  const fetchFeed = useCallback(async (p: number, sport: boolean, targetFilter: number | null) => {
     setLoading(true)
     try {
-      const qs   = `page=${p}&pageSize=${PAGE_SIZE}${sport ? '&mySport=true' : ''}`
+      let qs = `page=${p}&pageSize=${PAGE_SIZE}`
+      if (sport) qs += '&mySport=true'
+      if (targetFilter !== null) qs += `&targetGroupFilter=${targetFilter}`
       const res  = await fetch(`/api/feed?${qs}`, { credentials: 'include' })
       const data = await res.json() as { success: boolean; data: FeedPost[]; total: number; error?: string }
       if (!data.success) throw new Error(data.error ?? 'Failed to load feed')
@@ -369,8 +409,8 @@ export default function FeedContent({ canView, canPost, canDeleteAny, canPin }: 
   }, [])
 
   useEffect(() => {
-    if (canView) fetchFeed(1, mySport)
-  }, [canView, mySport, fetchFeed])
+    if (canView) fetchFeed(1, mySport, targetGroupFilter)
+  }, [canView, mySport, targetGroupFilter, fetchFeed])
 
   const handleRead = useCallback((postId: string) => {
     setPosts(prev => prev.map(p => p.id === postId ? { ...p, isRead: true } : p))
@@ -439,10 +479,16 @@ export default function FeedContent({ canView, canPost, canDeleteAny, canPin }: 
     setPosts([])
   }
 
+  const handleTargetGroupFilter = (val: number | null) => {
+    setTargetGroupFilter(val)
+    setPage(1)
+    setPosts([])
+  }
+
   const handleLoadMore = () => {
     const next = page + 1
     setPage(next)
-    fetchFeed(next, mySport)
+    fetchFeed(next, mySport, targetGroupFilter)
   }
 
   const hasMore = posts.length < total
@@ -473,30 +519,69 @@ export default function FeedContent({ canView, canPost, canDeleteAny, canPin }: 
         )}
       </div>
 
-      <div style={{ display: 'flex', gap: 0, marginBottom: 20, border: '1px solid var(--color-card-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden', width: 'fit-content' }}>
-        {[
-          { label: 'All Posts', value: false },
-          { label: 'My Sport', value: true  },
-        ].map(opt => (
-          <button
-            key={String(opt.value)}
-            onClick={() => handleToggleSport(opt.value)}
-            style={{
-              padding:         '6px 16px',
-              border:          'none',
-              borderRight:     opt.value ? 'none' : '1px solid var(--color-card-border)',
-              fontSize:        13,
-              fontWeight:      mySport === opt.value ? 600 : 400,
-              cursor:          'pointer',
-              backgroundColor: mySport === opt.value ? 'var(--color-primary)' : 'var(--color-card-bg)',
-              color:           mySport === opt.value ? '#fff' : theme.gray600,
-              transition:      'background-color 0.15s',
-            }}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
+      {/* Filter bar — only for all-sports viewers (roles 1-6 + internal) */}
+      {isAllSportsViewer && (
+        <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* Sport scope toggle */}
+          <div style={{ display: 'flex', gap: 0, border: '1px solid var(--color-card-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+            {[
+              { label: 'All Sports', value: false },
+              { label: 'My Sport',   value: true  },
+            ].map((opt, i) => (
+              <button
+                key={String(opt.value)}
+                onClick={() => handleToggleSport(opt.value)}
+                style={{
+                  padding:         '6px 16px',
+                  border:          'none',
+                  borderRight:     i === 0 ? '1px solid var(--color-card-border)' : 'none',
+                  fontSize:        13,
+                  fontWeight:      mySport === opt.value ? 600 : 400,
+                  cursor:          'pointer',
+                  backgroundColor: mySport === opt.value ? 'var(--color-primary)' : 'var(--color-card-bg)',
+                  color:           mySport === opt.value ? '#fff' : theme.gray600,
+                  transition:      'background-color 0.15s',
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Recipient filter */}
+          <div style={{ display: 'flex', gap: 0, border: '1px solid var(--color-card-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+            {TARGET_FILTER_OPTIONS.map((opt, i) => {
+              const active = targetGroupFilter === opt.value
+              return (
+                <button
+                  key={String(opt.value)}
+                  onClick={() => handleTargetGroupFilter(opt.value)}
+                  style={{
+                    padding:         '6px 16px',
+                    border:          'none',
+                    borderRight:     i < TARGET_FILTER_OPTIONS.length - 1 ? '1px solid var(--color-card-border)' : 'none',
+                    fontSize:        13,
+                    fontWeight:      active ? 600 : 400,
+                    cursor:          'pointer',
+                    backgroundColor: active ? 'var(--color-primary)' : 'var(--color-card-bg)',
+                    color:           active ? '#fff' : theme.gray600,
+                    transition:      'background-color 0.15s',
+                  }}
+                >
+                  {opt.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Scope label for sport-scoped viewers (roles 7-8) */}
+      {isScopedViewer && (
+        <p style={{ fontSize: 13, color: theme.gray500, marginBottom: 16 }}>
+          Showing: your sport{programRoleId === 7 ? ' · Alumni' : ' · Roster'}
+        </p>
+      )}
 
       {error && <Alert message={error} variant="error" onClose={() => setError('')} />}
 

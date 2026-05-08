@@ -506,11 +506,11 @@ GO
 -- Returns the pending welcome popup (if any) for a user who
 -- has been promoted to alumni (to_program_role_id = 7) and has
 -- not yet dismissed the popup (popup_shown = 0).
--- @TierGroup: 'starter' | 'pro' | 'enterprise' — from session.tierId
+-- @ViewerTierId: 1=starter | 2=pro | 3=enterprise — from session.tierId
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetPendingWelcomePopup
-    @UserId    INT,
-    @TierGroup NVARCHAR(20)
+    @UserId      INT,
+    @ViewerTierId INT
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -521,14 +521,14 @@ BEGIN
         fp.title,
         fp.body_html,
         fp.image_url,
-        fp.tier_group,
-        fp.role_group
+        fp.target_tier_id,
+        fp.target_program_role_id
     FROM   dbo.role_change_log rcl
     JOIN   dbo.feed_posts fp
-        ON  fp.tier_group       = @TierGroup
-        AND fp.role_group       = N'alumni'
-        AND fp.is_welcome_post  = 1
-        AND fp.is_deleted       = 0
+        ON  fp.target_tier_id          = @ViewerTierId
+        AND fp.target_program_role_id  = 7   -- 7 = alumni
+        AND fp.is_welcome_post         = 1
+        AND fp.is_deleted              = 0
     WHERE  rcl.user_id            = @UserId
       AND  rcl.to_program_role_id = 7        -- 7 = alumni
       AND  rcl.popup_shown        = 0
@@ -1201,23 +1201,25 @@ GO
 
 -- ============================================================
 -- sp_CreatePost
--- V2: audience = 'all_sports' | 'sport_specific' only.
--- Alumni are validated against their sport in users_sports.
+-- V3: audience = 'all_sports' | 'sport_specific' | 'multi_sport'.
+-- target_program_role_id = NULL (all) | 7 (alumni) | 8 (roster).
+-- Alumni validated against their sport(s) in users_sports.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_CreatePost
-  @CreatedBy    INT,
-  @BodyHtml     NVARCHAR(MAX),
-  @Audience     NVARCHAR(30),
-  @Title        NVARCHAR(300)    = NULL,
-  @AudienceJson NVARCHAR(MAX)    = NULL,
-  @SportId      INT              = NULL,
-  @IsPinned     BIT              = 0,
-  @AlsoEmail    BIT              = 0,
-  @EmailSubject NVARCHAR(500)    = NULL,
-  @PosterRole   NVARCHAR(50)     = NULL,
-  @NewPostId    UNIQUEIDENTIFIER OUTPUT,
-  @CampaignId   UNIQUEIDENTIFIER OUTPUT,
-  @ErrorCode    NVARCHAR(50)     OUTPUT
+  @CreatedBy            INT,
+  @BodyHtml             NVARCHAR(MAX),
+  @Audience             NVARCHAR(30),
+  @Title                NVARCHAR(300)    = NULL,
+  @AudienceJson         NVARCHAR(MAX)    = NULL,
+  @SportId              INT              = NULL,
+  @IsPinned             BIT              = 0,
+  @AlsoEmail            BIT              = 0,
+  @EmailSubject         NVARCHAR(500)    = NULL,
+  @PosterProgramRoleId  INT              = NULL,
+  @TargetProgramRoleId  INT              = NULL,
+  @NewPostId            UNIQUEIDENTIFIER OUTPUT,
+  @CampaignId           UNIQUEIDENTIFIER OUTPUT,
+  @ErrorCode            NVARCHAR(50)     OUTPUT
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -1225,7 +1227,7 @@ BEGIN
   SET @NewPostId  = NULL;
   SET @CampaignId = NULL;
 
-  IF @Audience NOT IN ('all_sports', 'sport_specific')
+  IF @Audience NOT IN ('all_sports', 'sport_specific', 'multi_sport')
   BEGIN
     SET @ErrorCode = 'INVALID_AUDIENCE';
     RETURN;
@@ -1237,14 +1239,43 @@ BEGIN
     RETURN;
   END
 
-  -- Alumni may only post to all_sports or their OWN sport
-  IF @PosterRole = 'alumni' AND @Audience = 'sport_specific'
+  IF @Audience = 'multi_sport' AND (@AudienceJson IS NULL OR @AudienceJson = N'[]')
+  BEGIN
+    SET @ErrorCode = 'SPORTS_REQUIRED_FOR_MULTI_SPORT';
+    RETURN;
+  END
+
+  IF @TargetProgramRoleId IS NOT NULL AND @TargetProgramRoleId NOT IN (7, 8)
+  BEGIN
+    SET @ErrorCode = 'INVALID_TARGET_PROGRAM_ROLE';
+    RETURN;
+  END
+
+  -- Alumni (program_role_id = 7) may only post to their OWN sport(s)
+  IF @PosterProgramRoleId = 7 AND @Audience = 'sport_specific'
   BEGIN
     IF NOT EXISTS (
       SELECT 1 FROM dbo.users_sports
       WHERE user_id  = @CreatedBy
         AND sport_id = @SportId
         AND is_active = 1
+    )
+    BEGIN
+      SET @ErrorCode = 'SPORT_NOT_ALLOWED';
+      RETURN;
+    END
+  END
+
+  IF @PosterProgramRoleId = 7 AND @Audience = 'multi_sport'
+  BEGIN
+    IF EXISTS (
+      SELECT 1 FROM OPENJSON(@AudienceJson) oj
+      WHERE NOT EXISTS (
+        SELECT 1 FROM dbo.users_sports
+        WHERE user_id  = @CreatedBy
+          AND sport_id = CAST(oj.[value] AS INT)
+          AND is_active = 1
+      )
     )
     BEGIN
       SET @ErrorCode = 'SPORT_NOT_ALLOWED';
@@ -1265,11 +1296,13 @@ BEGIN
 
   INSERT INTO dbo.feed_posts (
     id, created_by, title, body_html, audience, audience_json,
-    sport_id, is_pinned, published_at
+    sport_id, is_pinned, published_at, target_program_role_id
   )
   VALUES (
     @NewPostId, @CreatedBy, @Title, @BodyHtml, @Audience, @AudienceJson,
-    @SportId, ISNULL(@IsPinned, 0), SYSUTCDATETIME()
+    CASE @Audience WHEN 'sport_specific' THEN @SportId ELSE NULL END,
+    ISNULL(@IsPinned, 0), SYSUTCDATETIME(),
+    @TargetProgramRoleId
   );
 
   IF @AlsoEmail = 1
@@ -1283,7 +1316,12 @@ BEGIN
       @CampaignId,
       ISNULL(@Title, LEFT(@BodyHtml, 100)),
       N'Auto-created from feed post',
-      'all', NULL,
+      CASE @TargetProgramRoleId
+        WHEN 7 THEN 'alumni_only'
+        WHEN 8 THEN 'players_only'
+        ELSE        'all'
+      END,
+      NULL,
       'draft', 'post_notification',
       @EmailSubject, @BodyHtml,
       CASE @Audience WHEN 'sport_specific' THEN @SportId ELSE NULL END,
@@ -1295,47 +1333,103 @@ END;
 GO
 
 -- ============================================================
--- sp_GetFeed  (V2)
--- @MySport = 1 → filter to viewer's own sport(s) + all_sports.
+-- sp_GetFeed  (V3)
+-- Audience scoping:
+--   Internal (global role 1/2) or program roles 1,2,3,6 = all sports.
+--   Program roles 4,5,7,8 = sport-scoped to their users_sports rows.
+--   @MySport = 1 narrows all-sports viewers to their own sport.
+-- Recipient scoping:
+--   Program role 7 (alumni) hard-scoped: sees target_program_role_id NULL or 7.
+--   Program role 8 (player) hard-scoped: sees target_program_role_id NULL or 8.
+--   Roles 1-6 + internal: see all; @TargetGroupFilter optionally narrows.
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetFeed
-  @ViewerUserId INT,
-  @MySport      BIT          = 0,
-  @Page         INT          = 1,
-  @PageSize     INT          = 20,
-  @TierGroup    NVARCHAR(20) = NULL,
-  @RoleGroup    NVARCHAR(20) = NULL,
-  @TotalCount   INT          OUTPUT
+  @ViewerUserId        INT,
+  @MySport             BIT = 0,
+  @Page                INT = 1,
+  @PageSize            INT = 20,
+  @ViewerTierId        INT = NULL,
+  @ViewerGlobalRoleId  INT = NULL,
+  @ViewerProgramRoleId INT = NULL,
+  @TargetGroupFilter   INT = NULL,
+  @TotalCount          INT OUTPUT
 AS
 BEGIN
   SET NOCOUNT ON;
   SET @TotalCount = 0;
 
-  DECLARE @Offset INT = (@Page - 1) * @PageSize;
+  DECLARE @Offset    INT = (@Page - 1) * @PageSize;
   IF @Offset < 0 SET @Offset = 0;
+
+  -- All-sports viewer: internal (global 1/2) OR program roles 1,2,3,6
+  DECLARE @AllSports BIT = CASE
+    WHEN @ViewerGlobalRoleId IN (1, 2)         THEN 1
+    WHEN @ViewerProgramRoleId IN (1, 2, 3, 6)  THEN 1
+    ELSE 0
+  END;
+
+  -- Effective recipient filter:
+  --   alumni (7) and player (8) are always hard-scoped to their own role.
+  --   All-sports viewers use @TargetGroupFilter (NULL = no filter).
+  DECLARE @EffectiveTarget INT = CASE
+    WHEN @ViewerProgramRoleId IN (7, 8) THEN @ViewerProgramRoleId
+    ELSE @TargetGroupFilter
+  END;
 
   ;WITH visible_posts AS (
     SELECT fp.*
     FROM dbo.feed_posts fp
     WHERE fp.is_deleted = 0
+
+      -- ── Audience / sport scoping ──────────────────────────────
       AND (
         fp.audience = 'all_sports'
+
+        -- All-sports viewers with no sport filter: see everything
+        OR (@AllSports = 1 AND @MySport = 0)
+
+        -- Sport-match: covers all-sports viewers with @MySport=1
+        --              AND sport-scoped viewers (always filtered)
         OR (
           fp.audience = 'sport_specific'
-          AND (
-            @MySport = 0
-            OR fp.sport_id IN (
+          AND fp.sport_id IN (
+            SELECT sport_id FROM dbo.users_sports
+            WHERE user_id = @ViewerUserId AND is_active = 1
+          )
+        )
+        OR (
+          fp.audience = 'multi_sport'
+          AND EXISTS (
+            SELECT 1 FROM OPENJSON(fp.audience_json) oj
+            WHERE CAST(oj.[value] AS INT) IN (
               SELECT sport_id FROM dbo.users_sports
               WHERE user_id = @ViewerUserId AND is_active = 1
             )
           )
         )
       )
+
+      -- ── Regular post recipient filter ─────────────────────────
+      AND (
+        fp.is_welcome_post = 1                          -- welcome posts handled below
+        OR fp.target_program_role_id IS NULL            -- post targets everyone
+        OR @EffectiveTarget IS NULL                     -- viewer has no active filter
+        OR fp.target_program_role_id = @EffectiveTarget -- post matches viewer's filter
+      )
+
+      -- ── Welcome post tier + role filter ──────────────────────
       AND (
         fp.is_welcome_post = 0
         OR (
-          (@TierGroup IS NULL OR fp.tier_group  IS NULL OR fp.tier_group  = @TierGroup)
-          AND (@RoleGroup IS NULL OR fp.role_group IS NULL OR fp.role_group = @RoleGroup)
+          (@ViewerTierId IS NULL OR fp.target_tier_id IS NULL OR fp.target_tier_id = @ViewerTierId)
+          AND (
+            -- NULL target = admin/staff welcome post -> visible to non-player/alumni viewers
+            (fp.target_program_role_id IS NULL
+              AND (@ViewerProgramRoleId IS NULL OR @ViewerProgramRoleId NOT IN (7, 8)))
+            -- Exact role match (player sees player post, alumni sees alumni post)
+            OR (fp.target_program_role_id IS NOT NULL
+              AND fp.target_program_role_id = @ViewerProgramRoleId)
+          )
         )
       )
   )
@@ -1347,11 +1441,19 @@ BEGIN
     WHERE fp.is_deleted = 0
       AND (
         fp.audience = 'all_sports'
+        OR (@AllSports = 1 AND @MySport = 0)
         OR (
           fp.audience = 'sport_specific'
-          AND (
-            @MySport = 0
-            OR fp.sport_id IN (
+          AND fp.sport_id IN (
+            SELECT sport_id FROM dbo.users_sports
+            WHERE user_id = @ViewerUserId AND is_active = 1
+          )
+        )
+        OR (
+          fp.audience = 'multi_sport'
+          AND EXISTS (
+            SELECT 1 FROM OPENJSON(fp.audience_json) oj
+            WHERE CAST(oj.[value] AS INT) IN (
               SELECT sport_id FROM dbo.users_sports
               WHERE user_id = @ViewerUserId AND is_active = 1
             )
@@ -1359,30 +1461,42 @@ BEGIN
         )
       )
       AND (
+        fp.is_welcome_post = 1
+        OR fp.target_program_role_id IS NULL
+        OR @EffectiveTarget IS NULL
+        OR fp.target_program_role_id = @EffectiveTarget
+      )
+      AND (
         fp.is_welcome_post = 0
         OR (
-          (@TierGroup IS NULL OR fp.tier_group  IS NULL OR fp.tier_group  = @TierGroup)
-          AND (@RoleGroup IS NULL OR fp.role_group IS NULL OR fp.role_group = @RoleGroup)
+          (@ViewerTierId IS NULL OR fp.target_tier_id IS NULL OR fp.target_tier_id = @ViewerTierId)
+          AND (
+            (fp.target_program_role_id IS NULL
+              AND (@ViewerProgramRoleId IS NULL OR @ViewerProgramRoleId NOT IN (7, 8)))
+            OR (fp.target_program_role_id IS NOT NULL
+              AND fp.target_program_role_id = @ViewerProgramRoleId)
+          )
         )
       )
   )
   SELECT
     vp.id,
     vp.title,
-    vp.body_html       AS bodyHtml,
+    vp.body_html              AS bodyHtml,
     vp.audience,
-    vp.audience_json   AS audienceJson,
-    vp.sport_id        AS sportId,
-    s.name             AS sportName,
-    vp.is_pinned       AS isPinned,
-    vp.is_welcome_post AS isWelcomePost,
-    vp.image_url       AS imageUrl,
-    vp.campaign_id     AS campaignId,
-    vp.created_by      AS createdBy,
+    vp.audience_json          AS audienceJson,
+    vp.sport_id               AS sportId,
+    s.name                    AS sportName,
+    vp.is_pinned              AS isPinned,
+    vp.is_welcome_post        AS isWelcomePost,
+    vp.image_url              AS imageUrl,
+    vp.campaign_id            AS campaignId,
+    vp.created_by             AS createdBy,
+    vp.target_program_role_id AS targetProgramRoleId,
     CONCAT(u.first_name, ' ', u.last_name) AS createdByName,
-    vp.published_at    AS publishedAt,
-    vp.created_at      AS createdAt,
-    vp.updated_at      AS updatedAt,
+    vp.published_at           AS publishedAt,
+    vp.created_at             AS createdAt,
+    vp.updated_at             AS updatedAt,
     CASE WHEN fpr.id IS NOT NULL THEN 1 ELSE 0 END AS isRead,
     (
       SELECT COUNT(*) FROM dbo.feed_post_likes l WHERE l.post_id = vp.id
