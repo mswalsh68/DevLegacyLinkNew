@@ -283,7 +283,7 @@ export function AppNav() {
                 </div>
 
                 {teams.map((team) => {
-                  const active = user?.currentTeamId === team.teamId
+                  const active = (config.teamId ?? user?.currentTeamId) === team.teamId
                   return (
                     <button
                       key={team.teamId}
