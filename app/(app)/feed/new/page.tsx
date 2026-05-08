@@ -3,6 +3,8 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/providers/AuthProvider'
+import { useTeamConfig } from '@/providers/ThemeProvider'
+import { hasFeature } from '@/lib/features'
 import { theme } from '@/lib/theme'
 import { Alert }    from '@/components/ui/Alert'
 import { Button }   from '@/components/ui/Button'
@@ -41,6 +43,10 @@ interface SportOption {
 export default function NewPostPage() {
   const router              = useRouter()
   const { user, isLoading } = useAuth()
+  const config              = useTeamConfig()
+  const recipientOptions    = RECIPIENT_OPTIONS.filter(
+    opt => opt.value !== 8 || hasFeature(config.subscriptionTier, 'roster_management'),
+  )
 
   const [title,               setTitle]               = useState('')
   const [bodyHtml,            setBodyHtml]            = useState('')
@@ -144,7 +150,7 @@ export default function NewPostPage() {
   const audienceLabel = AUDIENCE_OPTIONS.find(o => o.value === audience)?.label ?? audience
   const selectedSportName  = sports.find(s => s.id === sportId)?.name
   const multiSportNames    = sports.filter(s => selectedSportIds.has(s.id)).map(s => s.name)
-  const recipientLabel     = RECIPIENT_OPTIONS.find(o => o.value === targetProgramRoleId)?.label ?? 'Everyone'
+  const recipientLabel     = recipientOptions.find(o => o.value === targetProgramRoleId)?.label ?? 'Everyone'
 
   const isSubmitDisabled =
     (audience === 'sport_specific' && sportsLoaded && !sportId) ||
@@ -300,7 +306,7 @@ export default function NewPostPage() {
               Recipients
             </label>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {RECIPIENT_OPTIONS.map(opt => {
+              {recipientOptions.map(opt => {
                 const active = targetProgramRoleId === opt.value
                 return (
                   <button
