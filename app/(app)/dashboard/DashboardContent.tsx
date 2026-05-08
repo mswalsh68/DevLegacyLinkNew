@@ -310,7 +310,7 @@ export default function DashboardContent() {
             gap:                   12,
             marginBottom:          36,
           }}>
-            {canViewRoster && (
+            {hasFeature(tier, 'roster_management') && canViewRoster && (
               <NavTile href="/roster"  icon="🏈" title={config.rosterLabel ?? 'Active Roster'} />
             )}
             {canViewAlumni && (
@@ -345,13 +345,15 @@ export default function DashboardContent() {
       ) : isPlayer ? (
         /* ── Player: Roster · Staff · Feed ── */
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 24 }}>
-          <NavCard
-            href="/roster"
-            icon="🏈"
-            title={config.rosterLabel ?? 'Roster'}
-            description="View your team's current roster"
-            hoverColor={theme.primary}
-          />
+          {hasFeature(tier, 'roster_management') && (
+            <NavCard
+              href="/roster"
+              icon="🏈"
+              title={config.rosterLabel ?? 'Roster'}
+              description="View your team's current roster"
+              hoverColor={theme.primary}
+            />
+          )}
           <NavCard
             href="/staff"
             icon="👥"
@@ -406,6 +408,7 @@ export default function DashboardContent() {
           userId={user.userId}
           appDb={user.appDb}
           creatorProgramRoleId={creatorProgramRoleId}
+          subscriptionTier={config.subscriptionTier}
           sports={sports}
         />
       )}

@@ -289,21 +289,23 @@ export interface RosterRow {
  * Replaces the old sp_GetPlayers function.
  */
 export async function sp_GetRoster(params: {
-  sportId?:    number | null
-  search?:     string
-  positionId?: number
-  classYear?:  number
-  page?:       number
-  pageSize?:   number
+  sportId?:          number | null
+  requestingUserId?: number | null
+  search?:           string
+  positionId?:       number
+  classYear?:        number
+  page?:             number
+  pageSize?:         number
 }): Promise<{ roster: RosterRow[]; totalCount: number }> {
   const { recordset, output } = await execFull('app', 'sp_GetRosterBySport', (r) => {
-    r.input ('SportId',    sql.Int,           params.sportId ?? null)
-    r.input ('Search',     sql.NVarChar(255),  params.search      ?? null)
-    r.input ('PositionId', sql.Int,           params.positionId  ?? null)
-    r.input ('ClassYear',  sql.SmallInt,      params.classYear   ?? null)
-    r.input ('Page',       sql.Int,           params.page     ?? 1)
-    r.input ('PageSize',   sql.Int,           params.pageSize ?? 50)
-    r.output('TotalCount', sql.Int)
+    r.input ('SportId',          sql.Int,           params.sportId          ?? null)
+    r.input ('RequestingUserId', sql.Int,           params.requestingUserId ?? null)
+    r.input ('Search',           sql.NVarChar(255), params.search           ?? null)
+    r.input ('PositionId',       sql.Int,           params.positionId       ?? null)
+    r.input ('ClassYear',        sql.SmallInt,      params.classYear        ?? null)
+    r.input ('Page',             sql.Int,           params.page     ?? 1)
+    r.input ('PageSize',         sql.Int,           params.pageSize ?? 50)
+    r.output('TotalCount',       sql.Int)
   })
   return {
     roster:     recordset as unknown as RosterRow[],
@@ -316,21 +318,23 @@ export async function sp_GetRoster(params: {
  * Replaces the old sp_GetAlumni function.
  */
 export async function sp_GetAlumniRoster(params: {
-  sportId?:    number | null
-  search?:     string
-  positionId?: number
-  classYear?:  number
-  page?:       number
-  pageSize?:   number
+  sportId?:          number | null
+  requestingUserId?: number | null
+  search?:           string
+  positionId?:       number
+  classYear?:        number
+  page?:             number
+  pageSize?:         number
 }): Promise<{ alumni: RosterRow[]; totalCount: number }> {
   const { recordset, output } = await execFull('app', 'sp_GetAlumniBySport', (r) => {
-    r.input ('SportId',    sql.Int,           params.sportId ?? null)
-    r.input ('Search',     sql.NVarChar(255),  params.search      ?? null)
-    r.input ('PositionId', sql.Int,           params.positionId  ?? null)
-    r.input ('ClassYear',  sql.SmallInt,      params.classYear   ?? null)
-    r.input ('Page',       sql.Int,           params.page     ?? 1)
-    r.input ('PageSize',   sql.Int,           params.pageSize ?? 50)
-    r.output('TotalCount', sql.Int)
+    r.input ('SportId',          sql.Int,           params.sportId          ?? null)
+    r.input ('RequestingUserId', sql.Int,           params.requestingUserId ?? null)
+    r.input ('Search',           sql.NVarChar(255), params.search           ?? null)
+    r.input ('PositionId',       sql.Int,           params.positionId       ?? null)
+    r.input ('ClassYear',        sql.SmallInt,      params.classYear        ?? null)
+    r.input ('Page',             sql.Int,           params.page     ?? 1)
+    r.input ('PageSize',         sql.Int,           params.pageSize ?? 50)
+    r.output('TotalCount',       sql.Int)
   })
   return {
     alumni:     recordset as unknown as RosterRow[],
