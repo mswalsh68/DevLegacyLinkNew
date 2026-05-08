@@ -566,7 +566,9 @@ BEGIN
   END
 
   UPDATE dbo.users
-  SET    password_hash = @NewPasswordHash
+  SET    password_hash   = @NewPasswordHash,
+         account_claimed = 1,
+         claimed_date    = SYSUTCDATETIME()
   WHERE  user_id = @UserId;
 
   INSERT INTO dbo.audit_log (actor_id, action, target_type, target_id, payload, performed_at)
