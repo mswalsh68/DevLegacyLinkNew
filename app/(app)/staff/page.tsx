@@ -182,13 +182,7 @@ export default function StaffPage() {
     <DataTablePage
       title="Staff"
       subtitle={`${total} members`}
-      actions={canManage ? (
-        <Button
-          label="Add Staff"
-          variant="outline"
-          onClick={() => window.location.href = '/settings'}
-        />
-      ) : undefined}
+      actions={undefined}
       alerts={error ? <Alert message={error} variant="error" onClose={() => setError(null)} /> : undefined}
       filters={
         <div className={sports.length > 1 ? 'filters-grid-3' : 'filters-grid-2'}>
