@@ -179,7 +179,7 @@ export async function GET(req: NextRequest) {
     const row = await sp_GetTeamConfig(teamId ? { teamId } : undefined)
     if (row) {
       const data = normalizeConfigRow(row, defaults)
-      return NextResponse.json({ success: true, data }, { status: 200 })
+      return NextResponse.json({ success: true, data: { ...data, teamId: teamId ?? null } }, { status: 200 })
     }
   } catch (err) {
     // DB unreachable — fall through to env-var defaults

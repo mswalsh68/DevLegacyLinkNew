@@ -111,6 +111,9 @@ export interface TeamConfig {
   alumniLabel?:   string
   rosterLabel?:   string
   classLabel?:    string
+
+  // ── Team identity (from DB, not env defaults) ────────────
+  teamId?:        number
 }
 
 // ─── Player / Roster ──────────────────────────────────────────────────────────
