@@ -3,13 +3,6 @@ import { requireSession } from '@/lib/auth'
 import { sp_GetPendingWelcomePopup, sp_MarkWelcomePopupShown } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 
-// ─── Tier ID → tier_group string ─────────────────────────────────────────────
-const TIER_GROUP: Record<number, string> = {
-  1: 'starter',
-  2: 'pro',
-  3: 'enterprise',
-}
-
 // ─── GET /api/feed/welcome-popup ──────────────────────────────────────────────
 // Returns pending welcome popup for the current alumni user.
 // Returns { pending: false } when none — never hard-errors, best-effort.
@@ -18,26 +11,26 @@ export async function GET() {
   const { session, error } = await requireSession()
   if (error) return error
 
-  const tierGroup = TIER_GROUP[session.tierId ?? 0]
-  if (!tierGroup) return NextResponse.json({ success: true, data: { pending: false } })
+  const viewerTierId = session.tierId ?? null
 
   return appDbContext.run(session.appDb, async () => {
     try {
       const popup = await sp_GetPendingWelcomePopup({
-        userId:    session.userId,
-        tierGroup,
+        userId:       session.userId,
+        viewerTierId,
       })
       if (!popup) return NextResponse.json({ success: true, data: { pending: false } })
       return NextResponse.json({
         success: true,
         data: {
-          pending:   true,
-          logId:     popup.logId,
-          postId:    popup.postId,
-          title:     popup.title,
-          bodyHtml:  popup.bodyHtml,
-          imageUrl:  popup.imageUrl,
-          tierGroup: popup.tierGroup,
+          pending:             true,
+          logId:               popup.logId,
+          postId:              popup.postId,
+          title:               popup.title,
+          bodyHtml:            popup.bodyHtml,
+          imageUrl:            popup.imageUrl,
+          targetTierId:        popup.targetTierId,
+          targetProgramRoleId: popup.targetProgramRoleId,
         },
       })
     } catch (err) {

@@ -770,43 +770,48 @@ export async function sp_MarkEmailOpened(params: {
 // ─── App DB — Feed ────────────────────────────────────────────────────────────
 
 export interface FeedPostRow {
-  id:            string
-  title:         string | null
-  bodyHtml:      string
-  audience:      string
-  audienceJson:  string | null
-  sportId:       number | null   // INT — was UNIQUEIDENTIFIER before migration 009
-  sportName:     string | null
-  isPinned:      boolean
-  isWelcomePost: boolean
-  imageUrl:      string | null
-  campaignId:    string | null
-  createdBy:     number
-  createdByName: string
-  publishedAt:   string
-  createdAt:     string
-  updatedAt:     string | null
-  isRead:        boolean
-  likeCount:     number
-  userHasLiked:  boolean
+  id:                   string
+  title:                string | null
+  bodyHtml:             string
+  audience:             string
+  audienceJson:         string | null
+  sportId:              number | null   // INT — was UNIQUEIDENTIFIER before migration 009
+  sportName:            string | null
+  isPinned:             boolean
+  isWelcomePost:        boolean
+  imageUrl:             string | null
+  campaignId:           string | null
+  createdBy:            number
+  createdByName:        string
+  targetProgramRoleId:  number | null   // NULL = everyone, 7 = alumni only, 8 = roster only
+  publishedAt:          string
+  createdAt:            string
+  updatedAt:            string | null
+  isRead:               boolean
+  likeCount:            number
+  userHasLiked:         boolean
 }
 
 export async function sp_GetFeed(params: {
-  viewerUserId: number
-  mySport?:     boolean
-  page:         number
-  pageSize:     number
-  tierGroup?:   string | null
-  roleGroup?:   string | null
+  viewerUserId:        number
+  mySport?:            boolean
+  page:                number
+  pageSize:            number
+  viewerTierId?:       number | null
+  viewerGlobalRoleId?: number | null
+  viewerProgramRoleId?: number | null
+  targetGroupFilter?:  number | null
 }): Promise<{ posts: FeedPostRow[]; totalCount: number }> {
   const { recordset, output } = await execFull('app', 'sp_GetFeed', (r) => {
-    r.input ('ViewerUserId', sql.Int,          params.viewerUserId)
-    r.input ('MySport',      sql.Bit,          params.mySport ? 1 : 0)
-    r.input ('Page',         sql.Int,          params.page)
-    r.input ('PageSize',     sql.Int,          params.pageSize)
-    r.input ('TierGroup',    sql.NVarChar(20), params.tierGroup ?? null)
-    r.input ('RoleGroup',    sql.NVarChar(20), params.roleGroup ?? null)
-    r.output('TotalCount',   sql.Int)
+    r.input ('ViewerUserId',        sql.Int, params.viewerUserId)
+    r.input ('MySport',             sql.Bit, params.mySport ? 1 : 0)
+    r.input ('Page',                sql.Int, params.page)
+    r.input ('PageSize',            sql.Int, params.pageSize)
+    r.input ('ViewerTierId',        sql.Int, params.viewerTierId        ?? null)
+    r.input ('ViewerGlobalRoleId',  sql.Int, params.viewerGlobalRoleId  ?? null)
+    r.input ('ViewerProgramRoleId', sql.Int, params.viewerProgramRoleId ?? null)
+    r.input ('TargetGroupFilter',   sql.Int, params.targetGroupFilter   ?? null)
+    r.output('TotalCount',          sql.Int)
   })
   return {
     posts:      (recordset as unknown as FeedPostRow[]) ?? [],
@@ -831,31 +836,33 @@ export async function sp_GetFeedPost(params: {
 }
 
 export async function sp_CreatePost(params: {
-  createdBy:     number
-  bodyHtml:      string
-  audience:      string
-  title?:        string | null
-  audienceJson?: string | null
-  sportId?:      number | null   // INT
-  isPinned:      boolean
-  alsoEmail:     boolean
-  emailSubject?: string | null
-  posterRole?:   string | null   // JWT global role — used for alumni sport validation
+  createdBy:            number
+  bodyHtml:             string
+  audience:             'all_sports' | 'sport_specific' | 'multi_sport'
+  title?:               string | null
+  audienceJson?:        string | null   // JSON int array for multi_sport: [1,3,5]
+  sportId?:             number | null   // used for sport_specific only
+  isPinned:             boolean
+  alsoEmail:            boolean
+  emailSubject?:        string | null
+  posterProgramRoleId?: number | null   // poster's program_role_id — used for alumni validation
+  targetProgramRoleId?: number | null   // NULL = everyone, 7 = alumni, 8 = roster
 }): Promise<{ postId: string | null; campaignId: string | null; errorCode: string | null }> {
   const { output } = await execFull('app', 'sp_CreatePost', (r) => {
-    r.input ('CreatedBy',   sql.Int,               params.createdBy)
-    r.input ('BodyHtml',    sql.NVarChar(sql.MAX),  params.bodyHtml)
-    r.input ('Audience',    sql.NVarChar(30),       params.audience)
-    r.input ('Title',       sql.NVarChar(300),      params.title        ?? null)
-    r.input ('AudienceJson',sql.NVarChar(sql.MAX),  params.audienceJson ?? null)
-    r.input ('SportId',     sql.Int,                params.sportId      ?? null)
-    r.input ('IsPinned',    sql.Bit,                params.isPinned ? 1 : 0)
-    r.input ('AlsoEmail',   sql.Bit,                params.alsoEmail ? 1 : 0)
-    r.input ('EmailSubject',sql.NVarChar(500),      params.emailSubject ?? null)
-    r.input ('PosterRole',  sql.NVarChar(50),       params.posterRole   ?? null)
-    r.output('NewPostId',   sql.UniqueIdentifier)
-    r.output('CampaignId',  sql.UniqueIdentifier)
-    r.output('ErrorCode',   sql.NVarChar(50))
+    r.input ('CreatedBy',           sql.Int,              params.createdBy)
+    r.input ('BodyHtml',            sql.NVarChar(sql.MAX), params.bodyHtml)
+    r.input ('Audience',            sql.NVarChar(30),      params.audience)
+    r.input ('Title',               sql.NVarChar(300),     params.title               ?? null)
+    r.input ('AudienceJson',        sql.NVarChar(sql.MAX), params.audienceJson        ?? null)
+    r.input ('SportId',             sql.Int,               params.sportId             ?? null)
+    r.input ('IsPinned',            sql.Bit,               params.isPinned ? 1 : 0)
+    r.input ('AlsoEmail',           sql.Bit,               params.alsoEmail ? 1 : 0)
+    r.input ('EmailSubject',        sql.NVarChar(500),     params.emailSubject        ?? null)
+    r.input ('PosterProgramRoleId', sql.Int,               params.posterProgramRoleId ?? null)
+    r.input ('TargetProgramRoleId', sql.Int,               params.targetProgramRoleId ?? null)
+    r.output('NewPostId',           sql.UniqueIdentifier)
+    r.output('CampaignId',          sql.UniqueIdentifier)
+    r.output('ErrorCode',           sql.NVarChar(50))
   })
   return {
     postId:     (output.NewPostId   as string | null) ?? null,
@@ -1458,34 +1465,34 @@ export async function sp_EndPreviewSession(params: {
 // ─── Welcome Popup ────────────────────────────────────────────────────────────
 
 export interface PendingWelcomePopup {
-  logId:     number
-  postId:    string
-  title:     string | null
-  bodyHtml:  string
-  imageUrl:  string | null
-  tierGroup: string
-  roleGroup: string
+  logId:               number
+  postId:              string
+  title:               string | null
+  bodyHtml:            string
+  imageUrl:            string | null
+  targetTierId:        number | null
+  targetProgramRoleId: number | null
 }
 
 export async function sp_GetPendingWelcomePopup(params: {
-  userId:    number
-  tierGroup: string
+  userId:       number
+  viewerTierId: number | null
 }): Promise<PendingWelcomePopup | null> {
   const { recordset } = await execFull('app', 'sp_GetPendingWelcomePopup', (r) => {
-    r.input('UserId',    sql.Int,          params.userId)
-    r.input('TierGroup', sql.NVarChar(20), params.tierGroup)
+    r.input('UserId',       sql.Int, params.userId)
+    r.input('ViewerTierId', sql.Int, params.viewerTierId ?? null)
   })
   const rows = recordset as unknown as Record<string, unknown>[]
   const row = rows[0]
   if (!row) return null
   return {
-    logId:     row.log_id    as number,
-    postId:    row.post_id   as string,
-    title:     (row.title    as string | null) ?? null,
-    bodyHtml:  row.body_html as string,
-    imageUrl:  (row.image_url as string | null) ?? null,
-    tierGroup: row.tier_group as string,
-    roleGroup: row.role_group as string,
+    logId:               row.log_id               as number,
+    postId:              row.post_id               as string,
+    title:               (row.title               as string | null) ?? null,
+    bodyHtml:            row.body_html             as string,
+    imageUrl:            (row.image_url            as string | null) ?? null,
+    targetTierId:        (row.target_tier_id       as number | null) ?? null,
+    targetProgramRoleId: (row.target_program_role_id as number | null) ?? null,
   }
 }
 

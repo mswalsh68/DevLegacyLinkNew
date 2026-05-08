@@ -5,12 +5,6 @@ import { sp_GetFeed, sp_CreatePost } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 import { sendCampaignEmailsBackground } from '@/lib/email'
 
-function getRoleGroup(roleId: number): string {
-  if (roleId === 1) return 'admin'   // super_admin
-  if (roleId === 2) return 'staff'   // support_admin
-  return 'player'                    // client
-}
-
 export async function GET(req: Request) {
   const { session, error } = await requireSession()
   if (error) return error
@@ -21,23 +15,29 @@ export async function GET(req: Request) {
   }
 
   const { searchParams } = new URL(req.url)
-  const page     = parseInt(searchParams.get('page')     ?? '1')
-  const pageSize = parseInt(searchParams.get('pageSize') ?? '20')
-  const mySport  = searchParams.get('mySport') === 'true'
+  const page              = parseInt(searchParams.get('page')            ?? '1')
+  const pageSize          = parseInt(searchParams.get('pageSize')        ?? '20')
+  const mySport           = searchParams.get('mySport') === 'true'
+  const targetGroupFilter = searchParams.get('targetGroupFilter')
+    ? parseInt(searchParams.get('targetGroupFilter')!)
+    : null
 
-  const TIER_MAP: Record<number, string> = { 1: 'starter', 2: 'pro', 3: 'enterprise' }
-  const tierGroup = session.tierId != null ? (TIER_MAP[session.tierId] ?? null) : null
-  const roleGroup = getRoleGroup(session.roleId)
+  // Effective program role: use preview role when View As is active
+  const effectiveProgramRoleId = session.previewActive
+    ? (session.previewProgramRoleId ?? null)
+    : (session.programRoleId        ?? null)
 
   return appDbContext.run(session.appDb, async () => {
     try {
       const { posts, totalCount } = await sp_GetFeed({
-        viewerUserId: session.userId,
+        viewerUserId:        session.userId,
         mySport,
         page,
         pageSize,
-        tierGroup,
-        roleGroup,
+        viewerTierId:        session.tierId        ?? null,
+        viewerGlobalRoleId:  session.roleId,
+        viewerProgramRoleId: effectiveProgramRoleId,
+        targetGroupFilter,
       })
       return NextResponse.json({ success: true, data: posts, total: totalCount })
     } catch (err) {
@@ -58,14 +58,16 @@ export async function POST(req: Request) {
   }
 
   let body: {
-    bodyHtml:      string
-    audience:      string
-    title?:        string | null
-    audienceJson?: string | null
-    sportId?:      number | string | null
-    isPinned?:     boolean
-    alsoEmail?:    boolean
-    emailSubject?: string | null
+    bodyHtml:             string
+    audience:             string
+    title?:               string | null
+    audienceJson?:        string | null
+    sportId?:             number | string | null
+    sportIds?:            (number | string)[]
+    isPinned?:            boolean
+    alsoEmail?:           boolean
+    emailSubject?:        string | null
+    targetProgramRoleId?: number | null
   }
 
   try {
@@ -74,33 +76,63 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { bodyHtml, audience, title, audienceJson, isPinned, alsoEmail, emailSubject } = body
+  const { bodyHtml, audience, title, isPinned, alsoEmail, emailSubject } = body
 
   if (!bodyHtml || !audience) {
     return NextResponse.json({ success: false, error: 'bodyHtml and audience are required' }, { status: 400 })
   }
 
-  if (!['all_sports', 'sport_specific'].includes(audience)) {
-    return NextResponse.json({ success: false, error: 'Invalid audience. Must be all_sports or sport_specific.' }, { status: 400 })
+  if (!['all_sports', 'sport_specific', 'multi_sport'].includes(audience)) {
+    return NextResponse.json(
+      { success: false, error: 'Invalid audience. Must be all_sports, sport_specific, or multi_sport.' },
+      { status: 400 },
+    )
   }
 
+  const targetProgramRoleId = body.targetProgramRoleId ?? null
+  if (targetProgramRoleId !== null && ![7, 8].includes(targetProgramRoleId)) {
+    return NextResponse.json(
+      { success: false, error: 'Invalid targetProgramRoleId. Must be 7 (alumni) or 8 (roster).' },
+      { status: 400 },
+    )
+  }
+
+  // Sport ID handling
   const sportId = body.sportId != null
     ? parseInt(String(body.sportId), 10) || null
     : null
 
+  // Multi-sport: build audienceJson from sportIds array
+  let audienceJson: string | null = body.audienceJson ?? null
+  if (audience === 'multi_sport') {
+    const sportIds = (body.sportIds ?? []).map(id => parseInt(String(id), 10)).filter(n => !isNaN(n))
+    if (sportIds.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'sportIds must be a non-empty array for multi_sport audience.' },
+        { status: 400 },
+      )
+    }
+    audienceJson = JSON.stringify(sportIds)
+  }
+
+  const effectiveProgramRoleId = session.previewActive
+    ? (session.previewProgramRoleId ?? null)
+    : (session.programRoleId        ?? null)
+
   return appDbContext.run(session.appDb, async () => {
     try {
       const { postId, campaignId, errorCode } = await sp_CreatePost({
-        createdBy:    session.userId,
+        createdBy:            session.userId,
         bodyHtml,
-        audience,
-        title:        title        ?? null,
-        audienceJson: audienceJson ?? null,
+        audience:             audience as 'all_sports' | 'sport_specific' | 'multi_sport',
+        title:                title        ?? null,
+        audienceJson,
         sportId,
-        isPinned:     isPinned     ?? false,
-        alsoEmail:    alsoEmail    ?? false,
-        emailSubject: emailSubject ?? null,
-        posterRole:   session.role,
+        isPinned:             isPinned     ?? false,
+        alsoEmail:            alsoEmail    ?? false,
+        emailSubject:         emailSubject ?? null,
+        posterProgramRoleId:  effectiveProgramRoleId,
+        targetProgramRoleId,
       })
 
       if (errorCode && errorCode !== 'OK') {
