@@ -47,6 +47,8 @@ export type Feature =
   | 'roster:promote_to_alumni'
   | 'alumni:view'
   | 'alumni:edit'
+  | 'staff:view'
+  | 'staff:manage'
   | 'message:players'
   | 'message:alumni'
   | 'feed:view'
@@ -71,6 +73,8 @@ const FEATURE_ROLES: Record<Feature, readonly string[]> = {
   'roster:promote_to_alumni': [...INTERNAL],
   'alumni:view':              [...INTERNAL, CLIENT_ALUMNI],
   'alumni:edit':              [...INTERNAL],
+  'staff:view':               [...INTERNAL, CLIENT_ROSTER, CLIENT_ALUMNI],
+  'staff:manage':             [...INTERNAL],
   'message:players':          [...INTERNAL],
   'message:alumni':           [...INTERNAL],
   'feed:view':                [...INTERNAL],
