@@ -318,7 +318,7 @@ export default function DashboardContent() {
               <NavTile href="/feed"    icon="📬" title="Feed" />
             )}
             {/* Role 1-7 can open the wizard (players/role 8 are blocked inside it) */}
-            {user.currentTeamId && user.appDb && creatorProgramRoleId !== null && creatorProgramRoleId <= 7 && (
+            {(config.teamId ?? user.currentTeamId) && user.appDb && creatorProgramRoleId !== null && creatorProgramRoleId <= 7 && (
               <NavTile icon="➕" title="Add Member" onClick={() => setWizardOpen(true)} />
             )}
           </div>
@@ -370,11 +370,11 @@ export default function DashboardContent() {
       )}
 
       {/* ── Add Member Wizard ── */}
-      {user.currentTeamId && user.appDb && creatorProgramRoleId !== null && (
+      {(config.teamId ?? user.currentTeamId) && user.appDb && creatorProgramRoleId !== null && (
         <AddMembersWizard
           isOpen={wizardOpen}
           onClose={() => setWizardOpen(false)}
-          teamId={user.currentTeamId}
+          teamId={(config.teamId ?? user.currentTeamId)!}
           teamName={config.teamName}
           replyToEmail={user.replyToEmail}
           academicYears={config.academicYears}
