@@ -41,7 +41,7 @@ export async function GET(req: Request) {
     try {
       const { alumni, totalCount } = await sp_GetAlumniRoster({
         sportId,
-        requestingUserId: session.userId,
+        requestingUserId: session.role === 'client' ? session.userId : null,
         search,
         positionId,
         classYear,
