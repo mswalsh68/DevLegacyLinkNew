@@ -149,6 +149,13 @@ BEGIN
       AND t.is_active   = 1;
   END
 
+  -- Apply preferred team: override the alphabetical default when user has set one
+  IF @PreferredTeamId IS NOT NULL
+  BEGIN
+    SET @CurrentTeamId = @PreferredTeamId;
+    SELECT @AppDb = t.app_db FROM dbo.teams t WHERE t.id = @PreferredTeamId AND t.is_active = 1;
+  END
+
   DECLARE @TierId   INT        = NULL;
   DECLARE @TierName NVARCHAR(50) = N'starter';
 
