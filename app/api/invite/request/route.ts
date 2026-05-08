@@ -18,6 +18,9 @@ import {
   sp_RegisterUserViaInvite,
   sp_SubmitAccessRequest,
   sp_ActivatePendingAccount,
+  sp_ReviewAccessRequest,
+  sp_UpsertUser,
+  sp_AddUserRole,
 } from '@/lib/db/procedures'
 
 function getConfig() {
@@ -260,6 +263,80 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // ── Auto-approve and sync to AppDB ───────────────────────────────────────
+  // The invite code is admin pre-authorization, so provisioning happens immediately
+  // rather than waiting for manual review.
+  let redirectTarget = '/pending'
+  try {
+    const db      = await getPool('global')
+    const infoReq = db.request()
+    infoReq.input('Token',  sql.NVarChar(128), token)
+    infoReq.input('UserId', sql.BigInt,        userId)
+    const infoRes = await infoReq.query<{
+      createdBy:  number
+      appDb:      string | null
+      sportId:    number | null
+      inviteRole: string | null
+      email:      string
+      firstName:  string
+      lastName:   string
+    }>(
+      `SELECT
+         ic.created_by AS createdBy,
+         t.app_db      AS appDb,
+         ic.sport_id   AS sportId,
+         ic.role       AS inviteRole,
+         u.email       AS email,
+         u.first_name  AS firstName,
+         u.last_name   AS lastName
+       FROM dbo.invite_codes ic
+       JOIN dbo.teams t ON t.id      = ic.team_id
+       JOIN dbo.users u ON u.user_id = @UserId
+       WHERE ic.token = @Token`
+    )
+    const info = infoRes.recordset[0]
+    if (info && requestId) {
+      const { errorCode: approveErr } = await sp_ReviewAccessRequest({
+        requestId:  requestId,
+        reviewedBy: info.createdBy,
+        action:     'approve',
+      })
+      if (!approveErr) {
+        if (info.appDb) {
+          await appDbContext.run(info.appDb, async () => {
+            await sp_UpsertUser({
+              userId,
+              email:        info.email,
+              firstName:    info.firstName,
+              lastName:     info.lastName,
+              globalRoleId: 3,
+            })
+            if (info.inviteRole) {
+              const appPool = await getPool('app')
+              const roleReq = appPool.request()
+              roleReq.input('RoleName', sql.NVarChar(50), info.inviteRole)
+              const roleRes = await roleReq.query<{ id: number }>(
+                `SELECT id FROM dbo.program_role WHERE role_name = @RoleName`
+              )
+              const programRoleId = roleRes.recordset[0]?.id ?? null
+              if (programRoleId) {
+                await sp_AddUserRole({
+                  userId,
+                  programRoleId,
+                  sportId:    info.sportId ?? null,
+                  adminUserId: info.createdBy,
+                })
+              }
+            }
+          })
+        }
+        redirectTarget = '/feed'
+      }
+    }
+  } catch (syncErr) {
+    console.warn('[invite/request] Auto-approve + AppDB sync failed:', (syncErr as Error).message)
+  }
+
   // ── Issue JWT so user is logged in ────────────────────────────────────────
   const subStr = String(userId)
   const accessToken = await new SignJWT({ sub: subStr, userId, ...userJson })
@@ -277,6 +354,7 @@ export async function POST(req: NextRequest) {
   const response = NextResponse.json({
     success:   true,
     requestId: requestId,
+    redirect:  redirectTarget,
     data:      { user: { userId, ...userJson }, accessToken },
   })
 
