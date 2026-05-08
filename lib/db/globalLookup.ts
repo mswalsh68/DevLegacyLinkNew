@@ -16,8 +16,8 @@ export async function fetchAccountClaimedMap(userIds: number[]): Promise<Map<num
     const ids = userIds.join(',')
     const { recordset } = await globalDb.request()
       .query(`SELECT user_id, account_claimed FROM dbo.users WHERE user_id IN (${ids})`)
-    for (const row of recordset as { user_id: number; account_claimed: boolean }[]) {
-      map.set(row.user_id, Boolean(row.account_claimed))
+    for (const row of recordset as { user_id: unknown; account_claimed: unknown }[]) {
+      map.set(Number(row.user_id), Boolean(row.account_claimed))
     }
   } catch (err) {
     console.warn('[globalLookup] Could not fetch account_claimed:', err)

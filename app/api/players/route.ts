@@ -50,12 +50,12 @@ export async function GET(req: Request) {
       })
 
       const accountClaimedMap = canManage
-        ? await fetchAccountClaimedMap(roster.map(r => r.userId))
+        ? await fetchAccountClaimedMap(roster.map(r => Number(r.userId)))
         : new Map<number, boolean>()
 
       const enriched = roster.map(r => ({
         ...r,
-        ...(canManage ? { accountClaimed: accountClaimedMap.get(r.userId) ?? false } : {}),
+        ...(canManage ? { accountClaimed: accountClaimedMap.get(Number(r.userId)) ?? false } : {}),
       }))
 
       return NextResponse.json({ success: true, data: enriched, total: totalCount })
