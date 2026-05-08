@@ -209,33 +209,6 @@ export function AppNav() {
           </span>
         </button>
 
-        {/* My Program link — players go to /roster, alumni go to /alumni */}
-        {(user?.programRoleId === 8 || user?.programRoleId === 7) && (
-          <button
-            onClick={() => router.push(user.programRoleId === 7 ? '/alumni' : '/roster')}
-            style={{
-              background:      'rgba(255,255,255,0.12)',
-              border:          '1px solid rgba(255,255,255,0.2)',
-              borderRadius:    8,
-              color:           'rgba(255,255,255,0.85)',
-              padding:         '5px 12px',
-              fontSize:        12,
-              fontWeight:      600,
-              cursor:          'pointer',
-              transition:      'background 0.15s',
-              marginLeft:      8,
-            }}
-            onMouseEnter={(e) =>
-              (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.22)')
-            }
-            onMouseLeave={(e) =>
-              (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.12)')
-            }
-          >
-            My Program
-          </button>
-        )}
-
         {/* Staff link — internal admins only */}
         {user && (user.roleId === 1 || user.roleId === 2) && (
           <button

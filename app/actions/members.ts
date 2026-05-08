@@ -16,8 +16,19 @@
 
 import { randomUUID } from 'crypto'
 import { getServerSession } from '@/lib/auth'
-import { sp_CreateTeamMember, sp_CreateInviteCode } from '@/lib/db/procedures'
+import { sp_CreateTeamMember, sp_CreateInviteCode, sp_AddUserRole } from '@/lib/db/procedures'
+import { appDbContext } from '@/lib/db/connection'
 import { sendTransactionalEmail, buildInviteEmailHtml, buildTeamAddedEmailHtml } from '@/lib/resend'
+
+// Maps roleKey → program_role_id (mirrors dbo.program_role)
+const ROLE_TO_PROGRAM_ROLE_ID: Record<string, number> = {
+  athletic_director: 1,
+  app_admin:         2,
+  alumni_director:   3,
+  head_coach:        4,
+  position_coach:    5,
+  support_staff:     6,
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -28,6 +39,7 @@ export interface CreateCoachStaffInput {
   teamId:    number
   teamName?: string   // for invite email
   role:      'athletic_director' | 'app_admin' | 'alumni_director' | 'head_coach' | 'position_coach' | 'support_staff'
+  sportId?:  number | null   // required to write a users_sports row in AppDB
 }
 
 export interface GenerateInviteCodeInput {
@@ -73,6 +85,24 @@ export async function createCoachStaff(
         TEAM_NOT_FOUND: 'Team not found.',
       }
       return { success: false, error: messages[errorCode] ?? errorCode }
+    }
+
+    // Write to AppDB so the staff member appears in users_sports (program_role_id 1-6)
+    const programRoleId = ROLE_TO_PROGRAM_ROLE_ID[input.role]
+    const appDb = (session as unknown as Record<string, unknown>).appDb as string | undefined
+    if (userId && programRoleId && input.sportId && appDb) {
+      try {
+        await appDbContext.run(appDb, async () => {
+          await sp_AddUserRole({
+            userId:        userId!,
+            programRoleId,
+            sportId:       input.sportId ?? null,
+            adminUserId:   session.userId,
+          })
+        })
+      } catch (appErr) {
+        console.warn('[createCoachStaff] AppDB sp_AddUserRole failed:', appErr)
+      }
     }
 
     // Send invite email (fire-and-forget)
