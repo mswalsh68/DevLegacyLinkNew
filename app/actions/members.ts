@@ -16,8 +16,19 @@
 
 import { randomUUID } from 'crypto'
 import { getServerSession } from '@/lib/auth'
-import { sp_CreateTeamMember, sp_CreateInviteCode } from '@/lib/db/procedures'
+import { sp_CreateTeamMember, sp_CreateInviteCode, sp_AddUserRole, sp_UpsertUser } from '@/lib/db/procedures'
+import { appDbContext } from '@/lib/db/connection'
 import { sendTransactionalEmail, buildInviteEmailHtml, buildTeamAddedEmailHtml } from '@/lib/resend'
+
+// Maps roleKey → program_role_id (mirrors dbo.program_role)
+const ROLE_TO_PROGRAM_ROLE_ID: Record<string, number> = {
+  athletic_director: 1,
+  app_admin:         2,
+  alumni_director:   3,
+  head_coach:        4,
+  position_coach:    5,
+  support_staff:     6,
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -28,6 +39,8 @@ export interface CreateCoachStaffInput {
   teamId:    number
   teamName?: string   // for invite email
   role:      'athletic_director' | 'app_admin' | 'alumni_director' | 'head_coach' | 'position_coach' | 'support_staff'
+  sportId?:  number | null   // null = all sports (roles 1-3); required for roles 4-6
+  appDb:     string          // tenant App DB name — must come from the wizard, not session
 }
 
 export interface GenerateInviteCodeInput {
@@ -73,6 +86,29 @@ export async function createCoachStaff(
         TEAM_NOT_FOUND: 'Team not found.',
       }
       return { success: false, error: messages[errorCode] ?? errorCode }
+    }
+
+    // Write to AppDB: sync user record then upsert users_sports row
+    const programRoleId = ROLE_TO_PROGRAM_ROLE_ID[input.role]
+    if (userId && programRoleId) {
+      try {
+        await appDbContext.run(input.appDb, async () => {
+          await sp_UpsertUser({
+            userId: userId!,
+            email:     input.email,
+            firstName: input.firstName,
+            lastName:  input.lastName,
+          })
+          await sp_AddUserRole({
+            userId:        userId!,
+            programRoleId,
+            sportId:       input.sportId ?? null,
+            adminUserId:   session.userId,
+          })
+        })
+      } catch (appErr) {
+        console.warn('[createCoachStaff] AppDB write failed:', appErr)
+      }
     }
 
     // Send invite email (fire-and-forget)
