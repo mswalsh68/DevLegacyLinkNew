@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useAuth } from '@/providers/AuthProvider'
 import { useTeamConfig } from '@/providers/ThemeProvider'
@@ -15,6 +15,7 @@ import { theme } from '@/lib/theme'
 interface SportRow {
   sportId:       number
   sportName:     string
+  positionId:    number | null
   positionName:  string | null
   jerseyNumber:  number | null
   classYear:     number | null
@@ -31,7 +32,6 @@ interface PlayerData {
   lastName:      string
   lastTeamLogin: string | null
   sportRows:     SportRow[]
-  // Social — always visible
   twitter:       string | null
   instagram:     string | null
   facebook:      string | null
@@ -40,7 +40,6 @@ interface PlayerData {
   otherLink1:    string | null
   otherLink2:    string | null
   otherLink3:    string | null
-  // Contact — all roster viewers
   phone:                   string | null
   emergencyContactName1?:  string | null
   emergencyContactPhone1?: string | null
@@ -50,12 +49,20 @@ interface PlayerData {
   emergencyContactEmail2?: string | null
 }
 
+interface Position {
+  positionId: number
+  positionName: string
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div style={{ backgroundColor: 'var(--color-card-bg)', border: '1px solid var(--color-card-border)', borderRadius: 12, padding: 24, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-      <h2 style={{ fontSize: 12, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 16px' }}>{title}</h2>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <h2 style={{ fontSize: 12, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>{title}</h2>
+        {action}
+      </div>
       {children}
     </div>
   )
@@ -79,6 +86,141 @@ function Grid({ children }: { children: React.ReactNode }) {
   return <div className="field-grid-3">{children}</div>
 }
 
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '6px 10px',
+  fontSize: 14,
+  border: '1px solid var(--color-card-border)',
+  borderRadius: 6,
+  backgroundColor: 'var(--color-card-bg)',
+  color: theme.gray900,
+  boxSizing: 'border-box',
+}
+
+const labelStyle: React.CSSProperties = {
+  fontSize: 11,
+  fontWeight: 600,
+  color: theme.gray400,
+  textTransform: 'uppercase',
+  letterSpacing: '0.5px',
+  display: 'block',
+  marginBottom: 4,
+}
+
+// ─── Sport Edit Form ──────────────────────────────────────────────────────────
+
+function SportEditForm({
+  sport,
+  userId,
+  onSaved,
+  onCancel,
+}: {
+  sport:    SportRow
+  userId:   string
+  onSaved:  (updated: Partial<SportRow>) => void
+  onCancel: () => void
+}) {
+  const [positions,     setPositions]     = useState<Position[]>([])
+  const [positionId,    setPositionId]    = useState<string>(sport.positionId != null ? String(sport.positionId) : '')
+  const [jerseyNumber,  setJerseyNumber]  = useState<string>(sport.jerseyNumber  != null ? String(sport.jerseyNumber)  : '')
+  const [classYear,     setClassYear]     = useState<string>(sport.classYear     != null ? String(sport.classYear)     : '')
+  const [seasonsPlayed, setSeasonsPlayed] = useState<string>(sport.seasonsPlayed != null ? String(sport.seasonsPlayed) : '')
+  const [saving,        setSaving]        = useState(false)
+  const [error,         setError]         = useState('')
+
+  useEffect(() => {
+    fetch(`/api/sports/${sport.sportId}/positions`, { credentials: 'include' })
+      .then(r => r.json())
+      .then(({ data }) => { if (Array.isArray(data)) setPositions(data) })
+      .catch(() => {})
+  }, [sport.sportId])
+
+  const handleSave = async () => {
+    setSaving(true)
+    setError('')
+    try {
+      const res = await fetch(`/api/players/${userId}`, {
+        method:      'PATCH',
+        headers:     { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          sportId:      sport.sportId,
+          positionId:   positionId    !== '' ? Number(positionId)    : null,
+          jerseyNumber: jerseyNumber  !== '' ? Number(jerseyNumber)  : null,
+          classYear:    classYear     !== '' ? Number(classYear)     : null,
+          seasonsPlayed:seasonsPlayed !== '' ? Number(seasonsPlayed) : null,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) { setError(json.error ?? 'Failed to save'); return }
+
+      const pos = positions.find(p => p.positionId === Number(positionId))
+      onSaved({
+        positionId:    positionId    !== '' ? Number(positionId)    : null,
+        positionName:  pos?.positionName ?? sport.positionName,
+        jerseyNumber:  jerseyNumber  !== '' ? Number(jerseyNumber)  : null,
+        classYear:     classYear     !== '' ? Number(classYear)     : null,
+        seasonsPlayed: seasonsPlayed !== '' ? Number(seasonsPlayed) : null,
+      })
+    } catch {
+      setError('Network error — please try again')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+        <div>
+          <label style={labelStyle}>Position</label>
+          <select value={positionId} onChange={e => setPositionId(e.target.value)} style={inputStyle}>
+            <option value="">— None —</option>
+            {positions.map(p => (
+              <option key={p.positionId} value={p.positionId}>{p.positionName}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label style={labelStyle}>Jersey #</label>
+          <input
+            type="number" min={0} max={99}
+            value={jerseyNumber}
+            onChange={e => setJerseyNumber(e.target.value)}
+            placeholder="—"
+            style={inputStyle}
+          />
+        </div>
+        <div>
+          <label style={labelStyle}>Class Year</label>
+          <input
+            type="number" min={1900} max={2100}
+            value={classYear}
+            onChange={e => setClassYear(e.target.value)}
+            placeholder="—"
+            style={inputStyle}
+          />
+        </div>
+        <div>
+          <label style={labelStyle}>Seasons Played</label>
+          <input
+            type="number" min={0} max={99}
+            value={seasonsPlayed}
+            onChange={e => setSeasonsPlayed(e.target.value)}
+            placeholder="—"
+            style={inputStyle}
+          />
+        </div>
+      </div>
+      {error && <p style={{ fontSize: 13, color: '#dc2626', margin: '0 0 10px' }}>{error}</p>}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <Button label={saving ? 'Saving…' : 'Save'} onClick={handleSave} disabled={saving} />
+        <Button label="Cancel" variant="outline" onClick={onCancel} disabled={saving} />
+      </div>
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PlayerDetailPage() {
@@ -88,9 +230,10 @@ export default function PlayerDetailPage() {
   const { user, isLoading } = useAuth()
   const teamConfig = useTeamConfig()
 
-  const [player,  setPlayer]  = useState<PlayerData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error,   setError]   = useState<string | null>(null)
+  const [player,      setPlayer]      = useState<PlayerData | null>(null)
+  const [loading,     setLoading]     = useState(true)
+  const [error,       setError]       = useState<string | null>(null)
+  const [editingSport, setEditingSport] = useState<number | null>(null) // sportId being edited
 
   const canManage = can(user, 'roster:manage')
 
@@ -106,6 +249,17 @@ export default function PlayerDetailPage() {
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false))
   }, [userId, user]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSportSaved = useCallback((sportId: number, updated: Partial<SportRow>) => {
+    setPlayer(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        sportRows: prev.sportRows.map(r => r.sportId === sportId ? { ...r, ...updated } : r),
+      }
+    })
+    setEditingSport(null)
+  }, [])
 
   if (isLoading) return null
   if (!can(user, 'roster:view')) {
@@ -173,13 +327,33 @@ export default function PlayerDetailPage() {
       <div className="detail-grid-2">
         {/* Sport rows */}
         {player.sportRows.map((sport) => (
-          <Section key={sport.sportId} title={sport.sportName}>
-            <Grid>
-              <Field label="Jersey #"       value={sport.jerseyNumber} />
-              <Field label="Position"       value={sport.positionName} />
-              <Field label="Class Year"     value={sport.classYear} />
-              <Field label="Seasons Played" value={sport.seasonsPlayed} />
-            </Grid>
+          <Section
+            key={sport.sportId}
+            title={sport.sportName}
+            action={canManage && editingSport !== sport.sportId ? (
+              <button
+                onClick={() => setEditingSport(sport.sportId)}
+                style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+              >
+                Edit
+              </button>
+            ) : undefined}
+          >
+            {editingSport === sport.sportId ? (
+              <SportEditForm
+                sport={sport}
+                userId={userId}
+                onSaved={(updated) => handleSportSaved(sport.sportId, updated)}
+                onCancel={() => setEditingSport(null)}
+              />
+            ) : (
+              <Grid>
+                <Field label="Jersey #"       value={sport.jerseyNumber} />
+                <Field label="Position"       value={sport.positionName} />
+                <Field label="Class Year"     value={sport.classYear} />
+                <Field label="Seasons Played" value={sport.seasonsPlayed} />
+              </Grid>
+            )}
           </Section>
         ))}
 
