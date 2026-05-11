@@ -90,17 +90,18 @@ export async function createCoachStaff(
 
     // Write to AppDB: sync user record then upsert users_sports row
     const programRoleId = ROLE_TO_PROGRAM_ROLE_ID[input.role]
-    if (userId && programRoleId) {
+    const safeUserId    = userId ? Number(userId) : null
+    if (safeUserId && programRoleId) {
       try {
         await appDbContext.run(input.appDb, async () => {
           await sp_UpsertUser({
-            userId: userId!,
+            userId:    safeUserId,
             email:     input.email,
             firstName: input.firstName,
             lastName:  input.lastName,
           })
           await sp_AddUserRole({
-            userId:        userId!,
+            userId:        safeUserId,
             programRoleId,
             sportId:       input.sportId ?? null,
             adminUserId:   session.userId,
