@@ -49,13 +49,11 @@ export async function GET(req: Request) {
         pageSize,
       })
 
-      const accountClaimedMap = canManage
-        ? await fetchAccountClaimedMap(alumni.map(a => Number(a.userId)))
-        : new Map<number, boolean>()
+      const accountClaimedMap = await fetchAccountClaimedMap(alumni.map(a => Number(a.userId)))
 
       const enriched = alumni.map(a => ({
         ...a,
-        ...(canManage ? { accountClaimed: accountClaimedMap.get(Number(a.userId)) ?? false } : {}),
+        accountClaimed: accountClaimedMap.get(Number(a.userId)) ?? false,
       }))
 
       return NextResponse.json({ success: true, data: enriched, total: totalCount })
