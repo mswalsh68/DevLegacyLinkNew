@@ -64,6 +64,7 @@ export default function AlumniPage() {
   const router = useRouter()
   const config = useTeamConfig()
   const { user, isLoading } = useAuth()
+  const canManage = can(user, 'alumni:edit') || (!!user?.programRoleId && user.programRoleId >= 1 && user.programRoleId <= 6)
 
   // All hooks called unconditionally before any early return.
   const { filters: { search, status, position, isDonor }, setFilter, page, setPage } =
@@ -297,18 +298,20 @@ export default function AlumniPage() {
                   {a.accountClaimed ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <Badge label={a.status} variant={alumniStatusBadge(a.status)} />
-                      <button
-                        disabled={rowActions[a.userId] === 'sending'}
-                        onClick={() => handleNotify(a)}
-                        style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: '1px solid var(--color-card-border)', backgroundColor: 'var(--color-card-bg)', color: theme.gray600, cursor: 'pointer', whiteSpace: 'nowrap', alignSelf: 'flex-start' }}
-                      >
-                        {rowActions[a.userId] === 'sending' ? '…'
-                          : rowActions[a.userId] === 'sent'    ? '✓ Sent'
-                          : rowActions[a.userId] === 'error'   ? 'Error'
-                          : 'Notify'}
-                      </button>
+                      {canManage && (
+                        <button
+                          disabled={rowActions[a.userId] === 'sending'}
+                          onClick={() => handleNotify(a)}
+                          style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: '1px solid var(--color-card-border)', backgroundColor: 'var(--color-card-bg)', color: theme.gray600, cursor: 'pointer', whiteSpace: 'nowrap', alignSelf: 'flex-start' }}
+                        >
+                          {rowActions[a.userId] === 'sending' ? '…'
+                            : rowActions[a.userId] === 'sent'    ? '✓ Sent'
+                            : rowActions[a.userId] === 'error'   ? 'Error'
+                            : 'Notify'}
+                        </button>
+                      )}
                     </div>
-                  ) : (
+                  ) : canManage ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <Badge label="Unclaimed" variant="warning" />
                       <div style={{ display: 'flex', gap: 6 }}>
@@ -335,7 +338,7 @@ export default function AlumniPage() {
                         </button>
                       </div>
                     </div>
-                  )}
+                  ) : null}
                 </td>
 
                 {/* Donor */}
