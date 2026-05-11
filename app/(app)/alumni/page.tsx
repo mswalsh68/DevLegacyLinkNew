@@ -232,16 +232,16 @@ export default function AlumniPage() {
               <th scope="col" style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Position</th>
               <th scope="col" style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Employer</th>
               <th scope="col" style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Location</th>
-              <th scope="col" style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Status</th>
+              {canManage && <th scope="col" style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Status</th>}
               <th scope="col" style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Donor</th>
               <th scope="col" style={{ padding: '12px 20px' }}><span className="sr-only">View</span></th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} style={{ textAlign: 'center', padding: 48, color: theme.gray400 }}>Loading...</td></tr>
+              <tr><td colSpan={canManage ? 8 : 7} style={{ textAlign: 'center', padding: 48, color: theme.gray400 }}>Loading...</td></tr>
             ) : alumni.length === 0 ? (
-              <tr><td colSpan={8} style={{ textAlign: 'center', padding: 48, color: theme.gray400 }}>No alumni found</td></tr>
+              <tr><td colSpan={canManage ? 8 : 7} style={{ textAlign: 'center', padding: 48, color: theme.gray400 }}>No alumni found</td></tr>
             ) : alumni.map((a, i) => (
               <TableRow
                 key={a.userId}
