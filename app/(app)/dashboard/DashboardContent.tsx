@@ -323,6 +323,9 @@ export default function DashboardContent() {
             {canSeeFeed && (
               <NavTile href="/feed"    icon="📬" title="Feed" />
             )}
+            {hasFeature(tier, 'mentor_program') && (
+              <NavTile href="/mentor" icon="🤝" title="Mentor Program" />
+            )}
             {/* Role 1-7 can open the wizard (players/role 8 are blocked inside it) */}
             {(config.teamId ?? user.currentTeamId) && user.appDb && creatorProgramRoleId !== null && creatorProgramRoleId <= 7 && (
               <NavTile icon="➕" title="Add Member" onClick={() => setWizardOpen(true)} />
@@ -368,6 +371,15 @@ export default function DashboardContent() {
             description="Announcements and updates from your program"
             hoverColor={theme.primary}
           />
+          {hasFeature(tier, 'mentor_program') && (
+            <NavCard
+              href="/mentor"
+              icon="🤝"
+              title="Mentor"
+              description="Connect with an alumni mentor from your program"
+              hoverColor={theme.primary}
+            />
+          )}
         </div>
       ) : isAlumnus ? (
         /* ── Alumni: Alumni · Staff · Feed ── */
@@ -393,6 +405,15 @@ export default function DashboardContent() {
             description="Stay connected with news and outreach from your program"
             hoverColor={theme.accent}
           />
+          {hasFeature(tier, 'mentor_program') && (
+            <NavCard
+              href="/mentor"
+              icon="🤝"
+              title="Mentoring"
+              description="Manage your mentoring requests and active mentees"
+              hoverColor={theme.accent}
+            />
+          )}
         </div>
       ) : null}
 

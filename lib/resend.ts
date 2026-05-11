@@ -136,3 +136,115 @@ export function buildInviteEmailHtml(params: {
 </body>
 </html>`
 }
+
+// ─── Mentor Program Emails ─────────────────────────────────────────────────────
+
+export function buildMentorRequestEmailHtml(params: {
+  alumniFirstName: string
+  playerFirstName: string
+  playerLastName:  string
+  playerPosition:  string | null
+  playerClassYear: number | null
+  teamName:        string
+  coachName:       string
+  dashboardUrl:    string
+}): string {
+  const { alumniFirstName, playerFirstName, playerLastName, playerPosition, playerClassYear, teamName, coachName, dashboardUrl } = params
+  const playerDesc = [playerPosition, playerClassYear ? `Class of ${playerClassYear}` : null].filter(Boolean).join(' · ')
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Mentor Request</title></head>
+<body style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;padding:32px 24px;color:#111827">
+  <p>Hi ${alumniFirstName},</p>
+  <p><strong>${coachName}</strong> at <strong>${teamName}</strong> has selected you as a potential mentor for a current player — a recognition of your experience and the impact you had during your time in the program.</p>
+  <div style="background:#f3f4f6;border-radius:8px;padding:16px 20px;margin:24px 0">
+    <p style="margin:0 0 4px;font-size:13px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px">Player</p>
+    <p style="margin:0;font-size:16px;font-weight:700;color:#111827">${playerFirstName} ${playerLastName}</p>
+    ${playerDesc ? `<p style="margin:4px 0 0;font-size:14px;color:#6b7280">${playerDesc}</p>` : ''}
+  </div>
+  <p>Log in to your LegacyLink dashboard to accept or decline. There is no obligation — only your genuine interest matters.</p>
+  <p style="margin:24px 0">
+    <a href="${dashboardUrl}" style="background:#1d4ed8;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block">View Request</a>
+  </p>
+  <hr style="border:none;border-top:1px solid #e5e7eb;margin:32px 0">
+  <p style="font-size:12px;color:#9ca3af;margin:0">Sent on behalf of ${teamName} via LegacyLink.</p>
+</body>
+</html>`
+}
+
+export function buildMentorAcceptedEmailHtml(params: {
+  playerFirstName: string
+  alumniFirstName: string
+  alumniLastName:  string
+  alumniPosition:  string | null
+  alumniClassYear: number | null
+  teamName:        string
+  dashboardUrl:    string
+}): string {
+  const { playerFirstName, alumniFirstName, alumniLastName, alumniPosition, alumniClassYear, teamName, dashboardUrl } = params
+  const alumniDesc = [alumniPosition, alumniClassYear ? `Class of ${alumniClassYear}` : null].filter(Boolean).join(' · ')
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Mentor Assigned</title></head>
+<body style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;padding:32px 24px;color:#111827">
+  <p>Hi ${playerFirstName},</p>
+  <p>Your coaching staff at <strong>${teamName}</strong> has connected you with a mentor from the program's alumni network.</p>
+  <div style="background:#f3f4f6;border-radius:8px;padding:16px 20px;margin:24px 0">
+    <p style="margin:0 0 4px;font-size:13px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px">Your Mentor</p>
+    <p style="margin:0;font-size:16px;font-weight:700;color:#111827">${alumniFirstName} ${alumniLastName}</p>
+    ${alumniDesc ? `<p style="margin:4px 0 0;font-size:14px;color:#6b7280">${alumniDesc}</p>` : ''}
+  </div>
+  <p>Their contact information is available in your Mentor section on LegacyLink.</p>
+  <p style="margin:24px 0">
+    <a href="${dashboardUrl}" style="background:#1d4ed8;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block">View My Mentor</a>
+  </p>
+  <hr style="border:none;border-top:1px solid #e5e7eb;margin:32px 0">
+  <p style="font-size:12px;color:#9ca3af;margin:0">Sent on behalf of ${teamName} via LegacyLink.</p>
+</body>
+</html>`
+}
+
+export function buildMentorDeclinedEmailHtml(params: {
+  adminFirstName:  string
+  alumniFirstName: string
+  alumniLastName:  string
+  playerFirstName: string
+  playerLastName:  string
+  teamName:        string
+  dashboardUrl:    string
+}): string {
+  const { adminFirstName, alumniFirstName, alumniLastName, playerFirstName, playerLastName, teamName, dashboardUrl } = params
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Mentor Request Unavailable</title></head>
+<body style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;padding:32px 24px;color:#111827">
+  <p>Hi ${adminFirstName},</p>
+  <p><strong>${alumniFirstName} ${alumniLastName}</strong> was unable to take on a mentorship at this time for <strong>${playerFirstName} ${playerLastName}</strong>.</p>
+  <p>You can create a new pairing for ${playerFirstName} with a different alumni from the Mentor Program dashboard.</p>
+  <p style="margin:24px 0">
+    <a href="${dashboardUrl}" style="background:#1d4ed8;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block">Mentor Program Dashboard</a>
+  </p>
+  <hr style="border:none;border-top:1px solid #e5e7eb;margin:32px 0">
+  <p style="font-size:12px;color:#9ca3af;margin:0">${teamName} · LegacyLink</p>
+</body>
+</html>`
+}
+
+export function buildMentorCancelledEmailHtml(params: {
+  alumniFirstName: string
+  playerFirstName: string
+  playerLastName:  string
+  teamName:        string
+}): string {
+  const { alumniFirstName, playerFirstName, playerLastName, teamName } = params
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Mentor Request Withdrawn</title></head>
+<body style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;padding:32px 24px;color:#111827">
+  <p>Hi ${alumniFirstName},</p>
+  <p>The mentorship request from <strong>${teamName}</strong> for <strong>${playerFirstName} ${playerLastName}</strong> has been withdrawn by the coaching staff. No action is needed on your part.</p>
+  <hr style="border:none;border-top:1px solid #e5e7eb;margin:32px 0">
+  <p style="font-size:12px;color:#9ca3af;margin:0">${teamName} · LegacyLink</p>
+</body>
+</html>`
+}
