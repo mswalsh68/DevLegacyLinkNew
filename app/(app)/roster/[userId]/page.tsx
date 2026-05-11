@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { SportEditForm } from '@/components/app/SportEditForm'
+import type { SportSavedPayload } from '@/components/app/SportEditForm'
 import { useRouter, useParams } from 'next/navigation'
 import { useAuth } from '@/providers/AuthProvider'
-import { useTeamConfig } from '@/providers/ThemeProvider'
 import { Badge }        from '@/components/ui/Badge'
 import { Button }       from '@/components/ui/Button'
 import { AccessDenied } from '@/components/ui/AccessDenied'
@@ -50,11 +51,6 @@ interface PlayerData {
   emergencyContactEmail2?: string | null
 }
 
-interface Position {
-  positionId: number
-  positionName: string
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
@@ -87,145 +83,6 @@ function Grid({ children }: { children: React.ReactNode }) {
   return <div className="field-grid-3">{children}</div>
 }
 
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '6px 10px',
-  fontSize: 14,
-  border: '1px solid var(--color-card-border)',
-  borderRadius: 6,
-  backgroundColor: 'var(--color-card-bg)',
-  color: theme.gray900,
-  boxSizing: 'border-box',
-}
-
-const labelStyle: React.CSSProperties = {
-  fontSize: 11,
-  fontWeight: 600,
-  color: theme.gray400,
-  textTransform: 'uppercase',
-  letterSpacing: '0.5px',
-  display: 'block',
-  marginBottom: 4,
-}
-
-// ─── Sport Edit Form ──────────────────────────────────────────────────────────
-
-function SportEditForm({
-  sport,
-  userId,
-  onSaved,
-  onCancel,
-}: {
-  sport:    SportRow
-  userId:   string
-  onSaved:  (updated: Partial<SportRow>) => void
-  onCancel: () => void
-}) {
-  const [positions,     setPositions]     = useState<Position[]>([])
-  const [positionId,    setPositionId]    = useState<string>(sport.positionId != null ? String(sport.positionId) : '')
-  const [jerseyNumber,  setJerseyNumber]  = useState<string>(sport.jerseyNumber  != null ? String(sport.jerseyNumber)  : '')
-  const [classYear,     setClassYear]     = useState<string>(sport.classYear     != null ? String(sport.classYear)     : '')
-  const [seasonsPlayed, setSeasonsPlayed] = useState<string>(sport.seasonsPlayed != null ? String(sport.seasonsPlayed) : '')
-  const [saving,        setSaving]        = useState(false)
-  const [error,         setError]         = useState('')
-
-  useEffect(() => {
-    fetch(`/api/sports/${sport.sportId}/positions`, { credentials: 'include' })
-      .then(r => r.json())
-      .then((json) => {
-        if (Array.isArray(json.data)) setPositions(json.data)
-        else console.error('[positions fetch] unexpected response:', json)
-      })
-      .catch((err) => console.error('[positions fetch] error:', err))
-  }, [sport.sportId])
-
-  const handleSave = async () => {
-    setSaving(true)
-    setError('')
-    try {
-      const res = await fetch(`/api/players/${userId}`, {
-        method:      'PATCH',
-        headers:     { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          sportId:      sport.sportId,
-          positionId:   positionId    !== '' ? Number(positionId)    : null,
-          jerseyNumber: jerseyNumber  !== '' ? Number(jerseyNumber)  : null,
-          classYear:    classYear     !== '' ? Number(classYear)     : null,
-          seasonsPlayed:seasonsPlayed !== '' ? Number(seasonsPlayed) : null,
-        }),
-      })
-      const json = await res.json()
-      if (!res.ok || !json.success) { setError(json.error ?? 'Failed to save'); return }
-
-      const pos = positions.find(p => p.positionId === Number(positionId))
-      onSaved({
-        positionId:    positionId    !== '' ? Number(positionId)    : null,
-        position:      pos?.positionName ?? sport.position ?? sport.positionName ?? null,
-        positionName:  pos?.positionName ?? sport.position ?? sport.positionName ?? null,
-        jerseyNumber:  jerseyNumber  !== '' ? Number(jerseyNumber)  : null,
-        classYear:     classYear     !== '' ? Number(classYear)     : null,
-        seasonsPlayed: seasonsPlayed !== '' ? Number(seasonsPlayed) : null,
-      })
-    } catch {
-      setError('Network error — please try again')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-        <div>
-          <label style={labelStyle}>Position</label>
-          <select value={positionId} onChange={e => setPositionId(e.target.value)} style={inputStyle}>
-            <option value="">— None —</option>
-            {positions.map(p => (
-              <option key={p.positionId} value={p.positionId}>{p.positionName}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label style={labelStyle}>Jersey #</label>
-          <input
-            type="number" min={0} max={99}
-            value={jerseyNumber}
-            onChange={e => setJerseyNumber(e.target.value)}
-            placeholder="—"
-            style={inputStyle}
-          />
-        </div>
-        <div>
-          <label style={labelStyle}>Class Year</label>
-          <input
-            type="number" min={1900} max={2100}
-            value={classYear}
-            onChange={e => setClassYear(e.target.value)}
-            placeholder="—"
-            style={inputStyle}
-          />
-        </div>
-        <div>
-          <label style={labelStyle}>Seasons Played</label>
-          <input
-            type="number" min={0} max={99}
-            value={seasonsPlayed}
-            onChange={e => setSeasonsPlayed(e.target.value)}
-            placeholder="—"
-            style={inputStyle}
-          />
-        </div>
-      </div>
-      {error && <p style={{ fontSize: 13, color: '#dc2626', margin: '0 0 10px' }}>{error}</p>}
-      <div style={{ display: 'flex', gap: 8 }}>
-        <Button label={saving ? 'Saving…' : 'Save'} onClick={handleSave} disabled={saving} />
-        <Button label="Cancel" variant="outline" onClick={onCancel} disabled={saving} />
-      </div>
-    </div>
-  )
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PlayerDetailPage() {
@@ -233,7 +90,6 @@ export default function PlayerDetailPage() {
   const params     = useParams()
   const userId     = params.userId as string
   const { user, isLoading } = useAuth()
-  const teamConfig = useTeamConfig()
 
   const [player,      setPlayer]      = useState<PlayerData | null>(null)
   const [loading,     setLoading]     = useState(true)
@@ -255,12 +111,12 @@ export default function PlayerDetailPage() {
       .finally(() => setLoading(false))
   }, [userId, user]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleSportSaved = useCallback((sportId: number, updated: Partial<SportRow>) => {
+  const handleSportSaved = useCallback((sportId: number, payload: SportSavedPayload) => {
     setPlayer(prev => {
       if (!prev) return prev
       return {
         ...prev,
-        sportRows: prev.sportRows.map(r => r.sportId === sportId ? { ...r, ...updated } : r),
+        sportRows: prev.sportRows.map(r => r.sportId === sportId ? { ...r, ...payload } : r),
       }
     })
     setEditingSport(null)
@@ -347,8 +203,8 @@ export default function PlayerDetailPage() {
             {editingSport === sport.sportId ? (
               <SportEditForm
                 sport={sport}
-                userId={userId}
-                onSaved={(updated) => handleSportSaved(sport.sportId, updated)}
+                patchEndpoint={`/api/players/${userId}`}
+                onSaved={(payload) => handleSportSaved(sport.sportId, payload)}
                 onCancel={() => setEditingSport(null)}
               />
             ) : (

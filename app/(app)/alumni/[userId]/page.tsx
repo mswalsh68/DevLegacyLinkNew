@@ -1,20 +1,25 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useAuth } from '@/providers/AuthProvider'
 import { Badge }        from '@/components/ui/Badge'
 import { Button }       from '@/components/ui/Button'
 import { AccessDenied } from '@/components/ui/AccessDenied'
 import { can, roleLabel, requiredRoleLabel } from '@/lib/permissions'
+import { SportEditForm } from '@/components/app/SportEditForm'
+import type { SportSavedPayload } from '@/components/app/SportEditForm'
 import { alumniStatusBadge } from '@/lib/statusMappings'
 import { theme } from '@/lib/theme'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface SportRow {
+  sportId:       number
   sportName:     string | null
+  positionId:    number | null
   position:      string | null
+  jerseyNumber:  number | null
   classYear:     number | null
   seasonsPlayed: number | null
 }
@@ -64,10 +69,13 @@ function alumniToEditState(a: AlumniRecord): EditState {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div style={{ backgroundColor: 'var(--color-card-bg)', border: '1px solid var(--color-card-border)', borderRadius: 12, padding: 24, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', marginBottom: 16 }}>
-      <h2 style={{ fontSize: 12, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 16px' }}>{title}</h2>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <h2 style={{ fontSize: 12, fontWeight: 600, color: theme.gray500, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>{title}</h2>
+        {action}
+      </div>
       {children}
     </div>
   )
@@ -139,8 +147,11 @@ export default function AlumniDetailPage() {
   const [editState,    setEditState]    = useState<EditState | null>(null)
   const [saving,       setSaving]       = useState(false)
   const [saveError,    setSaveError]    = useState<string | null>(null)
+  const [editingSport, setEditingSport] = useState<number | null>(null)
 
   const canEdit = can(user, 'alumni:edit')
+  const isSelf  = !!user && !!alumni && Number(alumni.userId) === user.userId
+  const canEditSport = canEdit || isSelf
 
   useEffect(() => {
     if (!can(user, 'alumni:view')) return
@@ -155,6 +166,19 @@ export default function AlumniDetailPage() {
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false))
   }, [userId, user]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSportSaved = useCallback((sportId: number, payload: SportSavedPayload) => {
+    setAlumni(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        sportRows: prev.sportRows.map(r =>
+          r.sportId === sportId ? { ...r, ...payload } : r
+        ),
+      }
+    })
+    setEditingSport(null)
+  }, [])
 
   function handleEdit() {
     if (!alumni) return
@@ -284,11 +308,34 @@ export default function AlumniDetailPage() {
 
       <div className="detail-grid-2">
         {/* ── Sport rows ── */}
-        {(alumni.sportRows ?? []).map((sport, i) => (
-          <Section key={i} title={sport.sportName ?? 'Sport'}>
-            <Field label="Class Year"     value={sport.classYear} />
-            <Field label="Position"       value={sport.position} />
-            <Field label="Seasons Played" value={sport.seasonsPlayed} />
+        {(alumni.sportRows ?? []).map((sport) => (
+          <Section
+            key={sport.sportId}
+            title={sport.sportName ?? 'Sport'}
+            action={canEditSport && editingSport !== sport.sportId ? (
+              <button
+                onClick={() => setEditingSport(sport.sportId)}
+                style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+              >
+                Edit
+              </button>
+            ) : undefined}
+          >
+            {editingSport === sport.sportId ? (
+              <SportEditForm
+                sport={sport}
+                patchEndpoint={`/api/alumni/${userId}`}
+                onSaved={(payload) => handleSportSaved(sport.sportId, payload)}
+                onCancel={() => setEditingSport(null)}
+              />
+            ) : (
+              <>
+                <Field label="Position"       value={sport.position} />
+                <Field label="Jersey #"       value={sport.jerseyNumber} />
+                <Field label="Class Year"     value={sport.classYear} />
+                <Field label="Seasons Played" value={sport.seasonsPlayed} />
+              </>
+            )}
           </Section>
         ))}
 

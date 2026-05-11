@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireSession } from '@/lib/auth'
 import { can } from '@/lib/permissions'
-import { sp_GetMemberDetails, sp_GetUserProfile, sp_UpsertUserContact } from '@/lib/db/procedures'
+import { sp_GetMemberDetails, sp_GetUserProfile, sp_UpsertUserContact, sp_UpdateUserRole } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 
 // ─── GET /api/alumni/[userId] ─────────────────────────────────────────────────
@@ -83,9 +83,9 @@ export async function GET(
 }
 
 // ─── PATCH /api/alumni/[userId] ───────────────────────────────────────────────
-// Updates editable alumni fields:
-//   contact (phone, linkedInUrl, twitterUrl) → sp_UpsertUserContact (global DB)
-// Career, giving, and note fields are not yet in the schema and are silently ignored.
+// Two modes based on body shape:
+//   { sportId, ... }           → sport field edit (alumni:edit OR self)
+//   { phone, linkedInUrl, ... } → contact edit    (alumni:edit OR self)
 
 export async function PATCH(
   req: Request,
@@ -94,12 +94,14 @@ export async function PATCH(
   const { session, error } = await requireSession()
   if (error) return error
 
-  if (!can(session, 'alumni:edit')) {
+  const { userId } = await params
+  const uid    = parseInt(userId, 10)
+  const isSelf = uid === session.userId
+  const canEditAlumni = can(session, 'alumni:edit')
+
+  if (!canEditAlumni && !isSelf) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
   }
-
-  const { userId } = await params
-  const uid = parseInt(userId, 10)
 
   let body: Record<string, unknown>
   try {
@@ -108,6 +110,35 @@ export async function PATCH(
     return NextResponse.json({ success: false, error: 'Invalid request body.' }, { status: 400 })
   }
 
+  // Sport field update
+  if (body.sportId != null) {
+    const sportId = Number(body.sportId)
+    if (!sportId) return NextResponse.json({ success: false, error: 'Invalid sportId' }, { status: 400 })
+
+    return appDbContext.run(session.appDb, async () => {
+      try {
+        const { errorCode } = await sp_UpdateUserRole({
+          userId:        uid,
+          sportId,
+          positionId:    body.positionId    != null ? Number(body.positionId)    : null,
+          jerseyNumber:  body.jerseyNumber  != null ? Number(body.jerseyNumber)  : null,
+          classYear:     body.classYear     != null ? Number(body.classYear)     : null,
+          seasonsPlayed: body.seasonsPlayed != null ? Number(body.seasonsPlayed) : null,
+          adminUserId:   session.userId,
+        })
+        if (errorCode === 'JERSEY_NUMBER_IN_USE') {
+          return NextResponse.json({ success: false, error: 'That jersey number is already in use.' }, { status: 409 })
+        }
+        if (errorCode) return NextResponse.json({ success: false, error: errorCode }, { status: 400 })
+        return NextResponse.json({ success: true })
+      } catch (err) {
+        console.error('[PATCH /api/alumni/[userId]] sport update', err)
+        return NextResponse.json({ success: false, error: 'Failed to update sport info.' }, { status: 500 })
+      }
+    })
+  }
+
+  // Contact field update
   const str = (k: string): string | null =>
     typeof body[k] === 'string' ? (body[k] as string) || null : null
 
