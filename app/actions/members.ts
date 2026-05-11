@@ -108,7 +108,9 @@ export async function createCoachStaff(
           })
         })
       } catch (appErr) {
-        console.warn('[createCoachStaff] AppDB write failed:', appErr)
+        const msg = appErr instanceof Error ? appErr.message : String(appErr)
+        console.error('[createCoachStaff] AppDB write failed:', msg)
+        return { success: false, error: `AppDB write failed: ${msg}` }
       }
     }
 
