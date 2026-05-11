@@ -147,6 +147,13 @@ body {
 }
 
 /* Filter bars — collapse to single column on mobile */
+.filters-grid-2 {
+  display:               grid;
+  grid-template-columns: 2fr 1fr;
+  gap:                   12px;
+  margin-bottom:         16px;
+  max-width:             480px;
+}
 .filters-grid-3 {
   display:               grid;
   grid-template-columns: 2fr 1fr 1fr;
@@ -160,9 +167,11 @@ body {
   margin-bottom:         16px;
 }
 @media (max-width: 640px) {
+  .filters-grid-2,
   .filters-grid-3,
   .filters-grid-4 {
     grid-template-columns: 1fr;
+    max-width:             none;
   }
 }
 
