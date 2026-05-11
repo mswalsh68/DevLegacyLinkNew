@@ -16,7 +16,8 @@ interface SportRow {
   sportId:       number
   sportName:     string
   positionId:    number | null
-  positionName:  string | null
+  position:      string | null
+  positionName:  string | null  // alias kept for compat — prefer position
   jerseyNumber:  number | null
   classYear:     number | null
   seasonsPlayed: number | null
@@ -160,7 +161,8 @@ function SportEditForm({
       const pos = positions.find(p => p.positionId === Number(positionId))
       onSaved({
         positionId:    positionId    !== '' ? Number(positionId)    : null,
-        positionName:  pos?.positionName ?? sport.positionName,
+        position:      pos?.positionName ?? sport.position ?? sport.positionName ?? null,
+        positionName:  pos?.positionName ?? sport.position ?? sport.positionName ?? null,
         jerseyNumber:  jerseyNumber  !== '' ? Number(jerseyNumber)  : null,
         classYear:     classYear     !== '' ? Number(classYear)     : null,
         seasonsPlayed: seasonsPlayed !== '' ? Number(seasonsPlayed) : null,
@@ -314,8 +316,8 @@ export default function PlayerDetailPage() {
               {displayName}
             </h1>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              {primarySport?.positionName && (
-                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-primary)' }}>{primarySport.positionName}</span>
+              {(primarySport?.position ?? primarySport?.positionName) && (
+                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-primary)' }}>{primarySport.position ?? primarySport.positionName}</span>
               )}
               {primarySport?.classYear && (
                 <span style={{ fontSize: 13, color: theme.gray500 }}>· Class of {primarySport.classYear}</span>
@@ -352,7 +354,7 @@ export default function PlayerDetailPage() {
             ) : (
               <Grid>
                 <Field label="Jersey #"       value={sport.jerseyNumber} />
-                <Field label="Position"       value={sport.positionName} />
+                <Field label="Position"       value={sport.position ?? sport.positionName} />
                 <Field label="Class Year"     value={sport.classYear} />
                 <Field label="Seasons Played" value={sport.seasonsPlayed} />
               </Grid>
