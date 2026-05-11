@@ -94,10 +94,10 @@ function formatDate(iso: string | null | undefined): string {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, { label: string; variant: 'green' | 'warning' | 'gray' | 'red' }> = {
+  const map: Record<string, { label: string; variant: 'green' | 'warning' | 'gray' | 'danger' }> = {
     pending:   { label: 'Pending',   variant: 'warning' },
     active:    { label: 'Active',    variant: 'green'   },
-    declined:  { label: 'Declined',  variant: 'red'     },
+    declined:  { label: 'Declined',  variant: 'danger'  },
     cancelled: { label: 'Cancelled', variant: 'gray'    },
   }
   const cfg = map[status] ?? { label: status, variant: 'gray' as const }
