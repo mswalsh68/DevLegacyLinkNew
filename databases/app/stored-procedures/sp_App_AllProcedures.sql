@@ -58,6 +58,19 @@ BEGIN
       synced_at      = SYSUTCDATETIME()
     WHERE user_id = @UserId;
   END
+  ELSE IF EXISTS (SELECT 1 FROM dbo.users WHERE email = @Email)
+  BEGIN
+    -- Email exists under a stale/mismatched user_id — re-key to the Global DB user_id.
+    -- Delete orphaned users_sports rows first (no ON UPDATE CASCADE on the FK).
+    DELETE FROM dbo.users_sports WHERE user_id = (SELECT user_id FROM dbo.users WHERE email = @Email);
+    UPDATE dbo.users SET
+      user_id        = @UserId,
+      first_name     = @FirstName,
+      last_name      = @LastName,
+      global_role_id = @GlobalRoleId,
+      synced_at      = SYSUTCDATETIME()
+    WHERE email = @Email;
+  END
   ELSE
   BEGIN
     INSERT INTO dbo.users (user_id, email, first_name, last_name, global_role_id)
