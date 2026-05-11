@@ -344,7 +344,6 @@ BEGIN
   BEGIN
     IF EXISTS (SELECT 1 FROM dbo.users_sports WHERE user_id = @UserId AND sport_id = @SportId)
     BEGIN
-      -- Reactivate and update detail fields
       UPDATE dbo.users_sports SET
         is_active       = 1,
         program_role_id = @ProgramRoleId,
@@ -367,6 +366,28 @@ BEGIN
         @UserId, @SportId,
         @ProgramRoleId, @PositionId, @JerseyNumber, @SeasonsPlayed, @ClassYear
       );
+
+      SET @NewUserSportId = SCOPE_IDENTITY();
+    END
+  END
+  ELSE
+  BEGIN
+    -- sport_id IS NULL — program-wide role (AD, Program Admin, etc.)
+    -- Must use IS NULL comparison; NULL = NULL is always false in SQL.
+    IF EXISTS (SELECT 1 FROM dbo.users_sports WHERE user_id = @UserId AND sport_id IS NULL)
+    BEGIN
+      UPDATE dbo.users_sports SET
+        is_active       = 1,
+        program_role_id = @ProgramRoleId,
+        updated_at      = SYSUTCDATETIME()
+      WHERE user_id = @UserId AND sport_id IS NULL;
+
+      SELECT @NewUserSportId = id FROM dbo.users_sports WHERE user_id = @UserId AND sport_id IS NULL;
+    END
+    ELSE
+    BEGIN
+      INSERT INTO dbo.users_sports (user_id, sport_id, program_role_id)
+      VALUES (@UserId, NULL, @ProgramRoleId);
 
       SET @NewUserSportId = SCOPE_IDENTITY();
     END
