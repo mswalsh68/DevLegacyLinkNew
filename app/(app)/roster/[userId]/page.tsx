@@ -96,7 +96,7 @@ export default function PlayerDetailPage() {
   const [error,       setError]       = useState<string | null>(null)
   const [editingSport, setEditingSport] = useState<number | null>(null) // sportId being edited
 
-  const canManage = can(user, 'roster:manage')
+  const canManage = can(user, 'roster:manage') || (!!user?.programRoleId && user.programRoleId >= 1 && user.programRoleId <= 6)
 
   useEffect(() => {
     if (!can(user, 'roster:view')) return
