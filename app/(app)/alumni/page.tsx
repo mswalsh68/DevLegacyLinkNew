@@ -293,25 +293,23 @@ export default function AlumniPage() {
                   {a.currentCity && a.currentState ? `${a.currentCity}, ${a.currentState}` : '—'}
                 </td>
 
-                {/* Status + invite action */}
+                {/* Status + invite action — managers only */}
                 <td style={{ padding: '12px 20px' }} onClick={e => e.stopPropagation()}>
-                  {a.accountClaimed ? (
+                  {canManage && (a.accountClaimed ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <Badge label={a.status} variant={alumniStatusBadge(a.status)} />
-                      {canManage && (
-                        <button
-                          disabled={rowActions[a.userId] === 'sending'}
-                          onClick={() => handleNotify(a)}
-                          style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: '1px solid var(--color-card-border)', backgroundColor: 'var(--color-card-bg)', color: theme.gray600, cursor: 'pointer', whiteSpace: 'nowrap', alignSelf: 'flex-start' }}
-                        >
-                          {rowActions[a.userId] === 'sending' ? '…'
-                            : rowActions[a.userId] === 'sent'    ? '✓ Sent'
-                            : rowActions[a.userId] === 'error'   ? 'Error'
-                            : 'Notify'}
-                        </button>
-                      )}
+                      <button
+                        disabled={rowActions[a.userId] === 'sending'}
+                        onClick={() => handleNotify(a)}
+                        style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: '1px solid var(--color-card-border)', backgroundColor: 'var(--color-card-bg)', color: theme.gray600, cursor: 'pointer', whiteSpace: 'nowrap', alignSelf: 'flex-start' }}
+                      >
+                        {rowActions[a.userId] === 'sending' ? '…'
+                          : rowActions[a.userId] === 'sent'    ? '✓ Sent'
+                          : rowActions[a.userId] === 'error'   ? 'Error'
+                          : 'Notify'}
+                      </button>
                     </div>
-                  ) : canManage ? (
+                  ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <Badge label="Unclaimed" variant="warning" />
                       <div style={{ display: 'flex', gap: 6 }}>
@@ -338,7 +336,7 @@ export default function AlumniPage() {
                         </button>
                       </div>
                     </div>
-                  ) : null}
+                  ))}
                 </td>
 
                 {/* Donor */}
