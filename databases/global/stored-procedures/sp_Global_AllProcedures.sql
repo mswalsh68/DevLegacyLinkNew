@@ -1252,7 +1252,7 @@ GO
 
 -- ============================================================
 -- sp_GetUserProfile
--- Returns profile fields for the authenticated user.
+-- Returns full profile for the authenticated user (basic info + contact).
 -- ============================================================
 CREATE OR ALTER PROCEDURE dbo.sp_GetUserProfile
   @UserId BIGINT
@@ -1261,18 +1261,43 @@ BEGIN
   SET NOCOUNT ON;
 
   SELECT
-    u.user_id       AS userId,
+    u.user_id                         AS userId,
     u.email,
-    u.first_name    AS firstName,
-    u.last_name     AS lastName,
-    u.role_id       AS roleId,
-    r.role_name     AS role,
-    u.last_login_at AS lastLoginAt,
-    u.created_at    AS createdAt,
-    utp.preferred_team_id AS preferredTeamId
+    u.first_name                      AS firstName,
+    u.last_name                       AS lastName,
+    u.role_id                         AS roleId,
+    r.role_name                       AS role,
+    u.is_active                       AS isActive,
+    u.account_claimed                 AS accountClaimed,
+    u.claimed_date                    AS claimedDate,
+    u.last_login_at                   AS lastLoginAt,
+    u.created_at                      AS createdAt,
+    utp.preferred_team_id             AS preferredTeamId,
+    uc.phone,
+    uc.address,
+    uc.city,
+    uc.state,
+    uc.zipcode,
+    uc.country,
+    uc.emergency_contact_name_1  AS emergencyContactName1,
+    uc.emergency_contact_email_1 AS emergencyContactEmail1,
+    uc.emergency_contact_phone_1 AS emergencyContactPhone1,
+    uc.emergency_contact_name_2  AS emergencyContactName2,
+    uc.emergency_contact_email_2 AS emergencyContactEmail2,
+    uc.emergency_contact_phone_2 AS emergencyContactPhone2,
+    uc.twitter,
+    uc.instagram,
+    uc.facebook,
+    uc.linked_in                 AS linkedIn,
+    uc.website,
+    uc.other_link_1              AS otherLink1,
+    uc.other_link_2              AS otherLink2,
+    uc.other_link_3              AS otherLink3,
+    uc.updated_date              AS contactUpdatedDate
   FROM dbo.users u
   JOIN dbo.roles r ON r.id = u.role_id
   LEFT JOIN dbo.user_team_preferences utp ON utp.user_id = u.user_id
+  LEFT JOIN dbo.user_contact          uc  ON uc.user_id  = u.user_id
   WHERE u.user_id = @UserId;
 END;
 GO
