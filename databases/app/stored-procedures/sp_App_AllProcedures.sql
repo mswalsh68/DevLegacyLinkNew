@@ -2074,9 +2074,9 @@ BEGIN
 
   SELECT @TotalCount = COUNT(*)
   FROM dbo.users_sports us
-  JOIN dbo.users       u  ON u.user_id        = us.user_id
-  JOIN dbo.sports      s  ON s.id             = us.sport_id
-  JOIN dbo.program_role pr ON pr.id           = us.program_role_id
+  JOIN      dbo.users       u  ON u.user_id  = us.user_id
+  LEFT JOIN dbo.sports      s  ON s.id       = us.sport_id
+  JOIN      dbo.program_role pr ON pr.id     = us.program_role_id
   WHERE us.program_role_id BETWEEN 1 AND 6
     AND us.is_active = 1
     AND u.is_active  = 1
@@ -2102,9 +2102,9 @@ BEGIN
     us.joined_at       AS createdAt,
     us.updated_at      AS updatedAt
   FROM dbo.users_sports us
-  JOIN dbo.users          u  ON u.user_id       = us.user_id
-  JOIN dbo.sports         s  ON s.id            = us.sport_id
-  JOIN dbo.program_role   pr ON pr.id           = us.program_role_id
+  JOIN      dbo.users          u  ON u.user_id       = us.user_id
+  LEFT JOIN dbo.sports         s  ON s.id            = us.sport_id
+  JOIN      dbo.program_role   pr ON pr.id           = us.program_role_id
   LEFT JOIN dbo.sports_position sp ON sp.position_id = us.position_id
   WHERE us.program_role_id BETWEEN 1 AND 6
     AND us.is_active = 1
