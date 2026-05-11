@@ -131,8 +131,11 @@ function SportEditForm({
   useEffect(() => {
     fetch(`/api/sports/${sport.sportId}/positions`, { credentials: 'include' })
       .then(r => r.json())
-      .then(({ data }) => { if (Array.isArray(data)) setPositions(data) })
-      .catch(() => {})
+      .then((json) => {
+        if (Array.isArray(json.data)) setPositions(json.data)
+        else console.error('[positions fetch] unexpected response:', json)
+      })
+      .catch((err) => console.error('[positions fetch] error:', err))
   }, [sport.sportId])
 
   const handleSave = async () => {
