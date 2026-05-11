@@ -269,9 +269,11 @@ export function AddMembersWizard({
   )
   const isAlumniCreator = creatorProgramRoleId === 7
   const isPlayerCreator = creatorProgramRoleId === 8
-  // Roles 4-6 (head_coach, position_coach, support_staff) are sport-scoped.
-  // Roles 1-3 (AD, admin, alumni_director) are program-wide → sportId = null.
-  const isSportScopedStaff = selectedRoleId !== null && selectedRoleId >= 4 && selectedRoleId <= 6
+  // Roles 4-6 (head_coach, coach, support_staff) show the sport picker.
+  // Roles 1-3 (AD, admin, alumni_director) are always program-wide → sportId = null.
+  // Roles 5-6 (coach, support_staff) can optionally be program-wide via "All Sports".
+  const isSportScopedStaff  = selectedRoleId !== null && selectedRoleId >= 4 && selectedRoleId <= 6
+  const canBeAllSports      = selectedRoleId === 5 || selectedRoleId === 6
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   function resetWizard() {
@@ -476,7 +478,7 @@ export function AddMembersWizard({
   }
 
   // ── Sport selector (reused in multiple places) ────────────────────────────
-  function SportPicker() {
+  function SportPicker({ allowAllSports = false }: { allowAllSports?: boolean }) {
     if (!showSportPicker) return null
     return (
       <Field label="Sport">
@@ -485,6 +487,7 @@ export function AddMembersWizard({
           onChange={e => setSelSportId(parseInt(e.target.value, 10) || null)}
           style={{ ...inputStyle, appearance: 'auto' }}
         >
+          {allowAllSports && <option value="">All Sports</option>}
           {sports.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
       </Field>
@@ -670,9 +673,9 @@ export function AddMembersWizard({
                     <TextInput value={email} onChange={setEmail} placeholder="member@example.com" type="email" />
                   </Field>
 
-                  {/* Sport picker for sport-scoped staff (head_coach, position_coach, support_staff) */}
+                  {/* Sport picker for sport-scoped staff (head_coach, coach, support_staff) */}
                   {memberType === 'staff' && isSportScopedStaff && showSportPicker && (
-                    <SportPicker />
+                    <SportPicker allowAllSports={canBeAllSports} />
                   )}
 
                   {memberType === 'player' && (
@@ -721,7 +724,9 @@ export function AddMembersWizard({
                     </div>
                   )}
 
-                  {(memberType !== 'staff' || isSportScopedStaff) && showSportPicker && <SportPicker />}
+                  {(memberType !== 'staff' || isSportScopedStaff) && showSportPicker && (
+                    <SportPicker allowAllSports={memberType === 'staff' && canBeAllSports} />
+                  )}
 
                   {memberType !== 'staff' && sportPositions.length > 0 && (
                     <p style={{ fontSize: 12, color: 'var(--color-gray-500)', margin: 0 }}>
