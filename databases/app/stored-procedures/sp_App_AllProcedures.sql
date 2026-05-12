@@ -2270,7 +2270,7 @@ BEGIN
     mp.created_at    AS createdAt,
     mp.responded_at  AS respondedAt,
     mp.sport_id      AS sportId,
-    s.sport_name     AS sportName,
+    s.name           AS sportName,
     -- Player
     mp.player_user_id AS playerUserId,
     pu.first_name     AS playerFirstName,
@@ -2290,7 +2290,7 @@ BEGIN
   JOIN  dbo.users pu   ON pu.user_id  = mp.player_user_id
   JOIN  dbo.users au   ON au.user_id  = mp.alumni_user_id
   JOIN  dbo.users adm  ON adm.user_id = mp.admin_user_id
-  LEFT JOIN dbo.sports s ON s.sport_id = mp.sport_id
+  LEFT JOIN dbo.sports s ON s.id = mp.sport_id
   -- player sport row for context
   LEFT JOIN dbo.users_sports pus
     ON pus.user_id = mp.player_user_id
@@ -2384,14 +2384,14 @@ BEGIN
     au.first_name     AS alumniFirstName,
     au.last_name      AS alumniLastName,
     mp.sport_id       AS sportId,
-    s.sport_name      AS sportName,
+    s.name            AS sportName,
     asp.position_name AS alumniPosition,
     aus.class_year    AS alumniClassYear,
     aus.seasons_played AS alumniSeasonsPlayed,
     mp.responded_at   AS acceptedAt
   FROM dbo.mentor_pairings mp
   JOIN  dbo.users au ON au.user_id = mp.alumni_user_id
-  LEFT JOIN dbo.sports s ON s.sport_id = mp.sport_id
+  LEFT JOIN dbo.sports s ON s.id = mp.sport_id
   LEFT JOIN dbo.users_sports aus
     ON aus.user_id = mp.alumni_user_id
    AND aus.sport_id = mp.sport_id
@@ -2419,7 +2419,7 @@ BEGIN
     mp.created_at    AS createdAt,
     mp.responded_at  AS respondedAt,
     mp.sport_id      AS sportId,
-    s.sport_name     AS sportName,
+    s.name           AS sportName,
     -- Player info
     mp.player_user_id AS playerUserId,
     pu.first_name     AS playerFirstName,
@@ -2438,7 +2438,7 @@ BEGIN
     END AS playerIsActive
   FROM dbo.mentor_pairings mp
   JOIN  dbo.users pu ON pu.user_id = mp.player_user_id
-  LEFT JOIN dbo.sports s ON s.sport_id = mp.sport_id
+  LEFT JOIN dbo.sports s ON s.id = mp.sport_id
   LEFT JOIN dbo.users_sports pus
     ON pus.user_id = mp.player_user_id
    AND pus.sport_id = mp.sport_id
