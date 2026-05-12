@@ -428,7 +428,7 @@ export default function DashboardContent() {
           userId={user.userId}
           appDb={user.appDb}
           creatorProgramRoleId={creatorProgramRoleId}
-          subscriptionTier={config.subscriptionTier}
+          tierId={config.tierId}
           sports={sports}
         />
       )}
