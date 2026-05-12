@@ -127,7 +127,7 @@ function normalizeConfigRow(row: Record<string, unknown>, defaults: TeamConfig):
     sport:            pick(row, 'Sport',     'sport')     ?? defaults.sport,
     level:            pick(row, 'Level',     'level')     ?? defaults.level,
     subscriptionTier: pick(row, 'SubscriptionTier', 'subscriptionTier', 'tier') ?? undefined,
-    tierId:           (pick(row, 'TierId', 'tierId') as number | undefined) ?? undefined,
+    tierId:           (() => { const v = pick(row, 'TierId', 'tierId'); const n = parseInt(String(v ?? ''), 10); return isNaN(n) ? undefined : n })(),
 
     // ── Normalized colors (ThemeProvider uses these) ─────────────────────────────
     primaryColor,

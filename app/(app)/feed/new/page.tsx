@@ -45,7 +45,7 @@ export default function NewPostPage() {
   const { user, isLoading } = useAuth()
   const config              = useTeamConfig()
   const recipientOptions    = RECIPIENT_OPTIONS.filter(
-    opt => opt.value !== 8 || hasFeature(config.subscriptionTier, 'roster_management'),
+    opt => opt.value !== 8 || hasFeature(config.tierId, 'roster_management'),
   )
 
   const [title,               setTitle]               = useState('')
