@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useTeamConfig } from '@/providers/ThemeProvider'
 import { useAuth } from '@/providers/AuthProvider'
 import { can } from '@/lib/permissions'
-import { hasFeature, normalizeTierById } from '@/lib/features'
+import { hasFeature } from '@/lib/features'
 import { theme } from '@/lib/theme'
 import { AddMembersWizard } from '@/components/app/AddMembersWizard'
 import AllEngagementTab from './AllEngagementTab'
@@ -204,7 +204,6 @@ export default function DashboardContent() {
   const searchParams = useSearchParams()
   const { user, isLoading } = useAuth()
   const config       = useTeamConfig()
-  const tier         = normalizeTierById(config.tierId)
 
   const [wizardOpen,            setWizardOpen]            = useState(false)
   const [sports,                setSports]                = useState<SportOption[]>([])
@@ -231,8 +230,8 @@ export default function DashboardContent() {
   //   Player Communications — pro/elite only and user has roster:view
   //   All Engagement — only shown when BOTH alumni and player tabs are visible
   //   (no point aggregating if there's only one source)
-  const alumniTabVisible  = hasFeature(tier, 'alumni_dashboard') && canViewAlumni
-  const playerTabVisible  = hasFeature(tier, 'player_dashboard') && canViewRoster
+  const alumniTabVisible  = hasFeature(config.tierId, 'alumni_dashboard') && canViewAlumni
+  const playerTabVisible  = hasFeature(config.tierId, 'player_dashboard') && canViewRoster
   const allTabVisible     = alumniTabVisible && playerTabVisible
 
   // ── Load sports (only for staff) ─────────────────────────────────────────
@@ -310,7 +309,7 @@ export default function DashboardContent() {
             gap:                   12,
             marginBottom:          36,
           }}>
-            {hasFeature(tier, 'roster_management') && canViewRoster && (
+            {hasFeature(config.tierId, 'roster_management') && canViewRoster && (
               <NavTile href="/roster"  icon="🏈" title={config.rosterLabel ?? 'Active Roster'} />
             )}
             {canViewAlumni && (
@@ -323,7 +322,7 @@ export default function DashboardContent() {
             {canSeeFeed && (
               <NavTile href="/feed"    icon="📬" title="Feed" />
             )}
-            {hasFeature(tier, 'mentor_program') && (
+            {hasFeature(config.tierId, 'mentor_program') && (
               <NavTile href="/mentor" icon="🤝" title="Mentor Program" />
             )}
             {/* Role 1-7 can open the wizard (players/role 8 are blocked inside it) */}
@@ -348,7 +347,7 @@ export default function DashboardContent() {
       ) : isPlayer ? (
         /* ── Player: Roster · Staff · Feed ── */
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 24 }}>
-          {hasFeature(tier, 'roster_management') && (
+          {hasFeature(config.tierId, 'roster_management') && (
             <NavCard
               href="/roster"
               icon="🏈"
@@ -371,7 +370,7 @@ export default function DashboardContent() {
             description="Announcements and updates from your program"
             hoverColor={theme.primary}
           />
-          {hasFeature(tier, 'mentor_program') && (
+          {hasFeature(config.tierId, 'mentor_program') && (
             <NavCard
               href="/mentor"
               icon="🤝"
@@ -405,7 +404,7 @@ export default function DashboardContent() {
             description="Stay connected with news and outreach from your program"
             hoverColor={theme.accent}
           />
-          {hasFeature(tier, 'mentor_program') && (
+          {hasFeature(config.tierId, 'mentor_program') && (
             <NavCard
               href="/mentor"
               icon="🤝"
