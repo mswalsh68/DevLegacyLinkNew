@@ -1,4 +1,4 @@
--- Migration 039: Mentor Program — dbo.mentor_pairings
+-- Migration 024: Mentor Program — dbo.mentor_pairings
 -- Creates the table that tracks all admin-curated player ↔ alumni pairings.
 -- Run on: LegacyLinkApp (per-tenant) ONLY
 -- ============================================================
@@ -37,5 +37,5 @@ ELSE
   PRINT 'dbo.mentor_pairings already exists — skipping';
 GO
 
-PRINT '=== 039_mentor_pairings complete ===';
+PRINT '=== 024_mentor_pairings complete ===';
 GO
