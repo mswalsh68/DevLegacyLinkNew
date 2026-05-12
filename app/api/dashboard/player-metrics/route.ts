@@ -3,7 +3,7 @@ import { requireSession } from '@/lib/auth'
 import { can } from '@/lib/permissions'
 import { sp_GetDashboardMetrics_Players } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
-import { featuresForTier, normalizeTier } from '@/lib/features'
+import { featuresForTier } from '@/lib/features'
 
 // ─── GET /api/dashboard/player-metrics ───────────────────────────────────────
 // Optional query param: ?sportId=<int>
@@ -26,11 +26,10 @@ export async function GET(req: NextRequest) {
   return appDbContext.run(session.appDb, async () => {
     try {
       const metrics = await sp_GetDashboardMetrics_Players({ sportId })
-      const tier = normalizeTier(null)
       return NextResponse.json({
         success:            true,
         data:               metrics,
-        features_available: featuresForTier(tier),
+        features_available: featuresForTier(session.tierId),
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)

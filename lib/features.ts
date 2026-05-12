@@ -31,19 +31,28 @@ const FEATURE_MATRIX: Record<string, Tier[]> = {
   mentor_program:    ['elite'],
 }
 
-export function normalizeTier(raw: string | undefined | null): Tier {
-  if (raw === 'enterprise' || raw === 'elite') return 'elite'
-  if (raw === 'pro')                           return 'pro'
+/** Normalize by tier ID (stable — not affected by display name changes). */
+export function normalizeTierById(id: number | undefined | null): Tier {
+  if (id === 3) return 'elite'
+  if (id === 2) return 'pro'
   return 'starter'
 }
 
-export function hasFeature(tier: string | undefined | null, feature: string): boolean {
-  const t = normalizeTier(tier)
+/** @deprecated Use normalizeTierById when tierId is available. */
+export function normalizeTier(raw: string | undefined | null): Tier {
+  const t = raw?.toLowerCase()
+  if (t === 'enterprise' || t === 'elite') return 'elite'
+  if (t === 'pro')                         return 'pro'
+  return 'starter'
+}
+
+export function hasFeature(tierId: number | undefined | null, feature: string): boolean {
+  const t = normalizeTierById(tierId)
   return FEATURE_MATRIX[feature]?.includes(t) ?? false
 }
 
-export function featuresForTier(tier: string | undefined | null): string[] {
-  const t = normalizeTier(tier)
+export function featuresForTier(tierId: number | undefined | null): string[] {
+  const t = normalizeTierById(tierId)
   return Object.entries(FEATURE_MATRIX)
     .filter(([, tiers]) => tiers.includes(t))
     .map(([feature]) => feature)

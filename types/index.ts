@@ -88,6 +88,7 @@ export interface TeamConfig {
   sport:           string
   level:           string
   subscriptionTier?: string
+  tierId?:           number
 
   // ── Colors (normalized — ThemeProvider derives dark/light variants) ──
   primaryColor:    string

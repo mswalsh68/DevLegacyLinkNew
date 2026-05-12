@@ -26,7 +26,7 @@ const POST_AUDIENCES     = ['all', 'alumni_only'] as const
 
 export default function AlumniTab({ sportId }: { sportId?: number | null }) {
   const config = useTeamConfig()
-  const tier   = config.subscriptionTier
+  const tier   = config.tierId
 
   return (
     <CommsDashboardTab
