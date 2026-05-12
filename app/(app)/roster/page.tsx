@@ -169,7 +169,7 @@ export default function RosterPage() {
   if (!can(user, 'roster:view')) {
     return <AccessDenied currentRole={roleLabel(user?.role)} requiredRole={requiredRoleLabel('roster:view')} />
   }
-  if (!hasFeature(config.subscriptionTier, 'roster_management')) {
+  if (!hasFeature(config.tierId, 'roster_management')) {
     return <AccessDenied currentRole={roleLabel(user?.role)} requiredRole="Pro tier or above" />
   }
 

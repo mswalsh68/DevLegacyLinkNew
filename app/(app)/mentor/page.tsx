@@ -7,7 +7,7 @@ import { AccessDenied } from '@/components/ui/AccessDenied'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { can, roleLabel, requiredRoleLabel } from '@/lib/permissions'
-import { hasFeature, normalizeTier } from '@/lib/features'
+import { hasFeature } from '@/lib/features'
 import { theme } from '@/lib/theme'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -730,11 +730,9 @@ function AlumniMentoringView({ teamName }: { teamName: string }) {
 export default function MentorPage() {
   const { user, isLoading } = useAuth()
   const config = useTeamConfig()
-  const tier   = normalizeTier(config.subscriptionTier ?? 'starter')
-
   if (isLoading) return null
 
-  if (!hasFeature(tier, 'mentor_program')) {
+  if (!hasFeature(config.tierId, 'mentor_program')) {
     return (
       <div style={{ textAlign: 'center', padding: 80 }}>
         <p style={{ fontSize: 16, color: theme.gray500 }}>The Mentor Program is available on the Elite plan.</p>

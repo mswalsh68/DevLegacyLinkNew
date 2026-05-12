@@ -551,7 +551,7 @@ export default function FeedContent({ canView, canPost, canDeleteAny, canPin }: 
 
           {/* Recipient filter */}
           <div style={{ display: 'flex', gap: 0, border: '1px solid var(--color-card-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-            {TARGET_FILTER_OPTIONS.filter(opt => opt.value !== 8 || hasFeature(config.subscriptionTier, 'roster_management')).map((opt, i, arr) => {
+            {TARGET_FILTER_OPTIONS.filter(opt => opt.value !== 8 || hasFeature(config.tierId, 'roster_management')).map((opt, i, arr) => {
               const active = targetGroupFilter === opt.value
               return (
                 <button
