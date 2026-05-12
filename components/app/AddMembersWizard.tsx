@@ -65,7 +65,7 @@ export interface AddMembersWizardProps {
   userId:               number
   appDb:                string
   creatorProgramRoleId: number
-  subscriptionTier?:    string
+  tierId?:              number
   sports:               SportOption[]
 }
 
@@ -204,7 +204,7 @@ export function AddMembersWizard({
   isOpen, onClose,
   teamId, teamName, replyToEmail, academicYears, userId, appDb,
   creatorProgramRoleId,
-  subscriptionTier,
+  tierId,
   sports,
 }: AddMembersWizardProps) {
   const showSportPicker = sports.length > 1
@@ -263,7 +263,7 @@ export function AddMembersWizard({
   // ── Derived ───────────────────────────────────────────────────────────────
   const selectedRole   = PROGRAM_ROLES.find(r => r.id === selectedRoleId) ?? null
   const memberType: MemberType | null = selectedRole?.memberType ?? null
-  const canManageRoster = hasFeature(subscriptionTier, 'roster_management')
+  const canManageRoster = hasFeature(tierId, 'roster_management')
   const assignableRoles = PROGRAM_ROLES.filter(r =>
     r.id >= creatorProgramRoleId && (canManageRoster || r.id !== 8),
   )
