@@ -23,7 +23,7 @@ BEGIN
     CONSTRAINT PK_mentor_pairings       PRIMARY KEY (id),
     CONSTRAINT FK_mp_player             FOREIGN KEY (player_user_id) REFERENCES dbo.users(user_id),
     CONSTRAINT FK_mp_alumni             FOREIGN KEY (alumni_user_id) REFERENCES dbo.users(user_id),
-    CONSTRAINT FK_mp_sport              FOREIGN KEY (sport_id)       REFERENCES dbo.sports(sport_id),
+    CONSTRAINT FK_mp_sport              FOREIGN KEY (sport_id)       REFERENCES dbo.sports(id),
     CONSTRAINT FK_mp_admin              FOREIGN KEY (admin_user_id)  REFERENCES dbo.users(user_id),
     CONSTRAINT CK_mp_status             CHECK (status IN ('pending','active','declined','cancelled')),
   );
