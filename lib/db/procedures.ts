@@ -1616,3 +1616,130 @@ export async function sp_MarkWelcomePopupShown(params: {
   })
   return { errorCode: (output.ErrorCode as string | null) ?? null }
 }
+
+// ─── Mentor Program ────────────────────────────────────────────────────────────
+
+export interface MentorPairingRow {
+  id:              number
+  status:          string
+  createdAt:       string
+  respondedAt:     string | null
+  sportId:         number | null
+  sportName:       string | null
+  playerUserId:    number
+  playerFirstName: string
+  playerLastName:  string
+  playerPosition:  string | null
+  playerClassYear: number | null
+  alumniUserId:    number
+  alumniFirstName: string
+  alumniLastName:  string
+  alumniPosition:  string | null
+  adminUserId:     number
+  adminFirstName:  string
+  adminLastName:   string
+}
+
+export async function sp_CreateMentorPairing(params: {
+  playerUserId: number
+  alumniUserId: number
+  sportId:      number | null
+  adminUserId:  number
+}): Promise<{ errorCode: string | null; pairingId: number | null }> {
+  const { recordset } = await execFull('app', 'sp_CreateMentorPairing', (r) => {
+    r.input('PlayerUserId', sql.Int, params.playerUserId)
+    r.input('AlumniUserId', sql.Int, params.alumniUserId)
+    r.input('SportId',      sql.Int, params.sportId)
+    r.input('AdminUserId',  sql.Int, params.adminUserId)
+  })
+  const row = (recordset as unknown as Record<string, unknown>[])[0] ?? {}
+  return {
+    errorCode: (row.errorCode as string | null) ?? null,
+    pairingId: (row.pairingId as number | null) ?? null,
+  }
+}
+
+export async function sp_GetMentorPairings(): Promise<MentorPairingRow[]> {
+  const { recordset } = await execFull('app', 'sp_GetMentorPairings', () => {})
+  return recordset as unknown as MentorPairingRow[]
+}
+
+export async function sp_CancelMentorPairing(params: {
+  pairingId:   number
+  adminUserId: number
+}): Promise<{ errorCode: string | null; alumniUserId: number | null; playerUserId: number | null }> {
+  const { recordset } = await execFull('app', 'sp_CancelMentorPairing', (r) => {
+    r.input('PairingId',   sql.Int, params.pairingId)
+    r.input('AdminUserId', sql.Int, params.adminUserId)
+  })
+  const row = (recordset as unknown as Record<string, unknown>[])[0] ?? {}
+  return {
+    errorCode:    (row.errorCode    as string | null) ?? null,
+    alumniUserId: (row.alumniUserId as number | null) ?? null,
+    playerUserId: (row.playerUserId as number | null) ?? null,
+  }
+}
+
+export async function sp_RespondToMentorRequest(params: {
+  pairingId:    number
+  alumniUserId: number
+  response:     'active' | 'declined'
+}): Promise<{ errorCode: string | null; playerUserId: number | null; adminUserId: number | null }> {
+  const { recordset } = await execFull('app', 'sp_RespondToMentorRequest', (r) => {
+    r.input('PairingId',    sql.Int,         params.pairingId)
+    r.input('AlumniUserId', sql.Int,         params.alumniUserId)
+    r.input('Response',     sql.VarChar(20), params.response)
+  })
+  const row = (recordset as unknown as Record<string, unknown>[])[0] ?? {}
+  return {
+    errorCode:    (row.errorCode    as string | null) ?? null,
+    playerUserId: (row.playerUserId as number | null) ?? null,
+    adminUserId:  (row.adminUserId  as number | null) ?? null,
+  }
+}
+
+export interface PlayerMentorRow {
+  id:                 number
+  alumniUserId:       number
+  alumniFirstName:    string
+  alumniLastName:     string
+  sportId:            number | null
+  sportName:          string | null
+  alumniPosition:     string | null
+  alumniClassYear:    number | null
+  alumniSeasonsPlayed: number | null
+  acceptedAt:         string | null
+}
+
+export async function sp_GetPlayerMentors(params: {
+  playerUserId: number
+}): Promise<PlayerMentorRow[]> {
+  const { recordset } = await execFull('app', 'sp_GetPlayerMentors', (r) => {
+    r.input('PlayerUserId', sql.Int, params.playerUserId)
+  })
+  return recordset as unknown as PlayerMentorRow[]
+}
+
+export interface AlumniMentorDashboardRow {
+  id:              number
+  status:          string
+  createdAt:       string
+  respondedAt:     string | null
+  sportId:         number | null
+  sportName:       string | null
+  playerUserId:    number
+  playerFirstName: string
+  playerLastName:  string
+  playerPosition:  string | null
+  playerClassYear: number | null
+  playerIsActive:  boolean
+}
+
+export async function sp_GetAlumniMentorDashboard(params: {
+  alumniUserId: number
+}): Promise<AlumniMentorDashboardRow[]> {
+  const { recordset } = await execFull('app', 'sp_GetAlumniMentorDashboard', (r) => {
+    r.input('AlumniUserId', sql.Int, params.alumniUserId)
+  })
+  return recordset as unknown as AlumniMentorDashboardRow[]
+}

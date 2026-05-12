@@ -28,6 +28,7 @@ const FEATURE_MATRIX: Record<string, Tier[]> = {
   events_module:     ['elite'],
   donor_tracking:    ['elite'],
   engagement_score:  ['elite'],
+  mentor_program:    ['elite'],
 }
 
 export function normalizeTier(raw: string | undefined | null): Tier {
