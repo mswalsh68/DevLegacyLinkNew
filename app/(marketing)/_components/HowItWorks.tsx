@@ -3,25 +3,25 @@ export default function HowItWorks() {
     {
       number: '01',
       title: 'Build Your Active Roster',
-      desc: 'Import your current athletes by sport, position, class year, and contact info. LegacyLink becomes your single source of truth for every active player.',
+      desc: 'Add athletes by sport, position, class year, jersey number, and contact info. Your single source of truth for every active player.',
       tag: 'Active Roster',
     },
     {
       number: '02',
       title: 'Track Transitions Automatically',
-      desc: 'When an athlete graduates, transfers, or completes their eligibility, they move seamlessly into your alumni database — no data lost, no manual work.',
+      desc: 'When an athlete graduates or completes eligibility, they move seamlessly into your alumni database. No data lost. One click.',
       tag: 'Roster → Alumni',
     },
     {
       number: '03',
       title: 'Engage Your Alumni Network',
-      desc: 'Send targeted outreach by sport, graduation year, or program. Keep alumni informed, involved, and invested in the program they helped build.',
+      desc: 'Send targeted communications by sport, graduation year, or custom filters. Keep your alumni informed, involved, and invested.',
       tag: 'Alumni CRM',
     },
     {
       number: '04',
       title: 'Grow Your Legacy',
-      desc: "Turn alumni engagement into mentorship, donations, recruiting support, and community. Your roster doesn't end at graduation — it just changes roles.",
+      desc: "Turn alumni engagement into mentorship, donations, and community. Your roster doesn't end at graduation — it just changes roles.",
       tag: 'Ongoing Engagement',
     },
   ]
