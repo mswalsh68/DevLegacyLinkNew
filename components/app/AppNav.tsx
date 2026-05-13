@@ -444,6 +444,31 @@ export function AppNav() {
                 My Profile
               </button>
 
+              <button
+                onClick={() => { setAvatarOpen(false); router.push('/release-notes') }}
+                style={{
+                  width:      '100%',
+                  display:    'flex',
+                  alignItems: 'center',
+                  gap:        10,
+                  padding:    '10px 16px',
+                  background: 'transparent',
+                  border:     'none',
+                  cursor:     'pointer',
+                  textAlign:  'left',
+                  fontSize:   14,
+                  color:      '#374151',
+                  transition: 'background 0.1s',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = '#f9fafb')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+              >
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Release Notes
+              </button>
+
               {/* Global Settings — internal admins only */}
               {user && (user.roleId === 1 || user.roleId === 2) && (
                 <button
