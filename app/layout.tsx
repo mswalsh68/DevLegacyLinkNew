@@ -6,10 +6,13 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: {
-    default: 'DevLegacyLink',
-    template: '%s | DevLegacyLink',
+    default: 'Legacy Link HQ',
+    template: '%s | Legacy Link HQ',
   },
   description: 'Alumni & roster management platform',
+  icons: {
+    icon: '/logo-icon.jpg',
+  },
 }
 
 export default function RootLayout({
