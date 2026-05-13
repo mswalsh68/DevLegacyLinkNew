@@ -34,11 +34,11 @@ export default function Hero() {
         </h1>
 
         <p className="text-white/60 text-lg md:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
-          The all-in-one CRM built for athletic programs. Manage your active roster, track alumni, and keep your network engaged — all in one place.
+          Manage your active roster, engage your alumni, and keep your entire athletic network connected — from the first practice to decades after graduation.
         </p>
 
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
-          <a href="#contact" className="btn-gold">Request Access</a>
+          <a href="#contact" className="btn-gold">Request a Demo</a>
           <a href="#how-it-works" className="btn-outline">See How It Works</a>
         </div>
 

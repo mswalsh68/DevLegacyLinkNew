@@ -16,7 +16,17 @@ const ROLES = [
   'Other',
 ]
 
-const EMPTY: AccessRequestData = { name: '', email: '', role: '', program: '' }
+const LEVELS = [
+  'D1 College',
+  'D2 College',
+  'D3 College',
+  'NAIA',
+  'Junior College',
+  'High School',
+  'Club',
+]
+
+const EMPTY: AccessRequestData = { name: '', email: '', role: '', program: '', level: '' }
 
 const inputClass = (hasError?: boolean) =>
   `w-full bg-brand-dark border text-white placeholder-white/20 px-4 py-3 rounded-sm
@@ -25,9 +35,9 @@ const inputClass = (hasError?: boolean) =>
    ${hasError ? 'border-red-500/70' : 'border-white/10'}`
 
 export default function ContactCTA() {
-  const [form, setForm]         = useState<AccessRequestData>(EMPTY)
+  const [form, setForm]               = useState<AccessRequestData>(EMPTY)
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
-  const [status, setStatus]     = useState<Status>('idle')
+  const [status, setStatus]           = useState<Status>('idle')
   const [serverError, setServerError] = useState<string | null>(null)
 
   function update(field: keyof AccessRequestData, value: string) {
@@ -39,7 +49,6 @@ export default function ContactCTA() {
     e.preventDefault()
     setServerError(null)
 
-    // Client-side Zod validation
     const result = accessRequestSchema.safeParse(form)
     if (!result.success) {
       const errors: FieldErrors = {}
@@ -87,7 +96,7 @@ export default function ContactCTA() {
         <div className="flex justify-center mb-10">
           <Image
             src="/images/logo-stacked.jpg"
-            alt="DevLegacyLink"
+            alt="LegacyLink"
             width={100}
             height={100}
             className="rounded-sm opacity-90"
@@ -96,14 +105,12 @@ export default function ContactCTA() {
 
         {/* Header */}
         <div className="text-center mb-12">
-          <p className="section-label">Early Access</p>
+          <p className="section-label">Get Started</p>
           <h2 className="text-4xl md:text-5xl font-black text-white leading-tight mb-5">
-            Be First in Line.<br />
-            <span className="gold-text">Shape the Platform.</span>
+            Request a Demo
           </h2>
           <p className="text-white/50 text-lg max-w-2xl mx-auto leading-relaxed">
-            LegacyLink is in early access. Request a demo or join the waitlist — and get direct
-            input into the features that matter most to your program.
+            Tell us about your program and we&apos;ll reach out to schedule a walkthrough built around your sport and your level.
           </p>
         </div>
 
@@ -111,9 +118,9 @@ export default function ContactCTA() {
         {status === 'success' ? (
           <div className="text-center py-14 border border-gold/20 rounded-sm bg-brand-black">
             <div className="text-5xl mb-4">🏆</div>
-            <h3 className="text-white font-black text-2xl mb-3">You&apos;re on the list.</h3>
+            <h3 className="text-white font-black text-2xl mb-3">Request received.</h3>
             <p className="text-white/50 text-lg">
-              We&apos;ll be in touch soon, {form.name.split(' ')[0]}.{' '}
+              We&apos;ll be in touch within one business day, {form.name.split(' ')[0]}.{' '}
               Check your inbox — a confirmation is on its way.
             </p>
           </div>
@@ -135,7 +142,7 @@ export default function ContactCTA() {
                   value={form.name}
                   onChange={e => update('name', e.target.value)}
                   disabled={status === 'submitting'}
-                  placeholder="John Smith"
+                  placeholder="Your name"
                   className={inputClass(!!fieldErrors.name)}
                 />
                 {fieldErrors.name && (
@@ -153,7 +160,7 @@ export default function ContactCTA() {
                   value={form.email}
                   onChange={e => update('email', e.target.value)}
                   disabled={status === 'submitting'}
-                  placeholder="john@university.edu"
+                  placeholder="you@yourprogram.edu"
                   className={inputClass(!!fieldErrors.email)}
                 />
                 {fieldErrors.email && (
@@ -189,13 +196,29 @@ export default function ContactCTA() {
                   value={form.program}
                   onChange={e => update('program', e.target.value)}
                   disabled={status === 'submitting'}
-                  placeholder="University of South Florida"
+                  placeholder="Your school or program"
                   className={inputClass(!!fieldErrors.program)}
                 />
                 {fieldErrors.program && (
                   <p className="mt-1.5 text-xs text-red-400">{fieldErrors.program}</p>
                 )}
               </div>
+            </div>
+
+            {/* Program Level — full width */}
+            <div>
+              <label className="block text-white/60 text-xs uppercase tracking-widest mb-2">
+                Program Level
+              </label>
+              <select
+                value={form.level}
+                onChange={e => update('level', e.target.value)}
+                disabled={status === 'submitting'}
+                className={`${inputClass()} appearance-none`}
+              >
+                <option value="">Select your level...</option>
+                {LEVELS.map(l => <option key={l} value={l}>{l}</option>)}
+              </select>
             </div>
 
             {/* Server error */}
@@ -211,10 +234,10 @@ export default function ContactCTA() {
                 disabled={status === 'submitting'}
                 className="btn-gold w-full sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
               >
-                {status === 'submitting' ? 'Sending…' : 'Request Access'}
+                {status === 'submitting' ? 'Sending…' : 'Request a Demo'}
               </button>
               <p className="text-white/30 text-xs text-center sm:text-left">
-                No spam. No obligation. Early access only.
+                No spam. No obligation. We&apos;ll reach out within one business day.
               </p>
             </div>
           </form>

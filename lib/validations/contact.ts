@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-// Used by the landing page ContactCTA ("Request Access") form
+// Used by the landing page ContactCTA ("Request a Demo") form
 export const accessRequestSchema = z.object({
   name: z
     .string()
@@ -16,6 +16,10 @@ export const accessRequestSchema = z.object({
   program: z
     .string()
     .max(150, 'Program name is too long')
+    .optional(),
+  level: z
+    .string()
+    .max(100)
     .optional(),
 })
 

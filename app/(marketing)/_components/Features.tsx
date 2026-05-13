@@ -1,57 +1,75 @@
-const features = [
+function TierBadge({ tier }: { tier: 'all' | 'pro' | 'elite' }) {
+  if (tier === 'elite') return (
+    <span className="text-xs font-bold uppercase tracking-wider gold-text border border-gold/30 px-3 py-1 rounded-full">
+      Elite Only
+    </span>
+  )
+  if (tier === 'pro') return (
+    <span className="text-xs font-bold uppercase tracking-wider text-blue-400 border border-blue-400/30 px-3 py-1 rounded-full">
+      Pro &amp; Elite
+    </span>
+  )
+  return (
+    <span className="text-xs font-bold uppercase tracking-wider text-white/40 border border-white/10 px-3 py-1 rounded-full">
+      All Plans
+    </span>
+  )
+}
+
+const features: { icon: string; title: string; desc: string; tier: 'all' | 'pro' | 'elite' }[] = [
   {
-    icon: (
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-      </svg>
-    ),
+    icon: '🏈',
     title: 'Active Roster Management',
-    desc: "Organize athletes by sport, position, class year, and eligibility status. Always know who's on your roster and where they stand.",
+    desc: "Organize athletes by sport, position, class year, jersey number, and eligibility status. Always know who's on your roster and where they stand.",
+    tier: 'all',
   },
   {
-    icon: (
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-      </svg>
-    ),
-    title: 'Seamless Alumni Transition',
-    desc: 'Athletes automatically move from the roster to your alumni CRM when they graduate or transfer — zero manual data entry, no lost records.',
+    icon: '🎓',
+    title: 'Alumni Directory & CRM',
+    desc: 'Every athlete who ever wore your colors, preserved. Track careers, locations, donor status, and engagement — long after they graduate.',
+    tier: 'all',
   },
   {
-    icon: (
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-      </svg>
-    ),
-    title: 'Targeted Alumni Outreach',
-    desc: 'Filter and message alumni by sport, graduation year, location, or custom tags. Intentional outreach that actually reaches the right people.',
+    icon: '🔁',
+    title: 'One-Click Roster-to-Alumni Transition',
+    desc: "When an athlete's eligibility ends, they move seamlessly into your alumni database. Zero data lost. Zero manual entry.",
+    tier: 'all',
   },
   {
-    icon: (
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-      </svg>
-    ),
+    icon: '📰',
+    title: 'Program News Feed',
+    desc: 'A community hub for your entire program. Post announcements, updates, and news — targeted to your full network, roster only, or alumni only. Filter by sport or broadcast to all.',
+    tier: 'all',
+  },
+  {
+    icon: '📧',
+    title: 'Mass Email Communications',
+    desc: 'Send targeted emails to your entire network or filtered segments — by sport, class year, status, or donor flag. Purpose-built for athletic administrators, not marketers.',
+    tier: 'pro',
+  },
+  {
+    icon: '📊',
     title: 'Engagement Analytics',
-    desc: "See who's opening messages, who's engaged, and who's gone dark. Know where to focus and how your network is growing over time.",
+    desc: "See who's opening messages, who's engaged, and who's gone dark. Understand where your network stands and where to focus your outreach.",
+    tier: 'pro',
   },
   {
-    icon: (
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-      </svg>
-    ),
-    title: 'Multi-Sport Support',
-    desc: 'One platform for every sport in your program. Football, basketball, baseball, soccer — manage them separately or together, your call.',
+    icon: '🤝',
+    title: 'Admin-Facilitated Mentor Program',
+    desc: 'Connect current players with alumni mentors — by sport, position, or background. Admins create and manage pairings. Track responses and active connections in one view.',
+    tier: 'elite',
   },
   {
-    icon: (
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-      </svg>
-    ),
-    title: 'Role-Based Access',
-    desc: 'Head coaches, assistants, and administrators each see exactly what they need. Granular permissions keep your data organized and secure.',
+    icon: '🎨',
+    title: 'White-Label Custom Theming',
+    desc: 'Your colors. Your logo. Your brand. Every portal is fully white-labeled to your program — six hex values control the complete visual experience.',
+    tier: 'all',
+  },
+  {
+    icon: '👥',
+    title: 'Multi-Sport Staff Management',
+    desc: 'Manage coaches, administrators, and alumni directors across every sport in your program. Role-based access ensures everyone sees exactly what they need.',
+    tier: 'all',
   },
 ]
 
@@ -64,11 +82,11 @@ export default function Features() {
         <div className="text-center mb-16">
           <p className="section-label">Features</p>
           <h2 className="text-4xl md:text-5xl font-black text-white leading-tight">
-            Everything You Need to<br />
-            <span className="gold-text">Run Your Network</span>
+            Built for athletics.<br />
+            <span className="gold-text">Not adapted from a generic CRM.</span>
           </h2>
           <p className="text-white/50 text-lg mt-5 max-w-2xl mx-auto">
-            Built specifically for athletic programs — not adapted from a generic CRM.
+            Every feature was designed around the way coaches, administrators, and athletes actually work — at every level.
           </p>
         </div>
 
@@ -77,13 +95,12 @@ export default function Features() {
           {features.map((feature) => (
             <div
               key={feature.title}
-              className="group p-7 rounded-sm bg-brand-black border border-white/5 hover:border-gold/30 transition-all duration-300"
+              className="group p-7 rounded-sm bg-brand-black border border-white/5 hover:border-gold/30 transition-all duration-300 flex flex-col"
             >
-              <div className="w-12 h-12 rounded-sm bg-brand-dark border border-gold/20 flex items-center justify-center mb-5 text-gold group-hover:bg-gold/10 transition-colors">
-                {feature.icon}
-              </div>
+              <div className="text-3xl mb-5">{feature.icon}</div>
               <h3 className="text-white font-bold text-lg mb-3">{feature.title}</h3>
-              <p className="text-white/50 text-sm leading-relaxed">{feature.desc}</p>
+              <p className="text-white/50 text-sm leading-relaxed mb-5 flex-1">{feature.desc}</p>
+              <TierBadge tier={feature.tier} />
             </div>
           ))}
         </div>
