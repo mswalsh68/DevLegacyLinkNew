@@ -8,7 +8,6 @@ import Screenshots  from '../_components/Screenshots'
 import WhoItsFor    from '../_components/WhoItsFor'
 import FounderStory from '../_components/FounderStory'
 import SportsTicker from '../_components/SportsTicker'
-import Plans        from '../_components/Plans'
 import CTABand      from '../_components/CTABand'
 import ContactCTA   from '../_components/ContactCTA'
 import Footer       from '../_components/Footer'
@@ -27,7 +26,6 @@ export default function MarketingHome() {
         <WhoItsFor />
         <FounderStory />
         <SportsTicker />
-        <Plans />
         <CTABand />
         <ContactCTA />
       </main>

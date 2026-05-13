@@ -36,7 +36,6 @@ export default function Footer() {
                 <li><a href="#how-it-works" className="text-white/40 hover:text-gold transition-colors text-xs uppercase tracking-widest font-semibold">How It Works</a></li>
                 <li><a href="#features"     className="text-white/40 hover:text-gold transition-colors text-xs uppercase tracking-widest font-semibold">Features</a></li>
                 <li><a href="#who"          className="text-white/40 hover:text-gold transition-colors text-xs uppercase tracking-widest font-semibold">Who It&apos;s For</a></li>
-                <li><a href="#plans"        className="text-white/40 hover:text-gold transition-colors text-xs uppercase tracking-widest font-semibold">Plans</a></li>
               </ul>
             </div>
             <div>
