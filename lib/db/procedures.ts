@@ -245,6 +245,16 @@ export async function sp_UpdateTeamConfig(params: {
 // ─── App DB — User sync ───────────────────────────────────────────────────────
 
 /**
+ * Stamps last_team_login = SYSUTCDATETIME() for this user in the App DB.
+ * Call after a successful team login / switch-team.
+ */
+export async function sp_UpdateLastTeamLogin(params: { userId: number }): Promise<void> {
+  await exec('app', 'sp_UpdateLastTeamLogin', (r) => {
+    r.input('UserId', sql.Int, params.userId)
+  })
+}
+
+/**
  * Syncs a Global DB user into the local App DB dbo.users.
  * Call this before sp_AddUserRole when creating a new member.
  */
