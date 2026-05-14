@@ -12,10 +12,7 @@ export default function ScreenshotHero() {
 
         {/* ★ SCREENSHOT: Image 1 — Admin Dashboard */}
         <div className="w-full max-w-5xl rounded-xl overflow-hidden border border-black/10" style={{ boxShadow: '0 32px 80px rgba(0,0,0,0.15)' }}>
-          <div className="w-full bg-gradient-to-br from-gray-900 to-gray-800 flex flex-col items-center justify-center gap-3 py-24">
-            <span className="text-xs font-bold tracking-widest uppercase" style={{ color: 'rgba(255,255,255,0.3)' }}>Screenshot</span>
-            <span className="text-xl font-bold italic" style={{ color: 'rgba(255,255,255,0.12)' }}>Image 1 — Admin Dashboard</span>
-          </div>
+          <img src="/dashboard.jpeg" alt="Admin Dashboard" className="w-full h-auto block" />
         </div>
       </div>
     </section>
