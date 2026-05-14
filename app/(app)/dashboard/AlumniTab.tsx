@@ -20,7 +20,7 @@ interface AlumniMetrics {
 
 // ─── Alumni Tab ───────────────────────────────────────────────────────────────
 
-export default function AlumniTab({ sportId }: { sportId?: string | null }) {
+export default function AlumniTab({ sportId }: { sportId?: number | null }) {
   const config = useTeamConfig()
   const tier   = config.tierId
 

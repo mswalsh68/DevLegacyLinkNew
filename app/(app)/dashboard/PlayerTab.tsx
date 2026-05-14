@@ -14,7 +14,7 @@ interface PlayerMetrics {
 
 // ─── Player Tab ───────────────────────────────────────────────────────────────
 
-export default function PlayerTab({ sportId }: { sportId?: string | null }) {
+export default function PlayerTab({ sportId }: { sportId?: number | null }) {
   return (
     <CommsDashboardTab
       metricsEndpoint="/dashboard/player-metrics"

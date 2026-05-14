@@ -207,7 +207,7 @@ export default function DashboardContent() {
 
   const [wizardOpen,            setWizardOpen]            = useState(false)
   const [sports,                setSports]                = useState<SportOption[]>([])
-  const [sportId,               setSportId]               = useState<string | null>(null)
+  const [sportId,               setSportId]               = useState<number | null>(null)
   const [creatorProgramRoleId,  setCreatorProgramRoleId]  = useState<number | null>(null)
   const [programRoleDisplay,    setProgramRoleDisplay]    = useState<string | null>(null)
 

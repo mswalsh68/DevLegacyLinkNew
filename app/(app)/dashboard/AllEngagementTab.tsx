@@ -19,7 +19,7 @@ interface AllEngagementMetrics {
 
 // ─── All Engagement Tab ───────────────────────────────────────────────────────
 
-export default function AllEngagementTab({ sportId }: { sportId?: string | null }) {
+export default function AllEngagementTab({ sportId }: { sportId?: number | null }) {
   return (
     <CommsDashboardTab
       metricsEndpoint="/dashboard/all-metrics"
