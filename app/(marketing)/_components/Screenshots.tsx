@@ -35,14 +35,14 @@ const screenshots = [
     row: 2,
     cards: [
       {
-        img: '/team settings.png',
+        img: '/team-settings.png',
         alt: 'Team Settings / White-Label Theming',
         title: 'White-Label Custom Theming',
         desc: 'Six hex values control your full portal color theme. Your brand, your colors, your platform — built for your program.',
         tier: 'all' as const,
       },
       {
-        img: '/alumni profile.png',
+        img: '/alumni-profile.png',
         alt: 'Alumni Profile',
         title: 'Every Player. Every Season. Preserved.',
         desc: 'Jersey number. Position. Class year. Seasons played. Every detail — saved from the day they first stepped on the field.',
