@@ -19,7 +19,7 @@ export default function Hero() {
       <div className="relative z-10 text-center px-6 max-w-4xl mx-auto pt-20">
         <Image
           src="/images/logo-stacked.jpg"
-          alt="DevLegacyLink"
+          alt="LegacyLink"
           width={220}
           height={220}
           className="mx-auto mb-10 rounded-sm"

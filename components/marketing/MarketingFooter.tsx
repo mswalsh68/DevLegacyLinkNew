@@ -25,8 +25,8 @@ export function MarketingFooter() {
           {/* Brand */}
           <div className="col-span-2 md:col-span-1">
             <div className="flex items-center gap-2 font-bold text-gray-900">
-              <span className="rounded bg-blue-600 px-2 py-0.5 text-sm text-white">DLL</span>
-              DevLegacyLink
+              <span className="rounded bg-blue-600 px-2 py-0.5 text-sm text-white">LL</span>
+              LegacyLink
             </div>
             <p className="mt-3 text-sm text-gray-500">
               Alumni &amp; roster management for the modern coaching staff.
@@ -56,7 +56,7 @@ export function MarketingFooter() {
         </div>
 
         <div className="mt-10 border-t border-gray-200 pt-6 text-center text-xs text-gray-400">
-          &copy; {new Date().getFullYear()} DevLegacyLink. All rights reserved.
+          &copy; {new Date().getFullYear()} Legacy Link HQ, LLC. All rights reserved.
         </div>
       </div>
     </footer>

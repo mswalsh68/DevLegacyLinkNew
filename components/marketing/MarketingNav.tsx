@@ -21,8 +21,8 @@ export function MarketingNav() {
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 font-bold text-gray-900">
-          <span className="rounded bg-blue-600 px-2 py-0.5 text-sm text-white">DLL</span>
-          DevLegacyLink
+          <span className="rounded bg-blue-600 px-2 py-0.5 text-sm text-white">LL</span>
+          LegacyLink
         </Link>
 
         {/* Desktop nav */}
