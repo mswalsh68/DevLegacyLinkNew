@@ -309,25 +309,25 @@ export default function DashboardContent() {
             gap:                   12,
             marginBottom:          36,
           }}>
-            {hasFeature(config.tierId, 'roster_management') && canViewRoster && (
-              <NavTile href="/roster"  icon="🏈" title={config.rosterLabel ?? 'Active Roster'} />
+            {canSeeFeed && (
+              <NavTile href="/feed"    icon="📬" title="Feed" />
             )}
             {canViewAlumni && (
               <NavTile href="/alumni"  icon="🎓" title={config.alumniLabel ?? 'Alumni'} />
             )}
-            <NavTile href="/staff" icon="👥" title="Staff" />
-            {canSettings && (
-              <NavTile href="/settings" icon="⚙️" title="Team Settings" />
-            )}
-            {canSeeFeed && (
-              <NavTile href="/feed"    icon="📬" title="Feed" />
+            {hasFeature(config.tierId, 'roster_management') && canViewRoster && (
+              <NavTile href="/roster"  icon="🏈" title={config.rosterLabel ?? 'Active Roster'} />
             )}
             {hasFeature(config.tierId, 'mentor_program') && (
               <NavTile href="/mentor" icon="🤝" title="Mentor Program" />
             )}
+            <NavTile href="/staff" icon="👥" title="Staff" />
             {/* Role 1-7 can open the wizard (players/role 8 are blocked inside it) */}
             {(config.teamId ?? user.currentTeamId) && user.appDb && creatorProgramRoleId !== null && creatorProgramRoleId <= 7 && (
               <NavTile icon="➕" title="Add Member" onClick={() => setWizardOpen(true)} />
+            )}
+            {canSettings && (
+              <NavTile href="/settings" icon="⚙️" title="Team Settings" />
             )}
           </div>
 
