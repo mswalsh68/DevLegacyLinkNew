@@ -1,6 +1,6 @@
 // App-wide constants. No business logic — pure values only.
 
-export const APP_NAME = 'DevLegacyLink'
+export const APP_NAME = 'LegacyLink'
 
 // ─── Select-option arrays used across pages ───────────────────────────────────
 

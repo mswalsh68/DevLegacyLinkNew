@@ -4,7 +4,7 @@ import { ContactForm } from '@/components/marketing/ContactForm'
 
 export const metadata: Metadata = {
   title: 'Contact Us',
-  description: 'Get in touch with the DevLegacyLink team or request a demo.',
+  description: 'Get in touch with the LegacyLink team or request a demo.',
 }
 
 const CONTACT_DETAILS = [
@@ -15,7 +15,7 @@ const CONTACT_DETAILS = [
       </svg>
     ),
     label: 'Email',
-    value: 'hello@devlegacylink.com',
+    value: 'hello@legacylinkhq.app',
   },
   {
     icon: (

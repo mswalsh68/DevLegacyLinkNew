@@ -63,7 +63,7 @@ export default function Footer() {
 
         {/* Bottom row */}
         <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-white/20">
-          <p>&copy; {new Date().getFullYear()} LegacyLink LLC. All rights reserved.</p>
+          <p>&copy; {new Date().getFullYear()} Legacy Link HQ, LLC. All rights reserved.</p>
           <p className="italic gold-text opacity-60">Where Rosters Become Legacies</p>
         </div>
 

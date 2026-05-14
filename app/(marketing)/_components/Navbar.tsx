@@ -12,7 +12,7 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-6 flex items-center justify-between h-16">
         {/* Logo */}
         <div className="flex items-center gap-3">
-          <Image src="/images/logo-icon.jpg" alt="DevLegacyLink" width={36} height={36} className="rounded-sm" />
+          <Image src="/images/logo-icon.jpg" alt="LegacyLink" width={36} height={36} className="rounded-sm" />
           <span className="text-white font-bold text-lg tracking-tight">
             Legacy<span className="gold-text">Link</span>
           </span>
@@ -23,7 +23,6 @@ export default function Navbar() {
           <a href="#how-it-works" className="hover:text-gold transition-colors">How It Works</a>
           <a href="#features"     className="hover:text-gold transition-colors">Features</a>
           <a href="#who"          className="hover:text-gold transition-colors">Who It&apos;s For</a>
-          <a href="#plans"        className="hover:text-gold transition-colors">Plans</a>
           <a href="#contact"      className="btn-gold text-xs py-2 px-5">Request a Demo</a>
           <Link href="/login"     className="text-white/50 hover:text-white transition-colors text-xs uppercase tracking-widest">Sign In</Link>
         </div>
@@ -44,7 +43,6 @@ export default function Navbar() {
           <a href="#how-it-works" onClick={() => setOpen(false)} className="hover:text-gold">How It Works</a>
           <a href="#features"     onClick={() => setOpen(false)} className="hover:text-gold">Features</a>
           <a href="#who"          onClick={() => setOpen(false)} className="hover:text-gold">Who It&apos;s For</a>
-          <a href="#plans"        onClick={() => setOpen(false)} className="hover:text-gold">Plans</a>
           <a href="#contact"      onClick={() => setOpen(false)} className="btn-gold text-center text-xs py-3">Request a Demo</a>
           <Link href="/login" onClick={() => setOpen(false)} className="text-white/40 hover:text-white/70 text-xs uppercase tracking-widest text-center">Sign In</Link>
         </div>

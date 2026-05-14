@@ -15,7 +15,7 @@ const audiences = [
     level: 'College · Pro Plan',
     title: 'College Programs',
     tagline: 'D1 through NAIA. Every level counts.',
-    desc: 'Teamworks starts at D1 and stops there. LegacyLink was built for the programs they ignore — D2, D3, NAIA, and junior colleges — with full roster and alumni management at a price that fits your budget.',
+    desc: 'Competitors start at D1 and stop there. LegacyLink was built for the programs they ignore — D2, D3, NAIA, and junior colleges — with full roster and alumni management at a price that fits your budget.',
     bullets: [
       'Full roster + alumni CRM — both included on Pro',
       'Mass email communications to your entire network',
