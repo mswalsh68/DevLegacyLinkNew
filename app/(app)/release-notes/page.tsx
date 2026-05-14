@@ -55,7 +55,7 @@ export default function ReleaseNotesPage() {
           Release Notes
         </h1>
         <p style={{ fontSize: 14, color: 'var(--color-gray-500)', margin: 0 }}>
-          What&apos;s new in DevLegacyLink
+          What&apos;s new in LegacyLink
         </p>
       </div>
 

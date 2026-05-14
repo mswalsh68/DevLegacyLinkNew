@@ -3,13 +3,13 @@ import Link from 'next/link'
 
 export const metadata: Metadata = {
   title: 'About',
-  description: 'Why we built DevLegacyLink and who it\'s for.',
+  description: 'Why we built LegacyLink and who it\'s for.',
 }
 
 const VALUES = [
   {
     title: 'Built by coaches, for coaches',
-    body: 'DevLegacyLink was born out of the frustration of managing alumni relationships through spreadsheets and fragmented systems. Every feature is designed around how coaching staffs actually work.',
+    body: 'LegacyLink was born out of the frustration of managing alumni relationships through spreadsheets and fragmented systems. Every feature is designed around how coaching staffs actually work.',
   },
   {
     title: 'Your data, your control',
@@ -27,7 +27,7 @@ export default function AboutPage() {
       {/* Header */}
       <div className="mb-16 text-center">
         <h1 className="text-4xl font-extrabold text-gray-900 md:text-5xl">
-          About DevLegacyLink
+          About LegacyLink
         </h1>
         <p className="mt-5 text-xl text-gray-600">
           We built the platform we always wished existed.
@@ -39,7 +39,7 @@ export default function AboutPage() {
         <h2 className="mb-4 text-2xl font-bold text-gray-900">Our mission</h2>
         <p className="text-lg leading-relaxed text-gray-600">
           Athletic programs invest years developing student-athletes — but most have no
-          reliable system for staying connected after graduation. DevLegacyLink gives
+          reliable system for staying connected after graduation. LegacyLink gives
           coaching staffs the tools to maintain those relationships for life: tracking
           alumni careers, logging outreach, and managing their active roster all in
           one place.

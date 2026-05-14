@@ -38,9 +38,9 @@ export function AppSidebar() {
       <div className="h-14 flex items-center px-4 border-b border-white/[0.06]">
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded bg-[#B8962E] flex items-center justify-center flex-shrink-0">
-            <span className="text-black font-extrabold text-[10px] tracking-tight leading-none">DL</span>
+            <span className="text-black font-extrabold text-[10px] tracking-tight leading-none">LL</span>
           </div>
-          <span className="font-bold text-white text-[13px] tracking-wide">DevLegacyLink</span>
+          <span className="font-bold text-white text-[13px] tracking-wide">LegacyLink</span>
         </div>
       </div>
 
