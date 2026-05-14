@@ -3,44 +3,17 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { theme } from '@/lib/theme'
-import { useTeamConfig } from '@/providers/ThemeProvider'
-import { resolvePostTokens } from '@/lib/feedTokens'
-import { Alert, Badge, Button, Modal } from '@/components'
-import { AUDIENCE_LABEL, STATUS_COLOR, audienceBadgeVariant, fmt } from '@/lib/dashboard-helpers'
-
-// ─── Shared types ─────────────────────────────────────────────────────────────
-
-export interface Campaign {
-  id:              string
-  name:            string
-  targetAudience:  string
-  status:          string
-  sentCount:       number
-  respondedCount:  number
-  responseRatePct: number
-  createdAt:       string
-}
-
-export interface FeedPost {
-  id:          string
-  title:       string | null
-  audience:    string
-  publishedAt: string
-}
+import { Alert, Button, Modal } from '@/components'
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 export interface CommsDashboardTabProps {
-  campaignAudiences:  readonly string[]
-  postAudiences:      readonly string[]
   metricsEndpoint:    string
-  sportId?:           number | null
+  sportId?:           string | null
   title:              string
   subtitle:           string
   emailAudience:      string
   emailAudienceLabel: string
-  emptyCampaignsText: string
-  emptyPostsText:     string
   errorMessage:       string
   renderMetrics:      (metrics: unknown, features: string[]) => ReactNode
 }
@@ -52,7 +25,7 @@ interface CreateEmailModalProps {
   onSent:             () => void
   emailAudience:      string
   emailAudienceLabel: string
-  sportId?:           number | null
+  sportId?:           string | null
 }
 
 function CreateEmailModal({ onClose, onSent, emailAudience, emailAudienceLabel, sportId }: CreateEmailModalProps) {
@@ -163,72 +136,46 @@ function CreateEmailModal({ onClose, onSent, emailAudience, emailAudienceLabel, 
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function CommsDashboardTab({
-  campaignAudiences,
-  postAudiences,
   metricsEndpoint,
   sportId,
   title,
   subtitle,
   emailAudience,
   emailAudienceLabel,
-  emptyCampaignsText,
-  emptyPostsText,
   errorMessage,
   renderMetrics,
 }: CommsDashboardTabProps) {
   const router = useRouter()
-  const config = useTeamConfig()
 
-  const [metrics,       setMetrics]       = useState<unknown>(null)
-  const [features,      setFeatures]      = useState<string[]>([])
-  const [campaigns,     setCampaigns]     = useState<Campaign[]>([])
-  const [posts,         setPosts]         = useState<FeedPost[]>([])
-  const [loading,       setLoading]       = useState(true)
-  const [error,         setError]         = useState<string | null>(null)
-  const [successMsg,    setSuccessMsg]    = useState<string | null>(null)
-  const [showModal,     setShowModal]     = useState(false)
-  const [campaignsOpen, setCampaignsOpen] = useState(true)
-  const [postsOpen,     setPostsOpen]     = useState(true)
+  const [metrics,    setMetrics]    = useState<unknown>(null)
+  const [features,   setFeatures]   = useState<string[]>([])
+  const [loading,    setLoading]    = useState(true)
+  const [error,      setError]      = useState<string | null>(null)
+  const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  const [showModal,  setShowModal]  = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const metricsUrl = sportId
+      const url = sportId
         ? `/api${metricsEndpoint}?sportId=${encodeURIComponent(sportId)}`
         : `/api${metricsEndpoint}`
-      const [metricsRes, campRes, feedRes] = await Promise.all([
-        fetch(metricsUrl,                    { credentials: 'include' }).then(r => r.json()),
-        fetch('/api/campaigns',              { credentials: 'include' }).then(r => r.json()),
-        fetch(`/api/feed?page=1&pageSize=50${sportId ? `&sportId=${encodeURIComponent(sportId)}` : ''}`, { credentials: 'include' }).then(r => r.json()),
-      ])
-
-      setMetrics(metricsRes.data)
-      setFeatures(metricsRes.features_available ?? [])
-
-      const allCamps: Campaign[] = campRes.data ?? []
-      setCampaigns(allCamps.filter(c => campaignAudiences.includes(c.targetAudience)))
-
-      const allPosts: FeedPost[] = (feedRes.data ?? [])
-        .filter((p: FeedPost) => postAudiences.includes(p.audience))
-        .map((p: FeedPost) => ({
-          ...p,
-          title: p.title ? resolvePostTokens(p.title, config) : null,
-        }))
-      setPosts(allPosts)
+      const res = await fetch(url, { credentials: 'include' }).then(r => r.json())
+      setMetrics(res.data)
+      setFeatures(res.features_available ?? [])
     } catch {
       setError(errorMessage)
     } finally {
       setLoading(false)
     }
-  }, [config, metricsEndpoint, sportId, campaignAudiences, postAudiences, errorMessage])
+  }, [metricsEndpoint, sportId, errorMessage])
 
   useEffect(() => { load() }, [load])
 
   const handleSent = () => {
     setShowModal(false)
     setSuccessMsg('Email sent successfully!')
-    load()
     setTimeout(() => setSuccessMsg(null), 4000)
   }
 
@@ -249,105 +196,10 @@ export default function CommsDashboardTab({
       {successMsg && <div style={{ marginBottom: 16 }}><Alert variant="success" message={successMsg} /></div>}
       {error      && <div style={{ marginBottom: 16 }}><Alert variant="error"   message={error}      /></div>}
 
-      {/* ── Metric cards ── */}
-      {!loading && metrics && renderMetrics(metrics, features)}
-
       {loading ? (
         <p style={{ color: theme.gray500, padding: '40px 0', textAlign: 'center' }}>Loading…</p>
       ) : (
-        <>
-          {/* ── Email Campaigns ── */}
-          <div style={{ marginBottom: 24 }}>
-            <button
-              onClick={() => setCampaignsOpen(o => !o)}
-              style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 12px 0', width: '100%', textAlign: 'left' }}
-            >
-              <span style={{ fontSize: 16, fontWeight: 600, color: theme.gray900 }}>Email Campaigns</span>
-              <span style={{ fontSize: 12, fontWeight: 700, backgroundColor: theme.primaryLight, color: theme.primaryDark, borderRadius: 20, padding: '2px 8px' }}>{campaigns.length}</span>
-              <span style={{ marginLeft: 'auto', fontSize: 18, color: theme.gray400, lineHeight: 1 }}>{campaignsOpen ? '▾' : '▸'}</span>
-            </button>
-            {campaignsOpen && (
-              campaigns.length === 0 ? (
-                <p style={{ color: theme.gray400, fontSize: 14, margin: 0 }}>{emptyCampaignsText}</p>
-              ) : (
-                <div style={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.cardBorder}`, borderRadius: 12, overflow: 'hidden' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                    <thead>
-                      <tr style={{ borderBottom: `1px solid ${theme.cardBorder}`, backgroundColor: theme.gray50 }}>
-                        {['Subject / Name', 'Audience', 'Status', 'Sent', 'Responded', 'Rate', 'Date'].map(h => (
-                          <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: theme.gray600 }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {campaigns.map((c, i) => (
-                        <tr
-                          key={c.id}
-                          onClick={() => router.push(`/alumni/campaigns/${c.id}`)}
-                          style={{ borderBottom: i < campaigns.length - 1 ? `1px solid ${theme.cardBorder}` : 'none', cursor: 'pointer', transition: 'background 0.1s' }}
-                          onMouseEnter={e => (e.currentTarget.style.backgroundColor = theme.gray50)}
-                          onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
-                        >
-                          <td style={{ padding: '12px 16px', color: theme.gray900, fontWeight: 500 }}>{c.name}</td>
-                          <td style={{ padding: '12px 16px' }}><Badge label={AUDIENCE_LABEL[c.targetAudience] ?? c.targetAudience} variant="primary" /></td>
-                          <td style={{ padding: '12px 16px' }}><span style={{ fontSize: 12, fontWeight: 600, color: STATUS_COLOR[c.status] ?? theme.gray500, textTransform: 'capitalize' }}>{c.status}</span></td>
-                          <td style={{ padding: '12px 16px', color: theme.gray700 }}>{c.sentCount ?? 0}</td>
-                          <td style={{ padding: '12px 16px', color: theme.gray700 }}>{c.respondedCount ?? 0}</td>
-                          <td style={{ padding: '12px 16px', color: theme.gray700, fontWeight: 500 }}>{c.responseRatePct ?? 0}%</td>
-                          <td style={{ padding: '12px 16px', color: theme.gray500 }}>{fmt(c.createdAt)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )
-            )}
-          </div>
-
-          {/* ── Feed Posts ── */}
-          <div>
-            <button
-              onClick={() => setPostsOpen(o => !o)}
-              style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 12px 0', width: '100%', textAlign: 'left' }}
-            >
-              <span style={{ fontSize: 16, fontWeight: 600, color: theme.gray900 }}>Feed Posts</span>
-              <span style={{ fontSize: 12, fontWeight: 700, backgroundColor: theme.primaryLight, color: theme.primaryDark, borderRadius: 20, padding: '2px 8px' }}>{posts.length}</span>
-              <span style={{ marginLeft: 'auto', fontSize: 18, color: theme.gray400, lineHeight: 1 }}>{postsOpen ? '▾' : '▸'}</span>
-            </button>
-            {postsOpen && (
-              posts.length === 0 ? (
-                <p style={{ color: theme.gray400, fontSize: 14, margin: 0 }}>{emptyPostsText}</p>
-              ) : (
-                <div style={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.cardBorder}`, borderRadius: 12, overflow: 'hidden' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                    <thead>
-                      <tr style={{ borderBottom: `1px solid ${theme.cardBorder}`, backgroundColor: theme.gray50 }}>
-                        {['Title', 'Audience', 'Date'].map(h => (
-                          <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: theme.gray600 }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {posts.map((p, i) => (
-                        <tr
-                          key={p.id}
-                          onClick={() => router.push(`/feed/${p.id}`)}
-                          style={{ borderBottom: i < posts.length - 1 ? `1px solid ${theme.cardBorder}` : 'none', cursor: 'pointer', transition: 'background 0.1s' }}
-                          onMouseEnter={e => (e.currentTarget.style.backgroundColor = theme.gray50)}
-                          onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
-                        >
-                          <td style={{ padding: '12px 16px', color: theme.gray900, fontWeight: 500 }}>{p.title ?? '(no title)'}</td>
-                          <td style={{ padding: '12px 16px' }}><Badge label={AUDIENCE_LABEL[p.audience] ?? p.audience} variant={audienceBadgeVariant(p.audience)} /></td>
-                          <td style={{ padding: '12px 16px', color: theme.gray500 }}>{fmt(p.publishedAt)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )
-            )}
-          </div>
-        </>
+        metrics && renderMetrics(metrics, features)
       )}
 
       {showModal && (

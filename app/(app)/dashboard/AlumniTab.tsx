@@ -18,28 +18,20 @@ interface AlumniMetrics {
   emailOpenRatePct:       number
 }
 
-// Module-level constants so useCallback deps stay stable
-const CAMPAIGN_AUDIENCES = ['all', 'alumni_only'] as const
-const POST_AUDIENCES     = ['all', 'alumni_only'] as const
-
 // ─── Alumni Tab ───────────────────────────────────────────────────────────────
 
-export default function AlumniTab({ sportId }: { sportId?: number | null }) {
+export default function AlumniTab({ sportId }: { sportId?: string | null }) {
   const config = useTeamConfig()
   const tier   = config.tierId
 
   return (
     <CommsDashboardTab
-      campaignAudiences={CAMPAIGN_AUDIENCES}
-      postAudiences={POST_AUDIENCES}
       metricsEndpoint="/dashboard/alumni-metrics"
       sportId={sportId}
       title="Alumni Engagement"
       subtitle="Outreach interactions, emails, and login activity"
       emailAudience="alumni_only"
       emailAudienceLabel="Alumni"
-      emptyCampaignsText="No alumni campaigns yet. Create your first email above."
-      emptyPostsText="No alumni posts yet."
       errorMessage="Failed to load alumni metrics"
       renderMetrics={(raw, features) => {
         const m = raw as AlumniMetrics
