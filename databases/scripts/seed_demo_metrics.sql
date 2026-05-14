@@ -75,7 +75,7 @@ VALUES
     DATEADD(DAY, -7, SYSUTCDATETIME())
   );
 
-PRINT CONCAT('Inserted 2 alumni campaigns.');
+PRINT 'Inserted 2 alumni campaigns.';
 
 -- ─── 2. Player outreach campaigns ────────────────────────────────────────────
 
@@ -115,7 +115,7 @@ VALUES
     DATEADD(DAY, -5, SYSUTCDATETIME())
   );
 
-PRINT CONCAT('Inserted 2 player campaigns.');
+PRINT 'Inserted 2 player campaigns.';
 
 -- ─── 3. Alumni outreach messages ─────────────────────────────────────────────
 -- One "sent" row per alumni user per campaign, with ~50% open rate on camp1.
@@ -167,7 +167,7 @@ JOIN dbo.users u ON u.user_id = us.user_id
 WHERE us.program_role_id = 7
   AND us.is_active = 1;
 
-PRINT CONCAT('Inserted alumni outreach messages for both campaigns.');
+PRINT 'Inserted alumni outreach messages for both campaigns.';
 
 -- ─── 4. Player outreach messages ─────────────────────────────────────────────
 
