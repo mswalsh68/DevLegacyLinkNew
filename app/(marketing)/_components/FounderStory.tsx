@@ -1,3 +1,5 @@
+import Image from 'next/image'
+
 export default function FounderStory() {
   return (
     <section id="founder" className="py-24 bg-brand-black">
@@ -11,19 +13,33 @@ export default function FounderStory() {
               Built by someone<br />who lived it.
             </h2>
 
-            {/* ★ PHOTO: Mike Walsh founder photo — to be added */}
-            <div className="w-full rounded-sm overflow-hidden bg-brand-dark border border-white/5 flex flex-col items-center justify-center gap-3 py-24">
-              <span className="text-xs font-bold uppercase tracking-widest text-white/20">Photo</span>
-              <span className="text-base font-semibold text-white/10">Mike Walsh</span>
+            <div className="w-full rounded-sm overflow-hidden border border-white/5">
+              <Image
+                src="/founderimage.jpeg"
+                alt="Mike Walsh — Founder of LegacyLink"
+                width={600}
+                height={600}
+                className="w-full h-auto object-cover"
+              />
             </div>
           </div>
 
-          {/* Right — founder story placeholder */}
-          <div className="border-2 border-dashed border-white/10 rounded-sm p-12 text-center">
-            <h3 className="text-white/30 font-bold text-xl mb-3">Mike&apos;s Story — Coming Soon</h3>
-            <p className="text-white/20 text-sm leading-relaxed">
-              The founder&apos;s story and the &ldquo;why&rdquo; behind LegacyLink will live here.<br />
-              Replace this section with Mike&apos;s narrative when ready.
+          {/* Right — founder story */}
+          <div className="flex flex-col gap-6">
+            <p className="text-white/70 text-lg leading-relaxed">
+              I played D1 football at USF. Years after graduation, my program was still tracking alumni through Google Forms and survey links.
+            </p>
+            <p className="text-white/70 text-lg leading-relaxed">
+              Then a coaching change hit. New staff, no alumni relationships, no institutional memory. Every transition reset engagement to zero. I watched a program lose its entire network overnight.
+            </p>
+            <p className="text-white/70 text-lg leading-relaxed">
+              I looked at every tool on the market. The existing platforms own the active roster. Nobody owned what comes next.
+            </p>
+            <p className="text-white/70 text-lg leading-relaxed">
+              I built LegacyLink because I was standing in that gap myself — and so was every program I talked to.
+            </p>
+            <p className="text-white/50 text-base leading-relaxed border-l-2 border-gold/40 pl-5 italic">
+              The name comes from my high school team&apos;s motto: <span className="gold-text not-italic font-semibold">Always a Link.</span> That connection — from first practice to lifelong alumni — is what we&apos;re built to protect.
             </p>
           </div>
 
