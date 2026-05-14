@@ -1,3 +1,5 @@
+import Image from 'next/image'
+
 export default function FounderStory() {
   return (
     <section id="founder" className="py-24 bg-brand-black">
@@ -11,10 +13,14 @@ export default function FounderStory() {
               Built by someone<br />who lived it.
             </h2>
 
-            {/* ★ PHOTO: Mike Walsh founder photo — to be added */}
-            <div className="w-full rounded-sm overflow-hidden bg-brand-dark border border-white/5 flex flex-col items-center justify-center gap-3 py-24">
-              <span className="text-xs font-bold uppercase tracking-widest text-white/20">Photo</span>
-              <span className="text-base font-semibold text-white/10">Mike Walsh</span>
+            <div className="w-full rounded-sm overflow-hidden border border-white/5">
+              <Image
+                src="/founderimage.jpeg"
+                alt="Mike Walsh — Founder of LegacyLink"
+                width={600}
+                height={600}
+                className="w-full h-auto object-cover"
+              />
             </div>
           </div>
 
