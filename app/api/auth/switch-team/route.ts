@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { SignJWT } from 'jose'
 import sql from 'mssql'
 import { requireSession, isGlobalAdmin } from '@/lib/auth'
-import { sp_SwitchTeam, sp_UpsertUser } from '@/lib/db/procedures'
+import { sp_SwitchTeam, sp_UpsertUser, sp_UpdateLastTeamLogin } from '@/lib/db/procedures'
 import { getPool, appDbContext } from '@/lib/db/connection'
 
 function getConfig() {
@@ -93,6 +93,15 @@ export async function POST(req: NextRequest) {
         // Non-fatal — log and continue. The switch will succeed; read tracking
         // may still warn until the DB is reachable.
         console.warn('[switch-team] sp_UpsertUser skipped:', (upsertErr as Error).message)
+      }
+
+      // Stamp last_team_login so alumni/player login counts are tracked.
+      try {
+        await appDbContext.run(appDb, () =>
+          sp_UpdateLastTeamLogin({ userId: session.userId })
+        )
+      } catch (loginErr) {
+        console.warn('[switch-team] sp_UpdateLastTeamLogin skipped:', (loginErr as Error).message)
       }
     }
 

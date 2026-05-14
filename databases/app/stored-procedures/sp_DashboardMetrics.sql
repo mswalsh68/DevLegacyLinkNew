@@ -86,7 +86,9 @@ BEGIN
         AND (@SportId IS NULL OR us.sport_id = @SportId)
     );
 
-  -- ── Feed post counts (alumni-visible: all + alumni_only) ──────────────────
+  -- ── Feed post counts (alumni-visible: target_program_role_id IS NULL or 7) ──
+  -- audience column was migrated from 'all'/'alumni_only' to 'all_sports' etc.
+  -- in migration 011; targeting is now via target_program_role_id (7=alumni, NULL=all).
   DECLARE @TotalFeedPosts INT = 0;
   DECLARE @MonthFeedPosts INT = 0;
 
@@ -94,7 +96,8 @@ BEGIN
     @TotalFeedPosts = COUNT(*),
     @MonthFeedPosts = SUM(CASE WHEN fp.created_at >= DATEADD(DAY, -30, SYSUTCDATETIME()) THEN 1 ELSE 0 END)
   FROM dbo.feed_posts fp
-  WHERE fp.audience IN ('all', 'alumni_only')
+  WHERE fp.is_deleted = 0
+    AND (fp.target_program_role_id IS NULL OR fp.target_program_role_id = 7)
     AND (@SportId IS NULL OR fp.sport_id = @SportId);
 
   SELECT
@@ -138,7 +141,8 @@ BEGIN
         AND (@SportId IS NULL OR us.sport_id = @SportId)
     );
 
-  -- ── Feed post counts (player-visible) ────────────────────────────────────
+  -- ── Feed post counts (player-visible: target_program_role_id IS NULL or 8) ──
+  -- See alumni SP comment — audience values migrated; targeting via target_program_role_id.
   DECLARE @TotalFeedPosts INT = 0;
   DECLARE @MonthFeedPosts INT = 0;
 
@@ -146,7 +150,8 @@ BEGIN
     @TotalFeedPosts = COUNT(*),
     @MonthFeedPosts = SUM(CASE WHEN fp.created_at >= DATEADD(DAY, -30, SYSUTCDATETIME()) THEN 1 ELSE 0 END)
   FROM dbo.feed_posts fp
-  WHERE fp.audience IN ('all', 'players_only', 'by_position')
+  WHERE fp.is_deleted = 0
+    AND (fp.target_program_role_id IS NULL OR fp.target_program_role_id = 8)
     AND (@SportId IS NULL OR fp.sport_id = @SportId);
 
   SELECT
@@ -246,7 +251,8 @@ BEGIN
     @TotalFeedPosts = COUNT(*),
     @MonthFeedPosts = SUM(CASE WHEN fp.created_at >= DATEADD(DAY, -30, SYSUTCDATETIME()) THEN 1 ELSE 0 END)
   FROM dbo.feed_posts fp
-  WHERE (@SportId IS NULL OR fp.sport_id = @SportId);
+  WHERE fp.is_deleted = 0
+    AND (@SportId IS NULL OR fp.sport_id = @SportId);
 
   SELECT
     ISNULL(@TotalInteractions, 0) AS totalInteractions,
