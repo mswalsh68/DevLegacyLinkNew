@@ -48,6 +48,108 @@ async function execFull(
   }
 }
 
+// ─── sp_GetReleaseNotes ───────────────────────────────────────────────────────
+
+export interface ReleaseNoteItem    { body: string }
+export interface ReleaseNoteSection { label: string; color: string; bg: string; items: ReleaseNoteItem[] }
+export interface ReleaseNote {
+  id:             number
+  version:        string
+  releaseDate:    string   // formatted: "May 15, 2026"
+  releaseDateRaw: string   // ISO: "2026-05-15"
+  sections:       ReleaseNoteSection[]
+}
+
+// SQL Server FOR JSON PATH embeds nested FOR JSON PATH results as actual JSON objects
+// (not escaped strings) when processed by the mssql driver. This helper handles both.
+function parseItemsJson(raw: unknown): ReleaseNoteItem[] {
+  if (!raw) return []
+  if (typeof raw === 'object') return (raw as { items: ReleaseNoteItem[] }).items ?? []
+  if (typeof raw === 'string') return (JSON.parse(raw) as { items: ReleaseNoteItem[] }).items ?? []
+  return []
+}
+
+export async function sp_GetReleaseNotes(): Promise<ReleaseNote[]> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_GetReleaseNotes')
+  return (rows as unknown as Array<{
+    id: number; version: string; releaseDate: string; releaseDateRaw: string; sectionsJson: string | unknown[]
+  }>).map(r => {
+    const rawSections = (
+      typeof r.sectionsJson === 'string'
+        ? JSON.parse(r.sectionsJson)
+        : (r.sectionsJson ?? [])
+    ) as Array<{ label: string; color: string; bg: string; itemsJson: unknown }>
+    return {
+      id:             r.id,
+      version:        r.version,
+      releaseDate:    r.releaseDate,
+      releaseDateRaw: r.releaseDateRaw,
+      sections: rawSections.map(s => ({
+        label: s.label,
+        color: s.color,
+        bg:    s.bg,
+        items: parseItemsJson(s.itemsJson),
+      })),
+    }
+  })
+}
+
+// ─── sp_CreateReleaseNote ─────────────────────────────────────────────────────
+
+export async function sp_CreateReleaseNote(params: {
+  version:     string
+  releaseDate: string   // 'YYYY-MM-DD'
+}): Promise<{ newId: number | null; errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_CreateReleaseNote', (r) => {
+    r.input ('Version',     sql.NVarChar(20), params.version)
+    r.input ('ReleaseDate', sql.Date,         params.releaseDate)
+    r.output('NewId',       sql.Int)
+    r.output('ErrorCode',   sql.NVarChar(50))
+  })
+  return {
+    newId:     (output.NewId     as number | null) ?? null,
+    errorCode: (output.ErrorCode as string | null) ?? null,
+  }
+}
+
+// ─── sp_UpdateReleaseNote ─────────────────────────────────────────────────────
+
+export interface ReleaseSectionInput {
+  label:     string
+  color:     string
+  bg:        string
+  sortOrder: number
+  items:     Array<{ body: string; sortOrder: number }>
+}
+
+export async function sp_UpdateReleaseNote(params: {
+  id:           number
+  version:      string
+  releaseDate:  string
+  sections:     ReleaseSectionInput[]
+}): Promise<{ errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_UpdateReleaseNote', (r) => {
+    r.input ('Id',           sql.Int,              params.id)
+    r.input ('Version',      sql.NVarChar(20),     params.version)
+    r.input ('ReleaseDate',  sql.Date,             params.releaseDate)
+    r.input ('SectionsJson', sql.NVarChar(sql.MAX), JSON.stringify(params.sections))
+    r.output('ErrorCode',    sql.NVarChar(50))
+  })
+  return { errorCode: (output.ErrorCode as string | null) ?? null }
+}
+
+// ─── sp_DeleteReleaseNote ─────────────────────────────────────────────────────
+
+export async function sp_DeleteReleaseNote(params: {
+  id: number
+}): Promise<{ errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_DeleteReleaseNote', (r) => {
+    r.input ('Id',        sql.Int,          params.id)
+    r.output('ErrorCode', sql.NVarChar(50))
+  })
+  return { errorCode: (output.ErrorCode as string | null) ?? null }
+}
+
 // ─── Global DB — Auth / Users / Config ───────────────────────────────────────
 
 /**
