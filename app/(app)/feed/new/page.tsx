@@ -28,7 +28,7 @@ const RECIPIENT_OPTIONS: { value: number | null; label: string; desc: string }[]
   { value: 7,    label: 'Alumni only', desc: 'Graduated players' },
 ]
 
-const CAN_POST_ROLES = ['super_admin', 'support_admin', 'client']
+const CAN_POST_ROLES  = ['super_admin', 'support_admin', 'client']
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,9 +44,15 @@ export default function NewPostPage() {
   const router              = useRouter()
   const { user, isLoading } = useAuth()
   const config              = useTeamConfig()
-  const recipientOptions    = RECIPIENT_OPTIONS.filter(
-    opt => opt.value !== 8 || hasFeature(config.tierId, 'roster_management'),
-  )
+  // Alumni (role 7) and Tier 1 (starter plan) are locked to alumni-only audience
+  const isAlumni  = user?.programRoleId === 7
+  const isTier1   = config.tierId === 1
+  const alumniOnly = isAlumni || isTier1
+
+  const recipientOptions = RECIPIENT_OPTIONS.filter(opt => {
+    if (alumniOnly) return opt.value === 7          // Alumni only on Tier 1 or alumni poster
+    return opt.value !== 8 || hasFeature(config.tierId, 'roster_management')
+  })
 
   const [title,               setTitle]               = useState('')
   const [bodyHtml,            setBodyHtml]            = useState('')
@@ -55,6 +61,12 @@ export default function NewPostPage() {
   const [alsoEmail,           setAlsoEmail]           = useState(false)
   const [emailSubject,        setEmailSubject]        = useState('')
   const [targetProgramRoleId, setTargetProgramRoleId] = useState<number | null>(null)
+
+  // Lock recipient to alumni-only when applicable
+  useEffect(() => {
+    if (alumniOnly) setTargetProgramRoleId(7)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAlumni, isTier1])
 
   // Sport selection
   const [sports,          setSports]          = useState<SportOption[]>([])
@@ -304,6 +316,11 @@ export default function NewPostPage() {
           <div style={{ marginBottom: 18 }}>
             <label style={{ fontSize: 13, fontWeight: 600, color: theme.gray700, display: 'block', marginBottom: 8 }}>
               Recipients
+              {alumniOnly && (
+                <span style={{ fontWeight: 400, fontSize: 12, color: theme.gray400, marginLeft: 8 }}>
+                  {isTier1 && !isAlumni ? '(Starter plan — alumni only)' : '(alumni only)'}
+                </span>
+              )}
             </label>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {recipientOptions.map(opt => {
@@ -312,7 +329,7 @@ export default function NewPostPage() {
                   <button
                     key={String(opt.value)}
                     type="button"
-                    onClick={() => setTargetProgramRoleId(opt.value)}
+                    onClick={() => !alumniOnly && setTargetProgramRoleId(opt.value)}
                     style={{
                       padding:         '8px 16px',
                       borderRadius:    'var(--radius-md)',
@@ -321,9 +338,10 @@ export default function NewPostPage() {
                       color:           active ? 'var(--color-primary-dark)' : theme.gray600,
                       fontSize:        13,
                       fontWeight:      active ? 600 : 400,
-                      cursor:          'pointer',
+                      cursor:          alumniOnly ? 'default' : 'pointer',
                       transition:      'all 0.15s',
                       textAlign:       'left',
+                      opacity:         alumniOnly ? 0.85 : 1,
                     }}
                   >
                     <div style={{ fontWeight: 600 }}>{opt.label}</div>
@@ -336,20 +354,22 @@ export default function NewPostPage() {
             </div>
           </div>
 
-          {/* Options: pin + email */}
-          <div style={{ display: 'flex', gap: 24, marginBottom: 18, paddingTop: 4 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14, color: theme.gray700 }}>
-              <input type="checkbox" checked={isPinned} onChange={e => setIsPinned(e.target.checked)} />
-              Pin to top
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14, color: theme.gray700 }}>
-              <input type="checkbox" checked={alsoEmail} onChange={e => setAlsoEmail(e.target.checked)} />
-              Also send as email
-            </label>
-          </div>
+          {/* Options: pin + email (hidden for alumni — staff only) */}
+          {!isAlumni && (
+            <div style={{ display: 'flex', gap: 24, marginBottom: 18, paddingTop: 4 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14, color: theme.gray700 }}>
+                <input type="checkbox" checked={isPinned} onChange={e => setIsPinned(e.target.checked)} />
+                Pin to top
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14, color: theme.gray700 }}>
+                <input type="checkbox" checked={alsoEmail} onChange={e => setAlsoEmail(e.target.checked)} />
+                Also send as email
+              </label>
+            </div>
+          )}
 
-          {/* Email subject */}
-          {alsoEmail && (
+          {/* Email subject (staff only — alumni can't send emails) */}
+          {!isAlumni && alsoEmail && (
             <div
               style={{
                 marginBottom:    18,
@@ -409,7 +429,7 @@ export default function NewPostPage() {
               onClick={() => router.push('/feed')}
             />
             <Button
-              label={submitting ? 'Publishing…' : (alsoEmail ? 'Publish + Send Email' : 'Publish')}
+              label={submitting ? 'Publishing…' : (!isAlumni && alsoEmail ? 'Publish + Send Email' : 'Publish')}
               type="submit"
               loading={submitting}
               disabled={isSubmitDisabled}
