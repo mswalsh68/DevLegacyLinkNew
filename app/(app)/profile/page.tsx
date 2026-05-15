@@ -166,6 +166,11 @@ export default function ProfilePage() {
   const [visibilityLoading, setVisibilityLoading] = useState(false)
   const [visibilityMsg,     setVisibilityMsg]     = useState('')
 
+  // ── Email subscription ────────────────────────────────────
+  const [isUnsubscribed, setIsUnsubscribed] = useState<boolean | null>(null)
+  const [subLoading,     setSubLoading]     = useState(false)
+  const [subMsg,         setSubMsg]         = useState('')
+
   // ── Load on mount ─────────────────────────────────────────
   useEffect(() => {
     if (user) {
@@ -203,6 +208,14 @@ export default function ProfilePage() {
       .then((r) => r.json())
       .then(({ success, data }) => {
         if (success && Array.isArray(data)) setTeams(data)
+      })
+      .catch(() => {})
+
+    // Fetch email subscription status
+    fetch('/api/profile/email-subscription', { credentials: 'include' })
+      .then((r) => r.json())
+      .then(({ success, isUnsubscribed }) => {
+        if (success) setIsUnsubscribed(Boolean(isUnsubscribed))
       })
       .catch(() => {})
 
@@ -340,6 +353,23 @@ export default function ProfilePage() {
       }
     } catch { /* ignore */ }
     setSettingTeam(null)
+  }
+
+  const handleResubscribe = async () => {
+    setSubLoading(true)
+    setSubMsg('')
+    try {
+      const res = await fetch('/api/profile/email-subscription', {
+        method:      'DELETE',
+        credentials: 'include',
+      })
+      if (res.ok) {
+        setIsUnsubscribed(false)
+        setSubMsg('You\'ve been re-subscribed to program emails.')
+        setTimeout(() => setSubMsg(''), 4000)
+      }
+    } catch { /* ignore */ }
+    setSubLoading(false)
   }
 
   const handleToggleVisibility = async () => {
@@ -694,6 +724,35 @@ export default function ProfilePage() {
               {contactVisible ? 'Visible to community members' : 'Hidden from community members'}
             </span>
           </div>
+        </Section>
+      )}
+
+      {/* ── Email Notifications ────────────────────────────── */}
+      {isUnsubscribed !== null && (
+        <Section
+          title="Email notifications"
+          description="Control whether you receive program emails."
+        >
+          {subMsg && (
+            <p style={{ fontSize: 13, color: 'var(--color-success)', marginBottom: 12 }}>{subMsg}</p>
+          )}
+          {isUnsubscribed ? (
+            <div>
+              <p style={{ fontSize: 14, color: 'var(--color-gray-600)', marginBottom: 16 }}>
+                You are currently <strong style={{ color: 'var(--color-danger)' }}>unsubscribed</strong> from program emails.
+                You won't receive any email communications from this program.
+              </p>
+              <Btn
+                label={subLoading ? 'Re-subscribing…' : 'Re-subscribe to emails'}
+                onClick={handleResubscribe}
+                disabled={subLoading}
+              />
+            </div>
+          ) : (
+            <p style={{ fontSize: 14, color: 'var(--color-gray-600)' }}>
+              ✅ You are subscribed to program emails.
+            </p>
+          )}
         </Section>
       )}
 
