@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
@@ -10,6 +10,14 @@ import Link from 'next/link'
 type Status = 'loading' | 'success' | 'invalid' | 'error'
 
 export default function UnsubscribePage() {
+  return (
+    <Suspense>
+      <UnsubscribeContent />
+    </Suspense>
+  )
+}
+
+function UnsubscribeContent() {
   const searchParams          = useSearchParams()
   const token                 = searchParams.get('token')
   const [status, setStatus]   = useState<Status>('loading')
