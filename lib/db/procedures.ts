@@ -890,6 +890,34 @@ export async function sp_ProcessUnsubscribe(params: {
   }
 }
 
+// ─── sp_GetEmailSubscription ─────────────────────────────────────────────────
+
+export async function sp_GetEmailSubscription(params: {
+  userId: number
+}): Promise<{ isUnsubscribed: boolean; errorCode: string | null }> {
+  const { recordset, output } = await execFull('app', 'sp_GetEmailSubscription', (r) => {
+    r.input ('UserId',    sql.Int,           params.userId)
+    r.output('ErrorCode', sql.NVarChar(50))
+  })
+  const row = (recordset?.[0] ?? null) as Record<string, unknown> | null
+  return {
+    isUnsubscribed: Boolean(row?.isUnsubscribed),
+    errorCode:      (output.ErrorCode as string | null) ?? null,
+  }
+}
+
+// ─── sp_ResubscribeEmail ──────────────────────────────────────────────────────
+
+export async function sp_ResubscribeEmail(params: {
+  userId: number
+}): Promise<{ errorCode: string | null }> {
+  const { output } = await execFull('app', 'sp_ResubscribeEmail', (r) => {
+    r.input ('UserId',    sql.Int,           params.userId)
+    r.output('ErrorCode', sql.NVarChar(50))
+  })
+  return { errorCode: (output.ErrorCode as string | null) ?? null }
+}
+
 // ─── sp_MarkEmailOpened ───────────────────────────────────────────────────────
 
 export async function sp_MarkEmailOpened(params: {
