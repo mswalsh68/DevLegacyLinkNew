@@ -1,8 +1,21 @@
 import { NextResponse } from 'next/server'
+import { z } from 'zod'
 import { requireSession } from '@/lib/auth'
 import { canAsync } from '@/lib/permissions.server'
 import { sp_GetCampaigns, sp_CreateCampaign } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
+import { sanitizePostHtml } from '@/lib/sanitize'
+
+const createCampaignSchema = z.object({
+  name:           z.string().min(1).max(200),
+  targetAudience: z.string().min(1).max(50),
+  subjectLine:    z.string().max(200).optional().nullable(),
+  bodyHtml:       z.string().max(100_000).optional().nullable(),
+  description:    z.string().max(500).optional().nullable(),
+  fromName:       z.string().max(100).optional().nullable(),
+  replyToEmail:   z.union([z.literal(''), z.string().email().max(255)]).optional().nullable(),
+  sportId:        z.union([z.number().int().positive(), z.string()]).optional().nullable(),
+})
 
 // ─── GET /api/campaigns ───────────────────────────────────────────────────────
 
@@ -40,27 +53,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
   }
 
-  let body: {
-    name:           string
-    targetAudience: string
-    subjectLine?:   string | null
-    bodyHtml?:      string | null
-    description?:   string | null
-    fromName?:      string | null
-    replyToEmail?:  string | null
-    sportId?:       number | string | null   // accept both INT and "1"
-  }
-
+  let raw: unknown
   try {
-    body = await req.json()
+    raw = await req.json()
   } catch {
     return NextResponse.json({ success: false, error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  if (!body.name || !body.targetAudience) {
-    return NextResponse.json({ success: false, error: 'name and targetAudience are required' }, { status: 400 })
+  const parsed = createCampaignSchema.safeParse(raw)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' },
+      { status: 422 },
+    )
   }
 
+  const body = parsed.data
   const sportId = body.sportId != null
     ? parseInt(String(body.sportId), 10) || null
     : null
@@ -71,11 +79,11 @@ export async function POST(req: Request) {
         name:           body.name,
         createdBy:      session.userId,
         targetAudience: body.targetAudience,
-        subjectLine:    body.subjectLine  ?? null,
-        bodyHtml:       body.bodyHtml     ?? null,
-        description:    body.description  ?? null,
-        fromName:       body.fromName     ?? null,
-        replyToEmail:   body.replyToEmail ?? null,
+        subjectLine:    body.subjectLine                                   ?? null,
+        bodyHtml:       body.bodyHtml ? sanitizePostHtml(body.bodyHtml)   : null,
+        description:    body.description                                   ?? null,
+        fromName:       body.fromName                                      ?? null,
+        replyToEmail:   body.replyToEmail                                  ?? null,
         sportId,
       })
 
