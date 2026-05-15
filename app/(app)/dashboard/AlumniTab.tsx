@@ -30,8 +30,7 @@ export default function AlumniTab({ sportId }: { sportId?: number | null }) {
       sportId={sportId}
       title="Alumni Engagement"
       subtitle="Outreach interactions, emails, and login activity"
-      emailAudience="alumni_only"
-      emailAudienceLabel="Alumni"
+
       errorMessage="Failed to load alumni metrics"
       renderMetrics={(raw, features) => {
         const m = raw as AlumniMetrics

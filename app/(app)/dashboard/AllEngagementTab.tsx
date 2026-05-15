@@ -26,8 +26,7 @@ export default function AllEngagementTab({ sportId }: { sportId?: number | null 
       sportId={sportId}
       title="All Engagement"
       subtitle="Aggregated alumni and player communications across all sports"
-      emailAudience="all"
-      emailAudienceLabel="Everyone"
+
       errorMessage="Failed to load engagement metrics"
       renderMetrics={(raw) => {
         const m = raw as AllEngagementMetrics
