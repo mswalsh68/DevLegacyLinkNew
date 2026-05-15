@@ -68,14 +68,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 SYN_SCRIPT="$REPO_ROOT/databases/app/stored-procedures/00_create_synonyms.sql"
-SP_SCRIPT="$REPO_ROOT/databases/app/stored-procedures/sp_App_AllProcedures.sql"
+DOMAINS_DIR="$REPO_ROOT/databases/app/stored-procedures/domains"
 
-for f in "$SYN_SCRIPT" "$SP_SCRIPT"; do
-    if [[ ! -f "$f" ]]; then
-        echo "Error: required file not found: $f" >&2
-        exit 1
-    fi
-done
+if [[ ! -f "$SYN_SCRIPT" ]]; then
+    echo "Error: required file not found: $SYN_SCRIPT" >&2
+    exit 1
+fi
+if [[ ! -d "$DOMAINS_DIR" ]]; then
+    echo "Error: domains directory not found: $DOMAINS_DIR" >&2
+    exit 1
+fi
 
 # ── Build base sqlcmd args ────────────────────────────────────────────────────
 BASE_ARGS=(-S "$SERVER" -d "$APP_DB" -b -I)
@@ -110,10 +112,15 @@ echo " App DB   : $APP_DB"
 echo " Global DB: $GLOBAL_DB"
 echo "========================================"
 
-run_script "1/2  Synonyms" "$SYN_SCRIPT" \
+run_script "1  Synonyms" "$SYN_SCRIPT" \
     -v "GlobalDb=$GLOBAL_DB"
 
-run_script "2/2  Stored Procedures" "$SP_SCRIPT"
+i=2
+for script in "$DOMAINS_DIR"/*.sql; do
+    label="$i  $(basename "$script" .sql)"
+    run_script "$label" "$script"
+    ((i++))
+done
 
 echo ""
 echo "========================================"

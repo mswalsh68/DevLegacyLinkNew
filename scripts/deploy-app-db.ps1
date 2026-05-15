@@ -71,15 +71,14 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # ── Resolve script paths ─────────────────────────────────────────────────────
-$RepoRoot  = Split-Path -Parent $PSScriptRoot
-$SynScript = Join-Path $RepoRoot 'databases\app\stored-procedures\00_create_synonyms.sql'
-$SpScript  = Join-Path $RepoRoot 'databases\app\stored-procedures\sp_App_AllProcedures.sql'
+$RepoRoot    = Split-Path -Parent $PSScriptRoot
+$SynScript   = Join-Path $RepoRoot 'databases\app\stored-procedures\00_create_synonyms.sql'
+$DomainsDir  = Join-Path $RepoRoot 'databases\app\stored-procedures\domains'
 
-foreach ($f in $SynScript, $SpScript) {
-    if (-not (Test-Path $f)) {
-        throw "Required file not found: $f"
-    }
-}
+if (-not (Test-Path $SynScript)) { throw "Required file not found: $SynScript" }
+if (-not (Test-Path $DomainsDir)) { throw "Domains directory not found: $DomainsDir" }
+
+$DomainScripts = Get-ChildItem -Path $DomainsDir -Filter '*.sql' | Sort-Object Name
 
 # ── Build common sqlcmd args ──────────────────────────────────────────────────
 $baseArgs = @('-S', $Server, '-d', $AppDb, '-b', '-I')
@@ -122,13 +121,18 @@ Write-Host " Global DB: $GlobalDb"
 Write-Host "========================================"
 
 Invoke-Sqlcmd-Script `
-    -Label     '1/2  Synonyms' `
+    -Label     '1  Synonyms' `
     -ScriptPath $SynScript `
     -ExtraArgs  @('-v', "GlobalDb=$GlobalDb")
 
-Invoke-Sqlcmd-Script `
-    -Label     '2/2  Stored Procedures' `
-    -ScriptPath $SpScript
+$total = $DomainScripts.Count
+$i     = 1
+foreach ($script in $DomainScripts) {
+    Invoke-Sqlcmd-Script `
+        -Label      "$($i + 1)/$($total + 1)  $($script.BaseName)" `
+        -ScriptPath $script.FullName
+    $i++
+}
 
 Write-Host ""
 Write-Host "========================================"
