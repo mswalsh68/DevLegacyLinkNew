@@ -60,14 +60,25 @@ export interface ReleaseNote {
   sections:       ReleaseNoteSection[]
 }
 
+// SQL Server FOR JSON PATH embeds nested FOR JSON PATH results as actual JSON objects
+// (not escaped strings) when processed by the mssql driver. This helper handles both.
+function parseItemsJson(raw: unknown): ReleaseNoteItem[] {
+  if (!raw) return []
+  if (typeof raw === 'object') return (raw as { items: ReleaseNoteItem[] }).items ?? []
+  if (typeof raw === 'string') return (JSON.parse(raw) as { items: ReleaseNoteItem[] }).items ?? []
+  return []
+}
+
 export async function sp_GetReleaseNotes(): Promise<ReleaseNote[]> {
   const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_GetReleaseNotes')
   return (rows as unknown as Array<{
-    id: number; version: string; releaseDate: string; releaseDateRaw: string; sectionsJson: string
+    id: number; version: string; releaseDate: string; releaseDateRaw: string; sectionsJson: string | unknown[]
   }>).map(r => {
-    const rawSections = JSON.parse(r.sectionsJson ?? '[]') as Array<{
-      label: string; color: string; bg: string; itemsJson: string
-    }>
+    const rawSections = (
+      typeof r.sectionsJson === 'string'
+        ? JSON.parse(r.sectionsJson)
+        : (r.sectionsJson ?? [])
+    ) as Array<{ label: string; color: string; bg: string; itemsJson: unknown }>
     return {
       id:             r.id,
       version:        r.version,
@@ -77,7 +88,7 @@ export async function sp_GetReleaseNotes(): Promise<ReleaseNote[]> {
         label: s.label,
         color: s.color,
         bg:    s.bg,
-        items: (JSON.parse(s.itemsJson ?? '{"items":[]}') as { items: ReleaseNoteItem[] }).items,
+        items: parseItemsJson(s.itemsJson),
       })),
     }
   })
