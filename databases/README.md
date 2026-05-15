@@ -27,7 +27,17 @@ logical server but not across servers.
 | File | Purpose |
 |------|---------|
 | `app/stored-procedures/00_create_synonyms.sql` | Creates `syn_GetOrCreateUser` and `syn_TransferPlayerToAlumni` in the App DB. Uses SQLCMD variable `$(GlobalDb)` — run via sqlcmd, not Azure Portal. |
-| `app/stored-procedures/sp_App_AllProcedures.sql` | All App DB stored procedures. References synonyms (no 4-part names). Run **after** the synonyms script. |
+| `app/stored-procedures/domains/01_users.sql` | User upsert, roster/alumni views, sport-filtered roster queries. |
+| `app/stored-procedures/domains/02_roles.sql` | Role lookup, add, update, and transfer procedures. |
+| `app/stored-procedures/domains/03_onboarding.sql` | Welcome popup tracking; sport deactivation. |
+| `app/stored-procedures/domains/04_sports.sql` | Sport and position management (get, add, update, delete). |
+| `app/stored-procedures/domains/05_interactions.sql` | Interaction log (log + query by user). |
+| `app/stored-procedures/domains/06_campaigns.sql` | Email campaign lifecycle: create, dispatch, track opens/unsubscribes. |
+| `app/stored-procedures/domains/07_feed.sql` | Feed post CRUD, read tracking, likes, pinning, sport associations. |
+| `app/stored-procedures/domains/08_members.sql` | Member detail lookup. |
+| `app/stored-procedures/domains/09_community.sql` | Community consent, staff directory, contact visibility. |
+| `app/stored-procedures/domains/10_mentor.sql` | Mentor pairing lifecycle: create, respond, cancel, dashboard views. |
+| `app/stored-procedures/sp_App_AllProcedures.sql` | **Legacy fallback** — combined file with all procedures. The deploy scripts now run the `domains/` files instead. Kept for reference. |
 
 ---
 
@@ -97,12 +107,24 @@ sqlcmd -S localhost\SQLEXPRESS -d DevLegacyLinkApp -E \
   -i databases/app/stored-procedures/00_create_synonyms.sql -b
 ```
 
-**Step 2 — Stored procedures** (no extra variables needed):
+**Step 2 — Stored procedures** (run each domain file in order):
 ```bash
-sqlcmd -S myserver.database.windows.net -d LegacyLinkApp_Bulls \
-  -U sqladmin -P <password> \
-  -i databases/app/stored-procedures/sp_App_AllProcedures.sql -b
+# Production
+for f in databases/app/stored-procedures/domains/*.sql; do
+  sqlcmd -S myserver.database.windows.net -d LegacyLinkApp_Bulls \
+    -U sqladmin -P <password> \
+    -i "$f" -b
+done
+
+# Dev (local SQL Express)
+for f in databases/app/stored-procedures/domains/*.sql; do
+  sqlcmd -S localhost\SQLEXPRESS -d DevLegacyLinkApp -E \
+    -i "$f" -b
+done
 ```
+
+Files in `domains/` are numbered (`01_users.sql` … `10_mentor.sql`) so a
+simple glob sorts them in the correct dependency order.
 
 The `-b` flag makes sqlcmd exit with a non-zero code on any SQL error,
 so failures are never silently swallowed.

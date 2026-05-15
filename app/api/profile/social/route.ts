@@ -3,7 +3,17 @@ import { z } from 'zod'
 import { requireSession } from '@/lib/auth'
 import { sp_UpsertUserContact } from '@/lib/db/procedures'
 
-const urlOrEmpty = z.string().max(500).optional().nullable()
+// Accepts a valid http/https URL or an empty string (clears the field).
+const urlOrEmpty = z
+  .union([
+    z.literal(''),
+    z.string().url().max(500).refine(
+      (u) => u.startsWith('http://') || u.startsWith('https://'),
+      'URL must use http or https',
+    ),
+  ])
+  .optional()
+  .nullable()
 
 const patchSchema = z.object({
   twitter:    z.string().max(100).optional().nullable(),

@@ -4,6 +4,7 @@ import { canAsync } from '@/lib/permissions.server'
 import { sp_GetFeed, sp_CreatePost } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
 import { sendCampaignEmailsBackground } from '@/lib/email'
+import { sanitizePostHtml } from '@/lib/sanitize'
 
 export async function GET(req: Request) {
   const { session, error } = await requireSession()
@@ -76,7 +77,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { bodyHtml, audience, title, isPinned, alsoEmail, emailSubject } = body
+  const { audience, title, isPinned, alsoEmail, emailSubject } = body
+  const bodyHtml = body.bodyHtml ? sanitizePostHtml(body.bodyHtml) : body.bodyHtml
 
   if (!bodyHtml || !audience) {
     return NextResponse.json({ success: false, error: 'bodyHtml and audience are required' }, { status: 400 })

@@ -5,9 +5,19 @@
 //   mode: 'login'  — verifies existing credentials then submits request
 // In both cases the user ends up logged in (JWT cookie set) with a pending request.
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import bcrypt from 'bcryptjs'
 import { SignJWT } from 'jose'
 import sql from 'mssql'
+
+const requestSchema = z.object({
+  token:     z.string().min(1).max(200),
+  mode:      z.enum(['signup', 'login', 'claim']).default('signup'),
+  email:     z.string().email().max(255),
+  password:  z.string().min(8).max(128).optional(),
+  firstName: z.string().min(1).max(100).optional(),
+  lastName:  z.string().min(1).max(100).optional(),
+})
 
 function extractAppNames(raw: unknown): string[] {
   if (!Array.isArray(raw)) return []
@@ -35,17 +45,22 @@ function getConfig() {
 }
 
 export async function POST(req: NextRequest) {
-  let body: Record<string, unknown>
-  try { body = await req.json() } catch {
+  let raw: unknown
+  try { raw = await req.json() } catch {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
   }
 
-  const token = typeof body.token === 'string' ? body.token.trim() : ''
-  const mode  = body.mode === 'login' ? 'login' : body.mode === 'claim' ? 'claim' : 'signup'
-  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
+  const parsed = requestSchema.safeParse(raw)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? 'Invalid input.' },
+      { status: 422 },
+    )
+  }
 
-  if (!token) return NextResponse.json({ error: 'Invite code is required.' }, { status: 400 })
-  if (!email) return NextResponse.json({ error: 'Email is required.'       }, { status: 400 })
+  const token = parsed.data.token.trim()
+  const mode  = parsed.data.mode
+  const email = parsed.data.email.trim().toLowerCase()
 
   let cfg: ReturnType<typeof getConfig>
   try { cfg = getConfig() } catch (err) {
@@ -61,11 +76,11 @@ export async function POST(req: NextRequest) {
   let userJson: Record<string, unknown>  = {}
 
   if (mode === 'signup') {
-    const password  = typeof body.password  === 'string' ? body.password  : ''
-    const firstName = typeof body.firstName === 'string' ? body.firstName.trim() : ''
-    const lastName  = typeof body.lastName  === 'string' ? body.lastName.trim()  : ''
+    const password  = parsed.data.password  ?? ''
+    const firstName = (parsed.data.firstName ?? '').trim()
+    const lastName  = (parsed.data.lastName  ?? '').trim()
 
-    if (!password || password.length < 8) {
+    if (!password) {
       return NextResponse.json({ error: 'Password must be at least 8 characters.' }, { status: 422 })
     }
     if (!firstName || !lastName) {
@@ -98,7 +113,7 @@ export async function POST(req: NextRequest) {
 
   } else if (mode === 'login') {
     // Login flow — call sp_Login directly (same pattern as /api/auth/login)
-    const password = typeof body.password === 'string' ? body.password : ''
+    const password = parsed.data.password ?? ''
     if (!password) {
       return NextResponse.json({ error: 'Password is required.' }, { status: 400 })
     }
@@ -136,8 +151,8 @@ export async function POST(req: NextRequest) {
 
   // ── Claim mode: activate an INVITE_PENDING account ───────────────────────
   if (mode === 'claim') {
-    const password = typeof body.password === 'string' ? body.password : ''
-    if (!password || password.length < 8) {
+    const password = parsed.data.password ?? ''
+    if (!password) {
       return NextResponse.json({ error: 'Password must be at least 8 characters.' }, { status: 422 })
     }
 

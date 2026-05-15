@@ -1,11 +1,14 @@
-USE LegacyLinkApp;
-GO
 SET QUOTED_IDENTIFIER ON;
 SET ANSI_NULLS ON;
 GO
 -- ============================================================
--- APP DB — ALL STORED PROCEDURES
+-- APP DB — ALL STORED PROCEDURES (combined — legacy deploy entry point)
 -- Run on: each tenant AppDB after 014_schema_consolidation.sql
+--
+-- NOTICE: The individual domain files in ./domains/ are the canonical
+-- source going forward. This file is kept for deploy scripts that still
+-- reference it by name. New deployments should use deploy-app-db.ps1 /
+-- deploy-app-db.sh which now iterate over the domain files.
 --
 -- Schema (post-migration 014):
 --   dbo.users          — user_id INT PK, program_role_id INT FK → program_role
