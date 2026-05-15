@@ -874,6 +874,22 @@ export async function sp_MarkEmailSent(params: {
   return { errorCode: (output.ErrorCode as string | null) ?? null }
 }
 
+// ─── sp_ProcessUnsubscribe ────────────────────────────────────────────────────
+
+export async function sp_ProcessUnsubscribe(params: {
+  token: string
+}): Promise<{ firstName: string | null; errorCode: string | null }> {
+  const { recordset, output } = await execFull('app', 'sp_ProcessUnsubscribe', (r) => {
+    r.input ('Token',     sql.UniqueIdentifier, params.token)
+    r.output('ErrorCode', sql.NVarChar(50))
+  })
+  const row = (recordset?.[0] ?? null) as Record<string, unknown> | null
+  return {
+    firstName: (row?.firstName as string | null) ?? null,
+    errorCode: (output.ErrorCode as string | null) ?? null,
+  }
+}
+
 // ─── sp_MarkEmailOpened ───────────────────────────────────────────────────────
 
 export async function sp_MarkEmailOpened(params: {
