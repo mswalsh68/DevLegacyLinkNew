@@ -48,6 +48,31 @@ async function execFull(
   }
 }
 
+// ─── sp_GetReleaseNotes ───────────────────────────────────────────────────────
+
+export interface ReleaseNoteItem    { body: string }
+export interface ReleaseNoteSection { label: string; color: string; bg: string; items: ReleaseNoteItem[] }
+export interface ReleaseNote        { version: string; releaseDate: string; sections: ReleaseNoteSection[] }
+
+export async function sp_GetReleaseNotes(): Promise<ReleaseNote[]> {
+  const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_GetReleaseNotes')
+  return (rows as unknown as Array<{ version: string; releaseDate: string; sectionsJson: string }>).map(r => {
+    const rawSections = JSON.parse(r.sectionsJson ?? '[]') as Array<{
+      label: string; color: string; bg: string; itemsJson: string
+    }>
+    return {
+      version:     r.version,
+      releaseDate: r.releaseDate,
+      sections: rawSections.map(s => ({
+        label: s.label,
+        color: s.color,
+        bg:    s.bg,
+        items: (JSON.parse(s.itemsJson ?? '{"items":[]}') as { items: ReleaseNoteItem[] }).items,
+      })),
+    }
+  })
+}
+
 // ─── Global DB — Auth / Users / Config ───────────────────────────────────────
 
 /**

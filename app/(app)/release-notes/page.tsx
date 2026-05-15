@@ -1,53 +1,31 @@
 'use client'
 
-const releases = [
-  {
-    version: 'v1.0.0',
-    date: 'May 13, 2026',
-    sections: [
-      {
-        label: 'New Features',
-        color: '#16a34a',
-        bg: '#f0fdf4',
-        items: [
-          'Two-tier role architecture — global roles and program roles',
-          'Roster and alumni management with sport filtering',
-          'Staff management page',
-          'Feed with sport tagging and pinned welcome posts',
-          'Mentor program (Elite tier)',
-          'Team switcher with per-team theme support',
-          'Tier-based dashboard tabs and feature flags',
-          'Invite, claim, and member signup flows',
-          'Community consent gate',
-          'Welcome popup for new members',
-        ],
-      },
-      {
-        label: 'Improvements',
-        color: '#2563eb',
-        bg: '#eff6ff',
-        items: [
-          'Azure SQL cross-database coordination layer',
-          'Responsive UI with compact filter bars',
-          'Session-based team and role resolution',
-        ],
-      },
-      {
-        label: 'Bug Fixes',
-        color: '#dc2626',
-        bg: '#fef2f2',
-        items: [
-          'Fixed tierId feature flag resolving as string instead of number',
-          'Fixed case-insensitive tier normalization',
-          'Fixed dashboard metric routes using session tierId',
-          'Fixed mentor program stored procedure column references',
-        ],
-      },
-    ],
-  },
-]
+import { useEffect, useState } from 'react'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface ReleaseNoteItem    { body: string }
+interface ReleaseNoteSection { label: string; color: string; bg: string; items: ReleaseNoteItem[] }
+interface ReleaseNote        { version: string; releaseDate: string; sections: ReleaseNoteSection[] }
+
+// ─── Release Notes Page ───────────────────────────────────────────────────────
 
 export default function ReleaseNotesPage() {
+  const [releases, setReleases] = useState<ReleaseNote[]>([])
+  const [loading,  setLoading]  = useState(true)
+  const [error,    setError]    = useState(false)
+
+  useEffect(() => {
+    fetch('/api/release-notes', { credentials: 'include' })
+      .then(r => r.json())
+      .then(({ success, data }) => {
+        if (success) setReleases(data)
+        else setError(true)
+      })
+      .catch(() => setError(true))
+      .finally(() => setLoading(false))
+  }, [])
+
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', padding: '32px 24px' }}>
       <div style={{ marginBottom: 32 }}>
@@ -59,7 +37,17 @@ export default function ReleaseNotesPage() {
         </p>
       </div>
 
-      {releases.map((release) => (
+      {loading && (
+        <p style={{ color: 'var(--color-gray-400)', textAlign: 'center', padding: '40px 0' }}>Loading…</p>
+      )}
+
+      {error && !loading && (
+        <p style={{ color: 'var(--color-danger)', textAlign: 'center', padding: '40px 0' }}>
+          Failed to load release notes.
+        </p>
+      )}
+
+      {!loading && !error && releases.map((release) => (
         <div
           key={release.version}
           style={{
@@ -78,41 +66,41 @@ export default function ReleaseNotesPage() {
             gap:          12,
           }}>
             <span style={{
-              fontSize:        14,
-              fontWeight:      700,
-              color:           'var(--color-gray-900)',
-              fontFamily:      'monospace',
-              background:      'var(--color-gray-100)',
-              border:          '1px solid var(--color-card-border)',
-              borderRadius:    6,
-              padding:         '2px 10px',
+              fontSize:     14,
+              fontWeight:   700,
+              color:        'var(--color-gray-900)',
+              fontFamily:   'monospace',
+              background:   'var(--color-gray-100)',
+              border:       '1px solid var(--color-card-border)',
+              borderRadius: 6,
+              padding:      '2px 10px',
             }}>
               {release.version}
             </span>
-            <span style={{ fontSize: 13, color: 'var(--color-gray-500)' }}>{release.date}</span>
+            <span style={{ fontSize: 13, color: 'var(--color-gray-500)' }}>{release.releaseDate}</span>
           </div>
 
           <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 24 }}>
             {release.sections.map((section) => (
               <div key={section.label}>
                 <div style={{
-                  display:      'inline-block',
-                  fontSize:     11,
-                  fontWeight:   600,
+                  display:       'inline-block',
+                  fontSize:      11,
+                  fontWeight:    600,
                   letterSpacing: '0.05em',
                   textTransform: 'uppercase',
-                  color:        section.color,
-                  background:   section.bg,
-                  borderRadius: 4,
-                  padding:      '2px 8px',
-                  marginBottom: 10,
+                  color:         section.color,
+                  background:    section.bg,
+                  borderRadius:  4,
+                  padding:       '2px 8px',
+                  marginBottom:  10,
                 }}>
                   {section.label}
                 </div>
                 <ul style={{ margin: 0, padding: '0 0 0 18px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {section.items.map((item) => (
-                    <li key={item} style={{ fontSize: 14, color: 'var(--color-gray-700)', lineHeight: 1.5 }}>
-                      {item}
+                  {section.items.map((item, i) => (
+                    <li key={i} style={{ fontSize: 14, color: 'var(--color-gray-700)', lineHeight: 1.5 }}>
+                      {item.body}
                     </li>
                   ))}
                 </ul>
