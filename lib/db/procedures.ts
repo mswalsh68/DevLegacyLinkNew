@@ -52,17 +52,27 @@ async function execFull(
 
 export interface ReleaseNoteItem    { body: string }
 export interface ReleaseNoteSection { label: string; color: string; bg: string; items: ReleaseNoteItem[] }
-export interface ReleaseNote        { version: string; releaseDate: string; sections: ReleaseNoteSection[] }
+export interface ReleaseNote {
+  id:             number
+  version:        string
+  releaseDate:    string   // formatted: "May 15, 2026"
+  releaseDateRaw: string   // ISO: "2026-05-15"
+  sections:       ReleaseNoteSection[]
+}
 
 export async function sp_GetReleaseNotes(): Promise<ReleaseNote[]> {
   const rows = await exec<sql.IRecordSet<Record<string, unknown>>>('global', 'sp_GetReleaseNotes')
-  return (rows as unknown as Array<{ version: string; releaseDate: string; sectionsJson: string }>).map(r => {
+  return (rows as unknown as Array<{
+    id: number; version: string; releaseDate: string; releaseDateRaw: string; sectionsJson: string
+  }>).map(r => {
     const rawSections = JSON.parse(r.sectionsJson ?? '[]') as Array<{
       label: string; color: string; bg: string; itemsJson: string
     }>
     return {
-      version:     r.version,
-      releaseDate: r.releaseDate,
+      id:             r.id,
+      version:        r.version,
+      releaseDate:    r.releaseDate,
+      releaseDateRaw: r.releaseDateRaw,
       sections: rawSections.map(s => ({
         label: s.label,
         color: s.color,
@@ -71,6 +81,62 @@ export async function sp_GetReleaseNotes(): Promise<ReleaseNote[]> {
       })),
     }
   })
+}
+
+// ─── sp_CreateReleaseNote ─────────────────────────────────────────────────────
+
+export async function sp_CreateReleaseNote(params: {
+  version:     string
+  releaseDate: string   // 'YYYY-MM-DD'
+}): Promise<{ newId: number | null; errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_CreateReleaseNote', (r) => {
+    r.input ('Version',     sql.NVarChar(20), params.version)
+    r.input ('ReleaseDate', sql.Date,         params.releaseDate)
+    r.output('NewId',       sql.Int)
+    r.output('ErrorCode',   sql.NVarChar(50))
+  })
+  return {
+    newId:     (output.NewId     as number | null) ?? null,
+    errorCode: (output.ErrorCode as string | null) ?? null,
+  }
+}
+
+// ─── sp_UpdateReleaseNote ─────────────────────────────────────────────────────
+
+export interface ReleaseSectionInput {
+  label:     string
+  color:     string
+  bg:        string
+  sortOrder: number
+  items:     Array<{ body: string; sortOrder: number }>
+}
+
+export async function sp_UpdateReleaseNote(params: {
+  id:           number
+  version:      string
+  releaseDate:  string
+  sections:     ReleaseSectionInput[]
+}): Promise<{ errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_UpdateReleaseNote', (r) => {
+    r.input ('Id',           sql.Int,              params.id)
+    r.input ('Version',      sql.NVarChar(20),     params.version)
+    r.input ('ReleaseDate',  sql.Date,             params.releaseDate)
+    r.input ('SectionsJson', sql.NVarChar(sql.MAX), JSON.stringify(params.sections))
+    r.output('ErrorCode',    sql.NVarChar(50))
+  })
+  return { errorCode: (output.ErrorCode as string | null) ?? null }
+}
+
+// ─── sp_DeleteReleaseNote ─────────────────────────────────────────────────────
+
+export async function sp_DeleteReleaseNote(params: {
+  id: number
+}): Promise<{ errorCode: string | null }> {
+  const { output } = await execFull('global', 'sp_DeleteReleaseNote', (r) => {
+    r.input ('Id',        sql.Int,          params.id)
+    r.output('ErrorCode', sql.NVarChar(50))
+  })
+  return { errorCode: (output.ErrorCode as string | null) ?? null }
 }
 
 // ─── Global DB — Auth / Users / Config ───────────────────────────────────────
