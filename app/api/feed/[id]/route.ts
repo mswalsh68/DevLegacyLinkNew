@@ -3,6 +3,7 @@ import { requireSession } from '@/lib/auth'
 import { canAsync } from '@/lib/permissions.server'
 import { sp_GetFeedPost, sp_SoftDeletePost, sp_EditPost } from '@/lib/db/procedures'
 import { appDbContext } from '@/lib/db/connection'
+import { sanitizePostHtml } from '@/lib/sanitize'
 
 export async function GET(
   _req: Request,
@@ -49,8 +50,9 @@ export async function PATCH(
   let bodyHtml: string
   try {
     const body = await req.json()
-    bodyHtml = body?.bodyHtml
-    if (!bodyHtml) throw new Error('bodyHtml required')
+    const raw = body?.bodyHtml
+    if (!raw) throw new Error('bodyHtml required')
+    bodyHtml = sanitizePostHtml(raw)
   } catch {
     return NextResponse.json({ success: false, error: 'bodyHtml is required' }, { status: 400 })
   }
