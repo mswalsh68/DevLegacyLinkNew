@@ -880,7 +880,7 @@ export async function sp_ProcessUnsubscribe(params: {
   token: string
 }): Promise<{ firstName: string | null; errorCode: string | null }> {
   const { recordset, output } = await execFull('app', 'sp_ProcessUnsubscribe', (r) => {
-    r.input ('Token',     sql.UniqueIdentifier, params.token)
+    r.input ('Token',     sql.NVarChar(50), params.token)
     r.output('ErrorCode', sql.NVarChar(50))
   })
   const row = (recordset?.[0] ?? null) as Record<string, unknown> | null
