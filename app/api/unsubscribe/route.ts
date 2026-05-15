@@ -18,7 +18,9 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json({ success: true, firstName })
-  } catch {
-    return NextResponse.json({ success: false, error: 'SERVER_ERROR' }, { status: 500 })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[unsubscribe] error:', msg)
+    return NextResponse.json({ success: false, error: 'SERVER_ERROR', detail: msg }, { status: 500 })
   }
 }
