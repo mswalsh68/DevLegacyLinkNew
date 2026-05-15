@@ -1,9 +1,17 @@
 // GET  /api/invite/codes?teamId=<int>   — list codes for a team (global_admin only)
 // POST /api/invite/codes               — create a new invite code (global_admin only)
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { randomUUID } from 'crypto'
 import { requireSession, isGlobalAdmin } from '@/lib/auth'
 import { sp_ListInviteCodes, sp_CreateInviteCode } from '@/lib/db/procedures'
+
+const createCodeSchema = z.object({
+  teamId:    z.union([z.number().int().positive(), z.string()]).optional().nullable(),
+  role:      z.enum(['roster', 'alumni', 'staff']).default('roster'),
+  maxUses:   z.number().int().positive().optional().nullable(),
+  expiresAt: z.string().datetime({ offset: true }).optional().nullable(),
+})
 
 export async function GET(req: NextRequest) {
   const { session, error } = await requireSession({ appDb: false })
@@ -28,18 +36,26 @@ export async function POST(req: NextRequest) {
   if (authErr) return authErr
   if (!isGlobalAdmin(session)) return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
 
-  let body: Record<string, unknown>
-  try { body = await req.json() } catch {
+  let raw: unknown
+  try { raw = await req.json() } catch {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
   }
 
-  const teamIdRaw = body.teamId
-  const teamId = typeof teamIdRaw === 'number' ? teamIdRaw
-               : typeof teamIdRaw === 'string' ? parseInt(teamIdRaw, 10)
-               : (session.currentTeamId ?? 0)
-  const role     = typeof body.role     === 'string' ? body.role     : 'roster'
-  const maxUses  = typeof body.maxUses  === 'number' ? body.maxUses  : null
-  const expiresAt= body.expiresAt ? new Date(body.expiresAt as string) : null
+  const parsed = createCodeSchema.safeParse(raw)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? 'Invalid input.' },
+      { status: 422 },
+    )
+  }
+
+  const teamIdRaw = parsed.data.teamId
+  const teamId = teamIdRaw != null
+    ? parseInt(String(teamIdRaw), 10)
+    : (session.currentTeamId ?? 0)
+  const role      = parsed.data.role
+  const maxUses   = parsed.data.maxUses   ?? null
+  const expiresAt = parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : null
 
   if (!teamId || isNaN(teamId)) return NextResponse.json({ error: 'teamId is required.' }, { status: 400 })
 
