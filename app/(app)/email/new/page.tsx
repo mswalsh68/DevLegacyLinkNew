@@ -23,12 +23,19 @@ const AUDIENCE_OPTIONS = [
 ]
 
 const RECIPIENT_OPTIONS: { value: number | null; label: string; desc: string }[] = [
-  { value: null, label: 'Everyone',    desc: 'Roster + alumni' },
-  { value: 8,    label: 'Roster only', desc: 'Current players' },
+  { value: null, label: 'Everyone',    desc: 'Alumni + roster' },
   { value: 7,    label: 'Alumni only', desc: 'Graduated players' },
+  { value: 8,    label: 'Roster only', desc: 'Current players' },
 ]
 
-const CAN_POST_ROLES  = ['super_admin', 'support_admin', 'client']
+// Map targetProgramRoleId → targetAudience string for the campaigns API
+function toTargetAudience(roleId: number | null): string {
+  if (roleId === 7) return 'alumni_only'
+  if (roleId === 8) return 'players_only'
+  return 'all'
+}
+
+const CAN_EMAIL_ROLES = ['super_admin', 'support_admin', 'client']
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,47 +47,46 @@ interface SportOption {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function NewPostPage() {
+export default function NewEmailPage() {
   const router              = useRouter()
   const { user, isLoading } = useAuth()
   const config              = useTeamConfig()
-  // Alumni (role 7) and Tier 1 (starter plan) are locked to alumni-only audience
+
   const isAlumni  = user?.programRoleId === 7
   const isTier1   = config.tierId === 1
-  const alumniOnly = isAlumni || isTier1
+  // Alumni can't send emails; Tier 1 restricts recipients to alumni only
+  const lockedToAlumni = isTier1
 
   const recipientOptions = RECIPIENT_OPTIONS.filter(opt => {
-    if (alumniOnly) return opt.value === 7          // Alumni only on Tier 1 or alumni poster
+    if (lockedToAlumni) return opt.value === 7
     return opt.value !== 8 || hasFeature(config.tierId, 'roster_management')
   })
 
-  const [title,               setTitle]               = useState('')
+  const [subject,             setSubject]             = useState('')
   const [bodyHtml,            setBodyHtml]            = useState('')
   const [audience,            setAudience]            = useState('all_sports')
-  const [isPinned,            setIsPinned]            = useState(false)
-  const [alsoEmail,           setAlsoEmail]           = useState(false)
-  const [emailSubject,        setEmailSubject]        = useState('')
-  const [targetProgramRoleId, setTargetProgramRoleId] = useState<number | null>(null)
+  const [postToFeed,          setPostToFeed]          = useState(false)
+  const [targetProgramRoleId, setTargetProgramRoleId] = useState<number | null>(lockedToAlumni ? 7 : null)
 
-  // Lock recipient to alumni-only when applicable
+  // Lock recipient to alumni-only on Tier 1
   useEffect(() => {
-    if (alumniOnly) setTargetProgramRoleId(7)
+    if (lockedToAlumni) setTargetProgramRoleId(7)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAlumni, isTier1])
+  }, [isTier1])
 
   // Sport selection
-  const [sports,          setSports]          = useState<SportOption[]>([])
-  const [sportId,         setSportId]         = useState<string>('')          // single sport
-  const [selectedSportIds, setSelectedSportIds] = useState<Set<string>>(new Set()) // multi-sport
-  const [sportsLoaded,    setSportsLoaded]    = useState(false)
+  const [sports,           setSports]           = useState<SportOption[]>([])
+  const [sportId,          setSportId]          = useState<string>('')
+  const [selectedSportIds, setSelectedSportIds] = useState<Set<string>>(new Set())
+  const [sportsLoaded,     setSportsLoaded]     = useState(false)
 
   const [submitting, setSubmitting] = useState(false)
   const [error,      setError]      = useState('')
 
-  const canPost = CAN_POST_ROLES.includes(user?.role ?? '')
+  const canEmail = CAN_EMAIL_ROLES.includes(user?.role ?? '') && !isAlumni
 
   useEffect(() => {
-    if (!user || !canPost) return
+    if (!user || !canEmail) return
     fetch('/api/sports', { credentials: 'include' })
       .then(r => r.json())
       .then((data: { success: boolean; data: unknown[] }) => {
@@ -94,11 +100,11 @@ export default function NewPostPage() {
 
   if (isLoading) return null
 
-  if (!CAN_POST_ROLES.includes(user?.role ?? '')) {
+  if (!CAN_EMAIL_ROLES.includes(user?.role ?? '') || isAlumni) {
     return <AccessDenied currentRole={roleLabel(user?.role)} requiredRole="Support Admin or higher" />
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  // ── Helpers ──────────────────────────────────────────────────────────────────
 
   const handleAudienceChange = (v: string) => {
     setAudience(v)
@@ -116,69 +122,89 @@ export default function NewPostPage() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!bodyHtml.trim()) { setError('Post body is required.'); return }
-    if (audience === 'sport_specific' && !sportId) { setError('Select a sport for this post.'); return }
+    if (!subject.trim())  { setError('Subject is required.'); return }
+    if (!bodyHtml.trim()) { setError('Message body is required.'); return }
+    if (audience === 'sport_specific' && !sportId) { setError('Select a sport for this email.'); return }
     if (audience === 'multi_sport' && selectedSportIds.size === 0) {
-      setError('Select at least one sport for a multi-sport post.'); return
+      setError('Select at least one sport for a multi-sport email.'); return
     }
-    if (alsoEmail && !emailSubject.trim()) { setError('Email subject is required when sending as email.'); return }
 
     setError('')
     setSubmitting(true)
+
+    const resolvedSportId  = audience === 'sport_specific' ? sportId : null
+    const resolvedSportIds = audience === 'multi_sport' ? Array.from(selectedSportIds).map(Number) : undefined
+
     try {
-      const payload: Record<string, unknown> = {
-        title:        title.trim() || undefined,
-        bodyHtml,
-        audience,
-        isPinned,
-        alsoEmail,
-        emailSubject: alsoEmail ? emailSubject.trim() : undefined,
-        targetProgramRoleId: targetProgramRoleId ?? undefined,
+      if (postToFeed) {
+        // Post to feed with email attached
+        const res = await fetch('/api/feed', {
+          method:      'POST',
+          credentials: 'include',
+          headers:     { 'Content-Type': 'application/json' },
+          body:        JSON.stringify({
+            title:               subject,
+            bodyHtml,
+            audience,
+            alsoEmail:           true,
+            emailSubject:        subject,
+            sportId:             resolvedSportId ?? null,
+            sportIds:            resolvedSportIds,
+            targetProgramRoleId: targetProgramRoleId ?? undefined,
+          }),
+        }).then(r => r.json()) as { success: boolean; error?: string }
+        if (!res.success) throw new Error(res.error ?? 'Failed to send')
+      } else {
+        // Email only — create campaign then dispatch
+        const campRes = await fetch('/api/campaigns', {
+          method:      'POST',
+          credentials: 'include',
+          headers:     { 'Content-Type': 'application/json' },
+          body:        JSON.stringify({
+            name:           subject,
+            targetAudience: toTargetAudience(targetProgramRoleId),
+            subjectLine:    subject,
+            bodyHtml,
+            sportId:        resolvedSportId ?? null,
+          }),
+        }).then(r => r.json()) as { success: boolean; data?: { id: number }; error?: string }
+        if (!campRes.success) throw new Error(campRes.error ?? 'Failed to create campaign')
+
+        const dispatchRes = await fetch(`/api/campaigns/${campRes.data!.id}/dispatch`, {
+          method:      'POST',
+          credentials: 'include',
+        }).then(r => r.json()) as { success: boolean; error?: string }
+        if (!dispatchRes.success) throw new Error(dispatchRes.error ?? 'Failed to dispatch campaign')
       }
 
-      if (audience === 'sport_specific') {
-        payload.sportId = sportId
-      } else if (audience === 'multi_sport') {
-        payload.sportIds = Array.from(selectedSportIds).map(Number)
-      }
-
-      const res = await fetch('/api/feed', {
-        method:      'POST',
-        credentials: 'include',
-        headers:     { 'Content-Type': 'application/json' },
-        body:        JSON.stringify(payload),
-      })
-      const data = await res.json() as { success: boolean; error?: string }
-      if (!data.success) throw new Error(data.error ?? 'Unknown error')
-      router.push('/feed')
+      router.push('/dashboard')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create post')
+      setError(err instanceof Error ? err.message : 'Failed to send email')
       setSubmitting(false)
     }
   }
 
   // ── Preview labels ─────────────────────────────────────────────────────────
 
-  const audienceLabel = AUDIENCE_OPTIONS.find(o => o.value === audience)?.label ?? audience
-  const selectedSportName  = sports.find(s => s.id === sportId)?.name
-  const multiSportNames    = sports.filter(s => selectedSportIds.has(s.id)).map(s => s.name)
-  const recipientLabel     = recipientOptions.find(o => o.value === targetProgramRoleId)?.label ?? 'Everyone'
+  const selectedSportName = sports.find(s => s.id === sportId)?.name
+  const multiSportNames   = sports.filter(s => selectedSportIds.has(s.id)).map(s => s.name)
+  const recipientLabel    = recipientOptions.find(o => o.value === targetProgramRoleId)?.label ?? 'Everyone'
 
   const isSubmitDisabled =
     (audience === 'sport_specific' && sportsLoaded && !sportId) ||
     (audience === 'multi_sport'    && sportsLoaded && selectedSportIds.size === 0)
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto' }}>
 
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: theme.gray900, margin: 0 }}>
-          Create Post
+          Create Email
         </h1>
         <p style={{ fontSize: 14, color: theme.gray500, marginTop: 4 }}>
-          Posts are published to the team feed immediately.
+          Emails are sent immediately to recipients.
         </p>
       </div>
 
@@ -195,22 +221,21 @@ export default function NewPostPage() {
           }}
         >
 
-          {/* Title */}
+          {/* Subject */}
           <div style={{ marginBottom: 18 }}>
             <label style={{ fontSize: 13, fontWeight: 600, color: theme.gray700, display: 'block', marginBottom: 6 }}>
-              Title{' '}
-              <span style={{ color: theme.gray400, fontWeight: 400 }}>(optional)</span>
+              Subject <span style={{ color: 'var(--color-danger)' }}>*</span>
             </label>
-            <Input value={title} onChange={setTitle} placeholder="Post headline..." />
+            <Input value={subject} onChange={setSubject} placeholder="Email subject line..." />
           </div>
 
           {/* Body */}
           <div style={{ marginBottom: 18 }}>
             <Textarea
-              label="Body *"
+              label="Message *"
               value={bodyHtml}
               onChange={setBodyHtml}
-              placeholder="Write your post here. Basic HTML is supported: <b>, <i>, <p>, <ul>, <li>, <a>."
+              placeholder="Write your message here. Basic HTML is supported: <b>, <i>, <p>, <ul>, <li>, <a>."
               rows={8}
             />
           </div>
@@ -316,9 +341,9 @@ export default function NewPostPage() {
           <div style={{ marginBottom: 18 }}>
             <label style={{ fontSize: 13, fontWeight: 600, color: theme.gray700, display: 'block', marginBottom: 8 }}>
               Recipients
-              {alumniOnly && (
+              {lockedToAlumni && (
                 <span style={{ fontWeight: 400, fontSize: 12, color: theme.gray400, marginLeft: 8 }}>
-                  {isTier1 && !isAlumni ? '(Starter plan — alumni only)' : '(alumni only)'}
+                  (Starter plan — alumni only)
                 </span>
               )}
             </label>
@@ -329,7 +354,7 @@ export default function NewPostPage() {
                   <button
                     key={String(opt.value)}
                     type="button"
-                    onClick={() => !alumniOnly && setTargetProgramRoleId(opt.value)}
+                    onClick={() => !lockedToAlumni && setTargetProgramRoleId(opt.value)}
                     style={{
                       padding:         '8px 16px',
                       borderRadius:    'var(--radius-md)',
@@ -338,10 +363,10 @@ export default function NewPostPage() {
                       color:           active ? 'var(--color-primary-dark)' : theme.gray600,
                       fontSize:        13,
                       fontWeight:      active ? 600 : 400,
-                      cursor:          alumniOnly ? 'default' : 'pointer',
+                      cursor:          lockedToAlumni ? 'default' : 'pointer',
                       transition:      'all 0.15s',
                       textAlign:       'left',
-                      opacity:         alumniOnly ? 0.85 : 1,
+                      opacity:         lockedToAlumni ? 0.85 : 1,
                     }}
                   >
                     <div style={{ fontWeight: 600 }}>{opt.label}</div>
@@ -354,45 +379,13 @@ export default function NewPostPage() {
             </div>
           </div>
 
-          {/* Options: pin + email (hidden for alumni — staff only) */}
-          {!isAlumni && (
-            <div style={{ display: 'flex', gap: 24, marginBottom: 18, paddingTop: 4 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14, color: theme.gray700 }}>
-                <input type="checkbox" checked={isPinned} onChange={e => setIsPinned(e.target.checked)} />
-                Pin to top
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14, color: theme.gray700 }}>
-                <input type="checkbox" checked={alsoEmail} onChange={e => setAlsoEmail(e.target.checked)} />
-                Also send as email
-              </label>
-            </div>
-          )}
-
-          {/* Email subject (staff only — alumni can't send emails) */}
-          {!isAlumni && alsoEmail && (
-            <div
-              style={{
-                marginBottom:    18,
-                padding:         16,
-                backgroundColor: 'var(--color-gray-50)',
-                borderRadius:    'var(--radius-md)',
-                border:          `1px solid var(--color-gray-200)`,
-              }}
-            >
-              <label style={{ fontSize: 13, fontWeight: 600, color: theme.gray700, display: 'block', marginBottom: 6 }}>
-                Email Subject{' '}
-                <span style={{ color: 'var(--color-danger)' }}>*</span>
-              </label>
-              <Input
-                value={emailSubject}
-                onChange={setEmailSubject}
-                placeholder="Subject line for the email..."
-              />
-              <p style={{ fontSize: 12, color: theme.gray500, marginTop: 6, marginBottom: 0 }}>
-                The post body will be sent as the email body with a CAN-SPAM compliant footer.
-              </p>
-            </div>
-          )}
+          {/* Also post to newsfeed */}
+          <div style={{ marginBottom: 18, paddingTop: 4 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14, color: theme.gray700 }}>
+              <input type="checkbox" checked={postToFeed} onChange={e => setPostToFeed(e.target.checked)} />
+              Also post to newsfeed
+            </label>
+          </div>
 
           {/* Preview bar */}
           <div
@@ -407,17 +400,17 @@ export default function NewPostPage() {
             }}
           >
             <strong>Audience:</strong>{' '}
-            {audience === 'all_sports' && 'All Sports'}
+            {audience === 'all_sports'    && 'All Sports'}
             {audience === 'sport_specific' && (selectedSportName ?? 'Select a sport')}
-            {audience === 'multi_sport' && (
+            {audience === 'multi_sport'   && (
               multiSportNames.length > 0
                 ? multiSportNames.join(', ')
                 : 'Select sports'
             )}
             <span style={{ marginLeft: 10 }}>·</span>
             <strong style={{ marginLeft: 10 }}>Recipients:</strong>{' '}{recipientLabel}
-            {alsoEmail && (
-              <span style={{ marginLeft: 10 }}>· will also be sent as email</span>
+            {postToFeed && (
+              <span style={{ marginLeft: 10 }}>· will also post to newsfeed</span>
             )}
           </div>
 
@@ -426,10 +419,10 @@ export default function NewPostPage() {
             <Button
               label="Cancel"
               variant="outline"
-              onClick={() => router.push('/feed')}
+              onClick={() => router.push('/dashboard')}
             />
             <Button
-              label={submitting ? 'Publishing…' : (!isAlumni && alsoEmail ? 'Publish + Send Email' : 'Publish')}
+              label={submitting ? 'Sending…' : (postToFeed ? 'Send Email + Post' : 'Send Email')}
               type="submit"
               loading={submitting}
               disabled={isSubmitDisabled}

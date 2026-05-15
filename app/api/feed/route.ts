@@ -89,7 +89,7 @@ export async function POST(req: Request) {
     )
   }
 
-  const targetProgramRoleId = body.targetProgramRoleId ?? null
+  let targetProgramRoleId = body.targetProgramRoleId ?? null
   if (targetProgramRoleId !== null && ![7, 8].includes(targetProgramRoleId)) {
     return NextResponse.json(
       { success: false, error: 'Invalid targetProgramRoleId. Must be 7 (alumni) or 8 (roster).' },
@@ -118,6 +118,23 @@ export async function POST(req: Request) {
   const effectiveProgramRoleId = session.previewActive
     ? (session.previewProgramRoleId ?? null)
     : (session.programRoleId        ?? null)
+
+  // ── Audience enforcement ──────────────────────────────────────────────────
+  // Alumni (role 7) posts are always alumni-only.
+  // Tier 1 (starter) is an alumni-only plan — all posts target alumni only.
+  const isAlumniPoster = effectiveProgramRoleId === 7
+  const isTier1        = session.tierId === 1
+  if (isAlumniPoster || isTier1) {
+    targetProgramRoleId = 7
+  }
+
+  // Roster audience requires Tier 2+ and non-alumni poster
+  if (targetProgramRoleId === 8 && (isTier1 || isAlumniPoster)) {
+    return NextResponse.json(
+      { success: false, error: 'Roster posts are not available on this plan.' },
+      { status: 403 },
+    )
+  }
 
   return appDbContext.run(session.appDb, async () => {
     try {

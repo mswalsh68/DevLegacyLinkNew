@@ -21,8 +21,7 @@ export default function PlayerTab({ sportId }: { sportId?: number | null }) {
       sportId={sportId}
       title="Player Communications"
       subtitle="Emails and feed posts targeting current roster"
-      emailAudience="players_only"
-      emailAudienceLabel="Players"
+
       errorMessage="Failed to load player metrics"
       renderMetrics={(raw) => {
         const m = raw as PlayerMetrics

@@ -20,7 +20,7 @@ const WEB_BASE_URL = process.env.WEB_BASE_URL ?? 'https://legacylink.app'
 // outreach email.  physicalAddress is required by CAN-SPAM.
 function unsubscribeFooter(unsubToken: string, physicalAddress: string | null): string {
   const unsubUrl = `${WEB_BASE_URL}/unsubscribe?token=${unsubToken}`
-  const address  = physicalAddress ?? 'Revenue Management Solutions, LLC'
+  const address  = physicalAddress ?? 'Legacy Link HQ, LLC'
   return `
 <div style="margin-top:40px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:12px;color:#9ca3af;text-align:center;">
   <p style="margin:0 0 4px 0;">${address}</p>
