@@ -175,30 +175,40 @@ export async function POST(req: NextRequest) {
     userId   = activatedId
     userJson = { email, roleId: 3, role: 'client', appPermissions: [], teams: [] }
 
-    // Try a full login — directly-added users already have team access and can
-    // skip the /pending queue and go straight to /dashboard.
+    // Determine whether to skip the approval queue.
+    // Admin-created users already have a user_teams row — they bypass /pending.
+    // Self-signup users have no team access yet and need admin approval.
     let skipPending = false
     try {
-      const db        = await getPool('global')
-      const loginReq  = db.request()
-      loginReq.input ('Email',         sql.NVarChar(255),     email)
-      loginReq.input ('IpAddress',     sql.NVarChar(100),     req.headers.get('x-forwarded-for') ?? null)
-      loginReq.input ('DeviceInfo',    sql.NVarChar(255),     req.headers.get('user-agent')      ?? null)
-      loginReq.output('UserId',        sql.BigInt)
-      loginReq.output('PasswordHash',  sql.NVarChar(sql.MAX))
-      loginReq.output('UserJson',      sql.NVarChar(sql.MAX))
-      loginReq.output('ErrorCode',     sql.NVarChar(50))
-      const { output: loginOut } = await loginReq.execute('dbo.sp_Login')
+      const db     = await getPool('global')
+      const check  = await db.request()
+        .input('UserId', sql.BigInt, activatedId)
+        .query<{ cnt: number }>('SELECT COUNT(*) AS cnt FROM dbo.user_teams WHERE user_id = @UserId AND is_active = 1')
+      skipPending = (check.recordset[0]?.cnt ?? 0) > 0
+    } catch {
+      // Non-fatal: default to needing approval if the check fails.
+    }
 
-      if (!loginOut.ErrorCode && loginOut.UserJson && loginOut.PasswordHash) {
-        const passwordOk = await bcrypt.compare(password, loginOut.PasswordHash as string)
-        if (passwordOk) {
+    if (skipPending) {
+      // Admin-created user — call sp_Login to populate a proper JWT payload.
+      try {
+        const db        = await getPool('global')
+        const loginReq  = db.request()
+        loginReq.input ('Email',         sql.NVarChar(255),     email)
+        loginReq.input ('IpAddress',     sql.NVarChar(100),     req.headers.get('x-forwarded-for') ?? null)
+        loginReq.input ('DeviceInfo',    sql.NVarChar(255),     req.headers.get('user-agent')      ?? null)
+        loginReq.output('UserId',        sql.BigInt)
+        loginReq.output('PasswordHash',  sql.NVarChar(sql.MAX))
+        loginReq.output('UserJson',      sql.NVarChar(sql.MAX))
+        loginReq.output('ErrorCode',     sql.NVarChar(50))
+        const { output: loginOut } = await loginReq.execute('dbo.sp_Login')
+
+        if (!loginOut.ErrorCode && loginOut.UserJson) {
           userId   = loginOut.UserId as number
           userJson = JSON.parse(loginOut.UserJson as string) as Record<string, unknown>
           userJson.apps = extractAppNames(userJson.appPermissions)
 
-          // Derive apps from App DB programRoleId (same as /api/auth/login).
-          // Admin-created accounts may have no global app_permissions yet.
+          // Derive programRoleId from App DB for sport-role-aware session data.
           if (userJson.roleId === 3 && userJson.appDb && userId) {
             try {
               const programRoleId = await appDbContext.run(userJson.appDb as string, async () => {
@@ -219,16 +229,13 @@ export async function POST(req: NextRequest) {
               console.warn('[invite/claim] Could not fetch programRoleId:', appErr)
             }
           }
-
-          skipPending = true
         }
+      } catch (loginErr) {
+        console.warn('[invite/claim] sp_Login after activation failed:', loginErr)
+        // User still has team access — skipPending stays true.
       }
-    } catch (loginErr) {
-      console.warn('[invite/claim] Login attempt after activation failed:', loginErr)
-    }
-
-    if (!skipPending) {
-      // Fallback: submit an access request so the admin can approve manually.
+    } else {
+      // Self-signup user — submit access request for admin review.
       await sp_SubmitAccessRequest({ userId: activatedId, token }).catch(() => {})
     }
 
