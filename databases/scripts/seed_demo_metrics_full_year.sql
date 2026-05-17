@@ -1,18 +1,21 @@
 -- ============================================================
 -- seed_demo_metrics_full_year.sql  (App DB)
 --
--- Full-year demo seed. Replaces the thin starter seed with
--- realistic data that looks like a program 12 months in:
---   · 10 alumni campaigns spread across the year
---   ·  6 player campaigns spread across the year
---   · ~12 interactions per alumni user (365-day spread)
---   · Varied open rates per campaign (40–75%)
---   · Recent activity within the last 30 days (drives month tiles)
---   · Feed posts spread across the year
+-- Full-year demo seed. Produces numbers that look like a real
+-- program after 12 months — regardless of how few users are seeded.
+-- Uses a tally table to generate ~80 interactions per alumni user
+-- and 28 campaigns to drive email totals high.
 --
--- ⚠ WIPES existing outreach_campaigns, outreach_messages,
---   interaction_log, feed_posts (non-welcome), and login stamps
---   before inserting. Safe on a dev/demo tenant only.
+-- Approximate output with 4 alumni + 4 players:
+--   Alumni Interactions  ~320   (+~24 this month)
+--   Alumni Emails Sent   ~112   (+~16 this month)
+--   Alumni Logins (30d)  3–4
+--   Player Emails Sent   ~48    (+~8  this month)
+--   Feed Posts           ~60    (+~10 this month)
+--
+-- ⚠ WIPES existing campaigns, messages, interactions, and
+--   non-system feed posts before inserting.
+--   Safe on a dev/demo tenant only.
 --
 -- Run on: LegacyLinkApp (dev/demo tenant)
 -- Run AFTER users and users_sports are populated.
@@ -21,14 +24,16 @@
 USE LegacyLinkApp;
 GO
 
--- ─── 0. Wipe existing seed data ──────────────────────────────────────────────
+-- ─── 0. Wipe (correct FK order) ──────────────────────────────────────────────
+-- feed_post_likes → feed_posts → outreach_messages → outreach_campaigns
 
+DELETE FROM dbo.feed_post_likes;
+DELETE FROM dbo.feed_posts    WHERE is_welcome_post = 0 AND is_pinned = 0;
 DELETE FROM dbo.outreach_messages;
 DELETE FROM dbo.outreach_campaigns;
 DELETE FROM dbo.interaction_log;
--- Wipe non-welcome, non-pinned feed posts only
-DELETE FROM dbo.feed_posts WHERE is_welcome_post = 0 AND is_pinned = 0;
--- Clear login stamps so we re-stamp with realistic spread
+
+-- Reset login stamps on alumni so we re-stamp below
 UPDATE dbo.users SET last_team_login = NULL
 WHERE EXISTS (
   SELECT 1 FROM dbo.users_sports us
@@ -41,521 +46,208 @@ GO
 
 -- ─── Resolve staff user ───────────────────────────────────────────────────────
 
-DECLARE @StaffId INT;
-SELECT TOP 1 @StaffId = u.user_id
+DECLARE @Staff INT;
+SELECT TOP 1 @Staff = u.user_id
 FROM dbo.users u
 WHERE u.is_active = 1
   AND NOT EXISTS (
     SELECT 1 FROM dbo.users_sports us
-    WHERE us.user_id = u.user_id
-      AND us.program_role_id IN (7, 8)
+    WHERE us.user_id = u.user_id AND us.program_role_id IN (7, 8)
   )
 ORDER BY u.user_id;
 
-IF @StaffId IS NULL
-BEGIN
-  PRINT 'ERROR: No staff user found — aborting.';
-  RETURN;
-END
+IF @Staff IS NULL BEGIN PRINT 'ERROR: No staff user — aborting.'; RETURN; END
+PRINT CONCAT('Staff user_id = ', @Staff);
 
-PRINT CONCAT('Staff user: ', @StaffId);
-
--- ─── 1. Alumni Campaigns (10 over the year) ───────────────────────────────────
-
-DECLARE @AC1  UNIQUEIDENTIFIER = NEWID();
-DECLARE @AC2  UNIQUEIDENTIFIER = NEWID();
-DECLARE @AC3  UNIQUEIDENTIFIER = NEWID();
-DECLARE @AC4  UNIQUEIDENTIFIER = NEWID();
-DECLARE @AC5  UNIQUEIDENTIFIER = NEWID();
-DECLARE @AC6  UNIQUEIDENTIFIER = NEWID();
-DECLARE @AC7  UNIQUEIDENTIFIER = NEWID();
-DECLARE @AC8  UNIQUEIDENTIFIER = NEWID();
-DECLARE @AC9  UNIQUEIDENTIFIER = NEWID();
-DECLARE @AC10 UNIQUEIDENTIFIER = NEWID();
+-- ─── 1. Alumni Campaigns — 28 spread across the year ─────────────────────────
+-- Last 4 are within 30 days → drive "this month" email tiles.
 
 INSERT INTO dbo.outreach_campaigns (
-  id, sport_id, name, description,
-  target_audience, audience_filters,
+  id, sport_id, name, description, target_audience, audience_filters,
   scheduled_at, subject_line, body_html,
   from_name, reply_to_email, physical_address,
   created_by, status, started_at, completed_at
 )
 VALUES
-  -- Month 1 (~360 days ago)
-  (@AC1, NULL,
-   'Year Kick-Off: Welcome Back Alumni',
-   'Opening message to the alumni network at the start of the program year.',
-   'alumni', '{}',
-   DATEADD(DAY, -360, SYSUTCDATETIME()),
-   'A new year with your program — welcome back',
-   '<p>Hello {firstName},</p><p>A new year is here and we''re excited to keep you connected to the program. Stay tuned for big things ahead.</p>',
-   'Program Staff', 'staff@example.com', NULL,
-   @StaffId, 'completed',
-   DATEADD(DAY, -360, SYSUTCDATETIME()), DATEADD(DAY, -359, SYSUTCDATETIME())),
+  (NEWID(),NULL,'Year Kick-Off: Welcome Back Alumni','Opening message at the start of the program year.','alumni','{}',DATEADD(DAY,-358,SYSUTCDATETIME()),'A new year with your program','<p>Hello {firstName}, a new year is here.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-358,SYSUTCDATETIME()),DATEADD(DAY,-357,SYSUTCDATETIME())),
+  (NEWID(),NULL,'January Alumni Newsletter','Monthly newsletter — January.','alumni','{}',DATEADD(DAY,-344,SYSUTCDATETIME()),'January update from your program','<p>Hello {firstName}, here is your January update.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-344,SYSUTCDATETIME()),DATEADD(DAY,-343,SYSUTCDATETIME())),
+  (NEWID(),NULL,'Alumni Spotlight — January','Spotlight on alumni in their careers.','alumni','{}',DATEADD(DAY,-330,SYSUTCDATETIME()),'This month''s alumni spotlight','<p>Hello {firstName}, meet this month''s featured alumni.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-330,SYSUTCDATETIME()),DATEADD(DAY,-329,SYSUTCDATETIME())),
+  (NEWID(),NULL,'February Alumni Newsletter','Monthly newsletter — February.','alumni','{}',DATEADD(DAY,-314,SYSUTCDATETIME()),'February update from your program','<p>Hello {firstName}, here is your February update.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-314,SYSUTCDATETIME()),DATEADD(DAY,-313,SYSUTCDATETIME())),
+  (NEWID(),NULL,'Spring Practice Announcement','Alumni invited to observe spring practice.','alumni','{}',DATEADD(DAY,-299,SYSUTCDATETIME()),'Spring practice is underway','<p>Hello {firstName}, spring practice has kicked off.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-299,SYSUTCDATETIME()),DATEADD(DAY,-298,SYSUTCDATETIME())),
+  (NEWID(),NULL,'March Alumni Newsletter','Monthly newsletter — March.','alumni','{}',DATEADD(DAY,-285,SYSUTCDATETIME()),'March update from your program','<p>Hello {firstName}, here is your March update.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-285,SYSUTCDATETIME()),DATEADD(DAY,-284,SYSUTCDATETIME())),
+  (NEWID(),NULL,'Spring Game Alumni Invite','Invite to the annual spring game.','alumni','{}',DATEADD(DAY,-270,SYSUTCDATETIME()),'You are invited — Spring Game this weekend','<p>Hello {firstName}, join us for the spring game.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-270,SYSUTCDATETIME()),DATEADD(DAY,-269,SYSUTCDATETIME())),
+  (NEWID(),NULL,'April Alumni Newsletter','Monthly newsletter — April.','alumni','{}',DATEADD(DAY,-255,SYSUTCDATETIME()),'April update from your program','<p>Hello {firstName}, here is your April update.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-255,SYSUTCDATETIME()),DATEADD(DAY,-254,SYSUTCDATETIME())),
+  (NEWID(),NULL,'Mentoring Program Launch','Alumni invited to join the mentoring program.','alumni','{}',DATEADD(DAY,-240,SYSUTCDATETIME()),'Mentor a current player this year','<p>Hello {firstName}, we are launching a mentoring program.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-240,SYSUTCDATETIME()),DATEADD(DAY,-239,SYSUTCDATETIME())),
+  (NEWID(),NULL,'May Alumni Newsletter','Monthly newsletter — May.','alumni','{}',DATEADD(DAY,-225,SYSUTCDATETIME()),'May update from your program','<p>Hello {firstName}, here is your May update.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-225,SYSUTCDATETIME()),DATEADD(DAY,-224,SYSUTCDATETIME())),
+  (NEWID(),NULL,'End of Spring Semester','Wrap-up message after spring semester.','alumni','{}',DATEADD(DAY,-210,SYSUTCDATETIME()),'Spring semester wrap-up','<p>Hello {firstName}, the spring semester is complete.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-210,SYSUTCDATETIME()),DATEADD(DAY,-209,SYSUTCDATETIME())),
+  (NEWID(),NULL,'Summer Alumni Check-In','Mid-year touchpoint with the full network.','alumni','{}',DATEADD(DAY,-195,SYSUTCDATETIME()),'Summer check-in from the program','<p>Hello {firstName}, hope your summer is going well.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-195,SYSUTCDATETIME()),DATEADD(DAY,-194,SYSUTCDATETIME())),
+  (NEWID(),NULL,'July Alumni Newsletter','Monthly newsletter — July.','alumni','{}',DATEADD(DAY,-180,SYSUTCDATETIME()),'July update from your program','<p>Hello {firstName}, here is your July update.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-180,SYSUTCDATETIME()),DATEADD(DAY,-179,SYSUTCDATETIME())),
+  (NEWID(),NULL,'Alumni Job Board — Summer','Job and internship postings from alumni network.','alumni','{}',DATEADD(DAY,-165,SYSUTCDATETIME()),'New opportunities on the alumni job board','<p>Hello {firstName}, new job postings are live.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-165,SYSUTCDATETIME()),DATEADD(DAY,-164,SYSUTCDATETIME())),
+  (NEWID(),NULL,'Back to Campus Weekend Invite','Invite to alumni-specific fall weekend.','alumni','{}',DATEADD(DAY,-152,SYSUTCDATETIME()),'Alumni weekend — come back to campus','<p>Hello {firstName}, we are hosting an alumni weekend.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-152,SYSUTCDATETIME()),DATEADD(DAY,-151,SYSUTCDATETIME())),
+  (NEWID(),NULL,'August Alumni Newsletter','Monthly newsletter — August.','alumni','{}',DATEADD(DAY,-138,SYSUTCDATETIME()),'August update from your program','<p>Hello {firstName}, here is your August update.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-138,SYSUTCDATETIME()),DATEADD(DAY,-137,SYSUTCDATETIME())),
+  (NEWID(),NULL,'Season Opener Announcement','Season is here — alumni invited to home opener.','alumni','{}',DATEADD(DAY,-123,SYSUTCDATETIME()),'Season opener this Saturday — details inside','<p>Hello {firstName}, the season is here.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-123,SYSUTCDATETIME()),DATEADD(DAY,-122,SYSUTCDATETIME())),
+  (NEWID(),NULL,'September Alumni Newsletter','Monthly newsletter — September.','alumni','{}',DATEADD(DAY,-108,SYSUTCDATETIME()),'September update from your program','<p>Hello {firstName}, here is your September update.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-108,SYSUTCDATETIME()),DATEADD(DAY,-107,SYSUTCDATETIME())),
+  (NEWID(),NULL,'Homecoming Alumni Invite','Invite to homecoming weekend.','alumni','{}',DATEADD(DAY,-93,SYSUTCDATETIME()),'Homecoming is coming — reserved alumni section','<p>Hello {firstName}, homecoming is this month.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-93,SYSUTCDATETIME()),DATEADD(DAY,-92,SYSUTCDATETIME())),
+  (NEWID(),NULL,'October Alumni Newsletter','Monthly newsletter — October.','alumni','{}',DATEADD(DAY,-78,SYSUTCDATETIME()),'October update from your program','<p>Hello {firstName}, here is your October update.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-78,SYSUTCDATETIME()),DATEADD(DAY,-77,SYSUTCDATETIME())),
+  (NEWID(),NULL,'Homecoming Follow-Up','Post-homecoming thank you to attendees.','alumni','{}',DATEADD(DAY,-63,SYSUTCDATETIME()),'Thank you for coming home','<p>Hello {firstName}, what a weekend. Thank you for being there.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-63,SYSUTCDATETIME()),DATEADD(DAY,-62,SYSUTCDATETIME())),
+  (NEWID(),NULL,'Alumni Spotlight — Fall','Fall edition spotlight on alumni careers.','alumni','{}',DATEADD(DAY,-48,SYSUTCDATETIME()),'Fall alumni spotlight','<p>Hello {firstName}, meet our fall featured alumni.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-48,SYSUTCDATETIME()),DATEADD(DAY,-47,SYSUTCDATETIME())),
+  (NEWID(),NULL,'End of Season Message','Post-season message to the full network.','alumni','{}',DATEADD(DAY,-33,SYSUTCDATETIME()),'Season is over — what a year','<p>Hello {firstName}, the season has ended. Here is a recap.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-33,SYSUTCDATETIME()),DATEADD(DAY,-32,SYSUTCDATETIME())),
+  -- Within 30 days — drive "this month" tile
+  (NEWID(),NULL,'November Alumni Newsletter','Monthly newsletter — November.','alumni','{}',DATEADD(DAY,-24,SYSUTCDATETIME()),'November update from your program','<p>Hello {firstName}, here is your November update.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-24,SYSUTCDATETIME()),DATEADD(DAY,-23,SYSUTCDATETIME())),
+  (NEWID(),NULL,'Off-Season Engagement','Keeping alumni connected through the off-season.','alumni','{}',DATEADD(DAY,-17,SYSUTCDATETIME()),'Stay connected this off-season','<p>Hello {firstName}, the season may be over but we are still here.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-17,SYSUTCDATETIME()),DATEADD(DAY,-16,SYSUTCDATETIME())),
+  (NEWID(),NULL,'Alumni Holiday Message','Holiday message to the full alumni network.','alumni','{}',DATEADD(DAY,-10,SYSUTCDATETIME()),'Happy holidays from the program','<p>Hello {firstName}, wishing you a great holiday season.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-10,SYSUTCDATETIME()),DATEADD(DAY,-9,SYSUTCDATETIME())),
+  (NEWID(),NULL,'Year-End Alumni Update','Final message of the program year.','alumni','{}',DATEADD(DAY,-4,SYSUTCDATETIME()),'A full year in — thank you','<p>Hello {firstName}, as the year wraps up we wanted to say thank you.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-4,SYSUTCDATETIME()),DATEADD(DAY,-3,SYSUTCDATETIME())),
+  (NEWID(),NULL,'December Alumni Newsletter','Monthly newsletter — December.','alumni','{}',DATEADD(DAY,-1,SYSUTCDATETIME()),'December update from your program','<p>Hello {firstName}, here is your December update.</p>','Program Staff','staff@example.com',NULL,@Staff,'completed',DATEADD(DAY,-1,SYSUTCDATETIME()),DATEADD(HOUR,-12,SYSUTCDATETIME()));
 
-  -- Month 2 (~320 days ago)
-  (@AC2, NULL,
-   'Winter Alumni Newsletter',
-   'Newsletter covering winter program updates and alumni spotlights.',
-   'alumni', '{}',
-   DATEADD(DAY, -320, SYSUTCDATETIME()),
-   'Winter newsletter — what''s new in the program',
-   '<p>Hello {firstName},</p><p>Here''s your winter update from the program. Alumni spotlight, schedule news, and more inside.</p>',
-   'Program Staff', 'staff@example.com', NULL,
-   @StaffId, 'completed',
-   DATEADD(DAY, -320, SYSUTCDATETIME()), DATEADD(DAY, -319, SYSUTCDATETIME())),
+PRINT 'Inserted 28 alumni campaigns.';
 
-  -- Month 3 (~280 days ago)
-  (@AC3, NULL,
-   'Spring Reconnect Campaign',
-   'Spring outreach to engage alumni ahead of on-campus events.',
-   'alumni', '{}',
-   DATEADD(DAY, -280, SYSUTCDATETIME()),
-   'Spring is here — reconnect with your program',
-   '<p>Hello {firstName},</p><p>Spring is a great time to reconnect. We have several events coming up and would love to see familiar faces.</p>',
-   'Program Staff', 'staff@example.com', NULL,
-   @StaffId, 'completed',
-   DATEADD(DAY, -280, SYSUTCDATETIME()), DATEADD(DAY, -279, SYSUTCDATETIME())),
-
-  -- Month 4 (~240 days ago) — Spring Game
-  (@AC4, NULL,
-   'Spring Game Alumni Invite',
-   'Invitation to the annual spring game with alumni section.',
-   'alumni', '{}',
-   DATEADD(DAY, -240, SYSUTCDATETIME()),
-   'You''re invited — Spring Game this weekend',
-   '<p>Hello {firstName},</p><p>Join us for the spring game! Alumni section is open and we''d love to have you back on campus.</p>',
-   'Program Staff', 'staff@example.com', NULL,
-   @StaffId, 'completed',
-   DATEADD(DAY, -240, SYSUTCDATETIME()), DATEADD(DAY, -239, SYSUTCDATETIME())),
-
-  -- Month 5 (~200 days ago) — Summer check-in
-  (@AC5, NULL,
-   'Summer Alumni Check-In',
-   'Mid-year touchpoint with the full alumni network.',
-   'alumni', '{}',
-   DATEADD(DAY, -200, SYSUTCDATETIME()),
-   'Checking in from the program — summer edition',
-   '<p>Hello {firstName},</p><p>Hope summer is going well. Here''s a quick update from the staff and a look at what''s ahead for the fall.</p>',
-   'Program Staff', 'staff@example.com', NULL,
-   @StaffId, 'completed',
-   DATEADD(DAY, -200, SYSUTCDATETIME()), DATEADD(DAY, -199, SYSUTCDATETIME())),
-
-  -- Month 7 (~160 days ago) — Back to campus
-  (@AC6, NULL,
-   'Back to Campus Weekend',
-   'Invite to alumni-specific back-to-campus weekend in early fall.',
-   'alumni', '{}',
-   DATEADD(DAY, -160, SYSUTCDATETIME()),
-   'Alumni weekend — come back to campus',
-   '<p>Hello {firstName},</p><p>Fall is almost here and we''re hosting an alumni weekend on campus. Details inside — we hope to see you there.</p>',
-   'Program Staff', 'staff@example.com', NULL,
-   @StaffId, 'completed',
-   DATEADD(DAY, -160, SYSUTCDATETIME()), DATEADD(DAY, -159, SYSUTCDATETIME())),
-
-  -- Month 8 (~120 days ago) — Fall newsletter
-  (@AC7, NULL,
-   'Fall Alumni Newsletter',
-   'Seasonal newsletter with season preview and alumni updates.',
-   'alumni', '{}',
-   DATEADD(DAY, -120, SYSUTCDATETIME()),
-   'Fall newsletter — season preview inside',
-   '<p>Hello {firstName},</p><p>The season is underway and we''re off to a great start. Catch up on everything in this month''s newsletter.</p>',
-   'Program Staff', 'staff@example.com', NULL,
-   @StaffId, 'completed',
-   DATEADD(DAY, -120, SYSUTCDATETIME()), DATEADD(DAY, -119, SYSUTCDATETIME())),
-
-  -- Month 10 (~80 days ago) — Homecoming
-  (@AC8, NULL,
-   'Homecoming Follow-Up',
-   'Post-homecoming message thanking alumni who attended.',
-   'alumni', '{}',
-   DATEADD(DAY, -80, SYSUTCDATETIME()),
-   'Thanks for coming home — homecoming recap',
-   '<p>Hello {firstName},</p><p>What a weekend. Thank you to everyone who made it back for homecoming. Here''s a recap and what''s next.</p>',
-   'Program Staff', 'staff@example.com', NULL,
-   @StaffId, 'completed',
-   DATEADD(DAY, -80, SYSUTCDATETIME()), DATEADD(DAY, -79, SYSUTCDATETIME())),
-
-  -- Month 11 (~22 days ago — within 30-day window, drives month tile)
-  (@AC9, NULL,
-   'November Alumni Engagement',
-   'Late-season touchpoint ahead of the postseason.',
-   'alumni', '{}',
-   DATEADD(DAY, -22, SYSUTCDATETIME()),
-   'The stretch run — update from the program',
-   '<p>Hello {firstName},</p><p>We''re in the home stretch of the season. Here''s where things stand and how you can stay involved.</p>',
-   'Program Staff', 'staff@example.com', NULL,
-   @StaffId, 'completed',
-   DATEADD(DAY, -22, SYSUTCDATETIME()), DATEADD(DAY, -21, SYSUTCDATETIME())),
-
-  -- Month 12 (~6 days ago — very recent, drives month tile)
-  (@AC10, NULL,
-   'Year-End Alumni Message',
-   'Year-end message to the full alumni network.',
-   'alumni', '{}',
-   DATEADD(DAY, -6, SYSUTCDATETIME()),
-   'A full year in — thank you from the program',
-   '<p>Hello {firstName},</p><p>As the year wraps up, we wanted to reflect on what we''ve built together and share what''s coming next year.</p>',
-   'Program Staff', 'staff@example.com', NULL,
-   @StaffId, 'completed',
-   DATEADD(DAY, -6, SYSUTCDATETIME()), DATEADD(DAY, -5, SYSUTCDATETIME()));
-
-PRINT 'Inserted 10 alumni campaigns.';
-
--- ─── 2. Player Campaigns (6 over the year) ───────────────────────────────────
-
-DECLARE @PC1 UNIQUEIDENTIFIER = NEWID();
-DECLARE @PC2 UNIQUEIDENTIFIER = NEWID();
-DECLARE @PC3 UNIQUEIDENTIFIER = NEWID();
-DECLARE @PC4 UNIQUEIDENTIFIER = NEWID();
-DECLARE @PC5 UNIQUEIDENTIFIER = NEWID();
-DECLARE @PC6 UNIQUEIDENTIFIER = NEWID();
+-- ─── 2. Player Campaigns — 12 spread across the year ─────────────────────────
+-- Last 2 are within 30 days → drive "this month" player email tile.
 
 INSERT INTO dbo.outreach_campaigns (
-  id, sport_id, name, description,
-  target_audience, audience_filters,
+  id, sport_id, name, description, target_audience, audience_filters,
   scheduled_at, subject_line, body_html,
   from_name, reply_to_email, physical_address,
   created_by, status, started_at, completed_at
 )
 VALUES
-  -- Spring practice
-  (@PC1, NULL,
-   'Spring Practice Kickoff',
-   'Roster-wide message kicking off spring practice.',
-   'players', '{}',
-   DATEADD(DAY, -355, SYSUTCDATETIME()),
-   'Spring practice starts Monday — details inside',
-   '<p>Hey {firstName},</p><p>Spring practice is almost here. Review the schedule and make sure you have everything you need before Monday.</p>',
-   'Coaching Staff', 'coach@example.com', NULL,
-   @StaffId, 'completed',
-   DATEADD(DAY, -355, SYSUTCDATETIME()), DATEADD(DAY, -354, SYSUTCDATETIME())),
+  (NEWID(),NULL,'Spring Practice Kickoff','Roster-wide spring practice message.','players','{}',DATEADD(DAY,-352,SYSUTCDATETIME()),'Spring practice starts Monday','<p>Hey {firstName}, spring practice is here.</p>','Coaching Staff','coach@example.com',NULL,@Staff,'completed',DATEADD(DAY,-352,SYSUTCDATETIME()),DATEADD(DAY,-351,SYSUTCDATETIME())),
+  (NEWID(),NULL,'Academic Check-In — Spring','Mid-semester academic wellness check.','players','{}',DATEADD(DAY,-300,SYSUTCDATETIME()),'Mid-semester check-in','<p>Hey {firstName}, coaches want to hear how you are doing academically.</p>','Coaching Staff','coach@example.com',NULL,@Staff,'completed',DATEADD(DAY,-300,SYSUTCDATETIME()),DATEADD(DAY,-299,SYSUTCDATETIME())),
+  (NEWID(),NULL,'Spring Game Logistics','Game day details for the spring game.','players','{}',DATEADD(DAY,-268,SYSUTCDATETIME()),'Spring game this Saturday','<p>Hey {firstName}, here are your spring game details.</p>','Coaching Staff','coach@example.com',NULL,@Staff,'completed',DATEADD(DAY,-268,SYSUTCDATETIME()),DATEADD(DAY,-267,SYSUTCDATETIME())),
+  (NEWID(),NULL,'Summer Workout Program','Off-season conditioning program details.','players','{}',DATEADD(DAY,-220,SYSUTCDATETIME()),'Summer program starts June 1','<p>Hey {firstName}, the summer program is live. Sign up now.</p>','Coaching Staff','coach@example.com',NULL,@Staff,'completed',DATEADD(DAY,-220,SYSUTCDATETIME()),DATEADD(DAY,-219,SYSUTCDATETIME())),
+  (NEWID(),NULL,'Summer Eligibility Reminder','Compliance reminder for summer activities.','players','{}',DATEADD(DAY,-200,SYSUTCDATETIME()),'Summer eligibility — action required','<p>Hey {firstName}, make sure you are cleared before June 1.</p>','Coaching Staff','coach@example.com',NULL,@Staff,'completed',DATEADD(DAY,-200,SYSUTCDATETIME()),DATEADD(DAY,-199,SYSUTCDATETIME())),
+  (NEWID(),NULL,'Fall Camp Details','Pre-season camp logistics.','players','{}',DATEADD(DAY,-148,SYSUTCDATETIME()),'Fall camp is 2 weeks away','<p>Hey {firstName}, camp is two weeks out. Here is what to expect.</p>','Coaching Staff','coach@example.com',NULL,@Staff,'completed',DATEADD(DAY,-148,SYSUTCDATETIME()),DATEADD(DAY,-147,SYSUTCDATETIME())),
+  (NEWID(),NULL,'Season Opener Week','Game week details for the season opener.','players','{}',DATEADD(DAY,-120,SYSUTCDATETIME()),'Season opener this Saturday — game week details','<p>Hey {firstName}, game week is here. Full schedule inside.</p>','Coaching Staff','coach@example.com',NULL,@Staff,'completed',DATEADD(DAY,-120,SYSUTCDATETIME()),DATEADD(DAY,-119,SYSUTCDATETIME())),
+  (NEWID(),NULL,'Academic Check-In — Fall','Mid-season academic wellness check.','players','{}',DATEADD(DAY,-98,SYSUTCDATETIME()),'Mid-season academic check-in','<p>Hey {firstName}, we are checking in on academics mid-season.</p>','Coaching Staff','coach@example.com',NULL,@Staff,'completed',DATEADD(DAY,-98,SYSUTCDATETIME()),DATEADD(DAY,-97,SYSUTCDATETIME())),
+  (NEWID(),NULL,'Mid-Season Check-In','General wellness and morale check-in.','players','{}',DATEADD(DAY,-82,SYSUTCDATETIME()),'Mid-season check-in from coaches','<p>Hey {firstName}, coaches want to hear from you.</p>','Coaching Staff','coach@example.com',NULL,@Staff,'completed',DATEADD(DAY,-82,SYSUTCDATETIME()),DATEADD(DAY,-81,SYSUTCDATETIME())),
+  (NEWID(),NULL,'Senior Day Message','Message to seniors ahead of Senior Day.','players','{}',DATEADD(DAY,-55,SYSUTCDATETIME()),'Senior Day this week','<p>Hey {firstName}, Senior Day is Saturday. Let''s send them off right.</p>','Coaching Staff','coach@example.com',NULL,@Staff,'completed',DATEADD(DAY,-55,SYSUTCDATETIME()),DATEADD(DAY,-54,SYSUTCDATETIME())),
+  -- Within 30 days
+  (NEWID(),NULL,'End of Season Wrap-Up','Post-season message covering awards and off-season.','players','{}',DATEADD(DAY,-19,SYSUTCDATETIME()),'Season is over — what''s next','<p>Hey {firstName}, great season. Here is the off-season plan.</p>','Coaching Staff','coach@example.com',NULL,@Staff,'completed',DATEADD(DAY,-19,SYSUTCDATETIME()),DATEADD(DAY,-18,SYSUTCDATETIME())),
+  (NEWID(),NULL,'Off-Season Lift Schedule','Winter lift schedule for all position groups.','players','{}',DATEADD(DAY,-7,SYSUTCDATETIME()),'Off-season lift schedule is posted','<p>Hey {firstName}, off-season lifts start Monday. Schedule inside.</p>','Coaching Staff','coach@example.com',NULL,@Staff,'completed',DATEADD(DAY,-7,SYSUTCDATETIME()),DATEADD(DAY,-6,SYSUTCDATETIME()));
 
-  -- Spring game
-  (@PC2, NULL,
-   'Spring Game Logistics',
-   'Spring game schedule and roster expectations.',
-   'players', '{}',
-   DATEADD(DAY, -285, SYSUTCDATETIME()),
-   'Spring game this Saturday — what you need to know',
-   '<p>Hey {firstName},</p><p>Spring game is Saturday. Here''s everything you need to know about warm-ups, travel, and game-day logistics.</p>',
-   'Coaching Staff', 'coach@example.com', NULL,
-   @StaffId, 'completed',
-   DATEADD(DAY, -285, SYSUTCDATETIME()), DATEADD(DAY, -284, SYSUTCDATETIME())),
-
-  -- Summer workouts
-  (@PC3, NULL,
-   'Summer Workout Program',
-   'Off-season conditioning program for the full roster.',
-   'players', '{}',
-   DATEADD(DAY, -225, SYSUTCDATETIME()),
-   'Summer program starts June 1 — register now',
-   '<p>Hey {firstName},</p><p>The summer workout program starts June 1. Register by Friday to secure your spot and get your schedule.</p>',
-   'Coaching Staff', 'coach@example.com', NULL,
-   @StaffId, 'completed',
-   DATEADD(DAY, -225, SYSUTCDATETIME()), DATEADD(DAY, -224, SYSUTCDATETIME())),
-
-  -- Fall camp
-  (@PC4, NULL,
-   'Fall Camp Details',
-   'Pre-season camp logistics for the full roster.',
-   'players', '{}',
-   DATEADD(DAY, -150, SYSUTCDATETIME()),
-   'Fall camp is 2 weeks away — full details inside',
-   '<p>Hey {firstName},</p><p>Camp is two weeks out. Here are your report dates, what to bring, and what to expect from day one.</p>',
-   'Coaching Staff', 'coach@example.com', NULL,
-   @StaffId, 'completed',
-   DATEADD(DAY, -150, SYSUTCDATETIME()), DATEADD(DAY, -149, SYSUTCDATETIME())),
-
-  -- Mid-season check-in
-  (@PC5, NULL,
-   'Mid-Season Check-In',
-   'Mid-season academic and wellness check-in for all players.',
-   'players', '{}',
-   DATEADD(DAY, -85, SYSUTCDATETIME()),
-   'Mid-season check-in — coaches want to hear from you',
-   '<p>Hey {firstName},</p><p>We''re at the midpoint of the season. Fill out the quick check-in form so coaches can get back to you individually.</p>',
-   'Coaching Staff', 'coach@example.com', NULL,
-   @StaffId, 'completed',
-   DATEADD(DAY, -85, SYSUTCDATETIME()), DATEADD(DAY, -84, SYSUTCDATETIME())),
-
-  -- End of season (~18 days ago — within 30-day window)
-  (@PC6, NULL,
-   'End of Season Wrap-Up',
-   'Post-season message covering awards, off-season plan, and next steps.',
-   'players', '{}',
-   DATEADD(DAY, -18, SYSUTCDATETIME()),
-   'Season''s over — what''s next for the program',
-   '<p>Hey {firstName},</p><p>Great season. Here''s the off-season plan, award details, and everything you need to know heading into the winter.</p>',
-   'Coaching Staff', 'coach@example.com', NULL,
-   @StaffId, 'completed',
-   DATEADD(DAY, -18, SYSUTCDATETIME()), DATEADD(DAY, -17, SYSUTCDATETIME()));
-
-PRINT 'Inserted 6 player campaigns.';
+PRINT 'Inserted 12 player campaigns.';
 GO
 
--- ─── 3. Alumni Outreach Messages ─────────────────────────────────────────────
--- One message row per alumni per campaign.
--- Open rates vary per campaign to produce a realistic ~50% overall average.
--- Campaigns @AC9 and @AC10 are within 30 days → drive the "this month" tile.
+-- ─── 3. Alumni Outreach Messages — 1 per user per campaign ───────────────────
+-- Open rates vary by campaign. 28 campaigns × N alumni = big total.
 
-DECLARE @AC1  UNIQUEIDENTIFIER; SELECT @AC1  = id FROM dbo.outreach_campaigns WHERE name = 'Year Kick-Off: Welcome Back Alumni';
-DECLARE @AC2  UNIQUEIDENTIFIER; SELECT @AC2  = id FROM dbo.outreach_campaigns WHERE name = 'Winter Alumni Newsletter';
-DECLARE @AC3  UNIQUEIDENTIFIER; SELECT @AC3  = id FROM dbo.outreach_campaigns WHERE name = 'Spring Reconnect Campaign';
-DECLARE @AC4  UNIQUEIDENTIFIER; SELECT @AC4  = id FROM dbo.outreach_campaigns WHERE name = 'Spring Game Alumni Invite';
-DECLARE @AC5  UNIQUEIDENTIFIER; SELECT @AC5  = id FROM dbo.outreach_campaigns WHERE name = 'Summer Alumni Check-In';
-DECLARE @AC6  UNIQUEIDENTIFIER; SELECT @AC6  = id FROM dbo.outreach_campaigns WHERE name = 'Back to Campus Weekend';
-DECLARE @AC7  UNIQUEIDENTIFIER; SELECT @AC7  = id FROM dbo.outreach_campaigns WHERE name = 'Fall Alumni Newsletter';
-DECLARE @AC8  UNIQUEIDENTIFIER; SELECT @AC8  = id FROM dbo.outreach_campaigns WHERE name = 'Homecoming Follow-Up';
-DECLARE @AC9  UNIQUEIDENTIFIER; SELECT @AC9  = id FROM dbo.outreach_campaigns WHERE name = 'November Alumni Engagement';
-DECLARE @AC10 UNIQUEIDENTIFIER; SELECT @AC10 = id FROM dbo.outreach_campaigns WHERE name = 'Year-End Alumni Message';
-
--- Campaign 1 — 55% open rate (row# % 20 >= 9 → ~55% open)
-INSERT INTO dbo.outreach_messages (id, campaign_id, user_id, channel, status, email_address, unsubscribe_token, sent_at, opened_at)
-SELECT NEWID(), @AC1, us.user_id, 'email', 'sent', u.email, NEWID(),
-  DATEADD(DAY, -359, SYSUTCDATETIME()),
-  CASE WHEN ROW_NUMBER() OVER (ORDER BY us.user_id) % 20 >= 9 THEN DATEADD(DAY, -357, SYSUTCDATETIME()) ELSE NULL END
-FROM dbo.users_sports us JOIN dbo.users u ON u.user_id = us.user_id
-WHERE us.program_role_id = 7 AND us.is_active = 1;
-
--- Campaign 2 — 45% open rate
-INSERT INTO dbo.outreach_messages (id, campaign_id, user_id, channel, status, email_address, unsubscribe_token, sent_at, opened_at)
-SELECT NEWID(), @AC2, us.user_id, 'email', 'sent', u.email, NEWID(),
-  DATEADD(DAY, -319, SYSUTCDATETIME()),
-  CASE WHEN ROW_NUMBER() OVER (ORDER BY us.user_id) % 20 < 9 THEN DATEADD(DAY, -317, SYSUTCDATETIME()) ELSE NULL END
-FROM dbo.users_sports us JOIN dbo.users u ON u.user_id = us.user_id
-WHERE us.program_role_id = 7 AND us.is_active = 1;
-
--- Campaign 3 — 65% open rate
-INSERT INTO dbo.outreach_messages (id, campaign_id, user_id, channel, status, email_address, unsubscribe_token, sent_at, opened_at)
-SELECT NEWID(), @AC3, us.user_id, 'email', 'sent', u.email, NEWID(),
-  DATEADD(DAY, -279, SYSUTCDATETIME()),
-  CASE WHEN ROW_NUMBER() OVER (ORDER BY us.user_id) % 3 != 0 THEN DATEADD(DAY, -277, SYSUTCDATETIME()) ELSE NULL END
-FROM dbo.users_sports us JOIN dbo.users u ON u.user_id = us.user_id
-WHERE us.program_role_id = 7 AND us.is_active = 1;
-
--- Campaign 4 — 75% open rate (event invite — high open)
-INSERT INTO dbo.outreach_messages (id, campaign_id, user_id, channel, status, email_address, unsubscribe_token, sent_at, opened_at)
-SELECT NEWID(), @AC4, us.user_id, 'email', 'sent', u.email, NEWID(),
-  DATEADD(DAY, -239, SYSUTCDATETIME()),
-  CASE WHEN ROW_NUMBER() OVER (ORDER BY us.user_id) % 4 != 0 THEN DATEADD(DAY, -237, SYSUTCDATETIME()) ELSE NULL END
-FROM dbo.users_sports us JOIN dbo.users u ON u.user_id = us.user_id
-WHERE us.program_role_id = 7 AND us.is_active = 1;
-
--- Campaign 5 — 50% open rate
-INSERT INTO dbo.outreach_messages (id, campaign_id, user_id, channel, status, email_address, unsubscribe_token, sent_at, opened_at)
-SELECT NEWID(), @AC5, us.user_id, 'email', 'sent', u.email, NEWID(),
-  DATEADD(DAY, -199, SYSUTCDATETIME()),
-  CASE WHEN ROW_NUMBER() OVER (ORDER BY us.user_id) % 2 = 0 THEN DATEADD(DAY, -197, SYSUTCDATETIME()) ELSE NULL END
-FROM dbo.users_sports us JOIN dbo.users u ON u.user_id = us.user_id
-WHERE us.program_role_id = 7 AND us.is_active = 1;
-
--- Campaign 6 — 70% open rate (back to campus — event invite)
-INSERT INTO dbo.outreach_messages (id, campaign_id, user_id, channel, status, email_address, unsubscribe_token, sent_at, opened_at)
-SELECT NEWID(), @AC6, us.user_id, 'email', 'sent', u.email, NEWID(),
-  DATEADD(DAY, -159, SYSUTCDATETIME()),
-  CASE WHEN ROW_NUMBER() OVER (ORDER BY us.user_id) % 10 < 7 THEN DATEADD(DAY, -157, SYSUTCDATETIME()) ELSE NULL END
-FROM dbo.users_sports us JOIN dbo.users u ON u.user_id = us.user_id
-WHERE us.program_role_id = 7 AND us.is_active = 1;
-
--- Campaign 7 — 48% open rate
-INSERT INTO dbo.outreach_messages (id, campaign_id, user_id, channel, status, email_address, unsubscribe_token, sent_at, opened_at)
-SELECT NEWID(), @AC7, us.user_id, 'email', 'sent', u.email, NEWID(),
-  DATEADD(DAY, -119, SYSUTCDATETIME()),
-  CASE WHEN ROW_NUMBER() OVER (ORDER BY us.user_id) % 25 < 12 THEN DATEADD(DAY, -117, SYSUTCDATETIME()) ELSE NULL END
-FROM dbo.users_sports us JOIN dbo.users u ON u.user_id = us.user_id
-WHERE us.program_role_id = 7 AND us.is_active = 1;
-
--- Campaign 8 — 72% open rate (homecoming — high intent)
-INSERT INTO dbo.outreach_messages (id, campaign_id, user_id, channel, status, email_address, unsubscribe_token, sent_at, opened_at)
-SELECT NEWID(), @AC8, us.user_id, 'email', 'sent', u.email, NEWID(),
-  DATEADD(DAY, -79, SYSUTCDATETIME()),
-  CASE WHEN ROW_NUMBER() OVER (ORDER BY us.user_id) % 7 != 0 THEN DATEADD(DAY, -77, SYSUTCDATETIME()) ELSE NULL END
-FROM dbo.users_sports us JOIN dbo.users u ON u.user_id = us.user_id
-WHERE us.program_role_id = 7 AND us.is_active = 1;
-
--- Campaign 9 — 52% open rate  (within 30 days → month tile)
-INSERT INTO dbo.outreach_messages (id, campaign_id, user_id, channel, status, email_address, unsubscribe_token, sent_at, opened_at)
-SELECT NEWID(), @AC9, us.user_id, 'email', 'sent', u.email, NEWID(),
-  DATEADD(DAY, -21, SYSUTCDATETIME()),
-  CASE WHEN ROW_NUMBER() OVER (ORDER BY us.user_id) % 21 < 11 THEN DATEADD(DAY, -19, SYSUTCDATETIME()) ELSE NULL END
-FROM dbo.users_sports us JOIN dbo.users u ON u.user_id = us.user_id
-WHERE us.program_role_id = 7 AND us.is_active = 1;
-
--- Campaign 10 — 60% open rate (within 30 days → month tile)
-INSERT INTO dbo.outreach_messages (id, campaign_id, user_id, channel, status, email_address, unsubscribe_token, sent_at, opened_at)
-SELECT NEWID(), @AC10, us.user_id, 'email', 'sent', u.email, NEWID(),
-  DATEADD(DAY, -5, SYSUTCDATETIME()),
-  CASE WHEN ROW_NUMBER() OVER (ORDER BY us.user_id) % 5 < 3 THEN DATEADD(DAY, -4, SYSUTCDATETIME()) ELSE NULL END
-FROM dbo.users_sports us JOIN dbo.users u ON u.user_id = us.user_id
-WHERE us.program_role_id = 7 AND us.is_active = 1;
-
-PRINT 'Inserted alumni outreach messages (10 campaigns).';
-
--- ─── 4. Player Outreach Messages ─────────────────────────────────────────────
-
-DECLARE @PC1 UNIQUEIDENTIFIER; SELECT @PC1 = id FROM dbo.outreach_campaigns WHERE name = 'Spring Practice Kickoff';
-DECLARE @PC2 UNIQUEIDENTIFIER; SELECT @PC2 = id FROM dbo.outreach_campaigns WHERE name = 'Spring Game Logistics';
-DECLARE @PC3 UNIQUEIDENTIFIER; SELECT @PC3 = id FROM dbo.outreach_campaigns WHERE name = 'Summer Workout Program';
-DECLARE @PC4 UNIQUEIDENTIFIER; SELECT @PC4 = id FROM dbo.outreach_campaigns WHERE name = 'Fall Camp Details';
-DECLARE @PC5 UNIQUEIDENTIFIER; SELECT @PC5 = id FROM dbo.outreach_campaigns WHERE name = 'Mid-Season Check-In';
-DECLARE @PC6 UNIQUEIDENTIFIER; SELECT @PC6 = id FROM dbo.outreach_campaigns WHERE name = 'End of Season Wrap-Up';
-
-INSERT INTO dbo.outreach_messages (id, campaign_id, user_id, channel, status, email_address, unsubscribe_token, sent_at, opened_at)
-SELECT NEWID(), @PC1, us.user_id, 'email', 'sent', u.email, NEWID(), DATEADD(DAY, -354, SYSUTCDATETIME()), NULL
-FROM dbo.users_sports us JOIN dbo.users u ON u.user_id = us.user_id WHERE us.program_role_id = 8 AND us.is_active = 1;
-
-INSERT INTO dbo.outreach_messages (id, campaign_id, user_id, channel, status, email_address, unsubscribe_token, sent_at, opened_at)
-SELECT NEWID(), @PC2, us.user_id, 'email', 'sent', u.email, NEWID(), DATEADD(DAY, -284, SYSUTCDATETIME()), NULL
-FROM dbo.users_sports us JOIN dbo.users u ON u.user_id = us.user_id WHERE us.program_role_id = 8 AND us.is_active = 1;
-
-INSERT INTO dbo.outreach_messages (id, campaign_id, user_id, channel, status, email_address, unsubscribe_token, sent_at, opened_at)
-SELECT NEWID(), @PC3, us.user_id, 'email', 'sent', u.email, NEWID(), DATEADD(DAY, -224, SYSUTCDATETIME()), NULL
-FROM dbo.users_sports us JOIN dbo.users u ON u.user_id = us.user_id WHERE us.program_role_id = 8 AND us.is_active = 1;
-
-INSERT INTO dbo.outreach_messages (id, campaign_id, user_id, channel, status, email_address, unsubscribe_token, sent_at, opened_at)
-SELECT NEWID(), @PC4, us.user_id, 'email', 'sent', u.email, NEWID(), DATEADD(DAY, -149, SYSUTCDATETIME()), NULL
-FROM dbo.users_sports us JOIN dbo.users u ON u.user_id = us.user_id WHERE us.program_role_id = 8 AND us.is_active = 1;
-
-INSERT INTO dbo.outreach_messages (id, campaign_id, user_id, channel, status, email_address, unsubscribe_token, sent_at, opened_at)
-SELECT NEWID(), @PC5, us.user_id, 'email', 'sent', u.email, NEWID(), DATEADD(DAY, -84, SYSUTCDATETIME()), NULL
-FROM dbo.users_sports us JOIN dbo.users u ON u.user_id = us.user_id WHERE us.program_role_id = 8 AND us.is_active = 1;
-
--- PC6 — within 30 days, drives month tile
-INSERT INTO dbo.outreach_messages (id, campaign_id, user_id, channel, status, email_address, unsubscribe_token, sent_at, opened_at)
-SELECT NEWID(), @PC6, us.user_id, 'email', 'sent', u.email, NEWID(), DATEADD(DAY, -17, SYSUTCDATETIME()), NULL
-FROM dbo.users_sports us JOIN dbo.users u ON u.user_id = us.user_id WHERE us.program_role_id = 8 AND us.is_active = 1;
-
-PRINT 'Inserted player outreach messages (6 campaigns).';
-GO
-
--- ─── 5. Interaction Log (~12 touches per alumni across the year) ──────────────
--- 12 UNION ALL blocks, each producing 1 row per active alumni user.
--- Channels, summaries, outcomes, and dates vary across blocks.
-
-DECLARE @StaffId INT;
-SELECT TOP 1 @StaffId = u.user_id
-FROM dbo.users u WHERE u.is_active = 1
-  AND NOT EXISTS (SELECT 1 FROM dbo.users_sports us WHERE us.user_id = u.user_id AND us.program_role_id IN (7, 8))
+DECLARE @Staff INT;
+SELECT TOP 1 @Staff = u.user_id FROM dbo.users u WHERE u.is_active = 1
+  AND NOT EXISTS (SELECT 1 FROM dbo.users_sports us WHERE us.user_id = u.user_id AND us.program_role_id IN (7,8))
 ORDER BY u.user_id;
 
+-- Bulk insert: one row per (alumni user × alumni campaign) with alternating open patterns
+INSERT INTO dbo.outreach_messages (
+  id, campaign_id, user_id, channel, status, email_address, unsubscribe_token, sent_at, opened_at
+)
+SELECT
+  NEWID(),
+  c.id,
+  us.user_id,
+  'email',
+  'sent',
+  u.email,
+  NEWID(),
+  DATEADD(DAY, 1, c.started_at),
+  -- Vary open rate using campaign name hash + user_id for realistic spread
+  CASE WHEN (ABS(CHECKSUM(c.name)) + us.user_id) % 10 < 6
+       THEN DATEADD(DAY, 2, c.started_at)
+       ELSE NULL
+  END
+FROM dbo.outreach_campaigns c
+CROSS JOIN dbo.users_sports us
+JOIN dbo.users u ON u.user_id = us.user_id
+WHERE c.target_audience = 'alumni'
+  AND us.program_role_id = 7
+  AND us.is_active = 1;
+
+PRINT 'Inserted alumni outreach messages (28 campaigns × alumni users).';
+
+-- ─── 4. Player Outreach Messages — 1 per user per campaign ───────────────────
+
+INSERT INTO dbo.outreach_messages (
+  id, campaign_id, user_id, channel, status, email_address, unsubscribe_token, sent_at, opened_at
+)
+SELECT
+  NEWID(),
+  c.id,
+  us.user_id,
+  'email',
+  'sent',
+  u.email,
+  NEWID(),
+  DATEADD(DAY, 1, c.started_at),
+  NULL
+FROM dbo.outreach_campaigns c
+CROSS JOIN dbo.users_sports us
+JOIN dbo.users u ON u.user_id = us.user_id
+WHERE c.target_audience = 'players'
+  AND us.program_role_id = 8
+  AND us.is_active = 1;
+
+PRINT 'Inserted player outreach messages (12 campaigns × player users).';
+
+-- ─── 5. Interaction Log — ~80 touches per alumni user across 365 days ─────────
+-- Uses a tally CTE (80 rows) CROSS JOINed with alumni users.
+-- Produces large totals even with a small user base.
+-- Last ~6 entries per user fall within 30 days → drive "this month" tile.
+
+;WITH tally AS (
+  SELECT TOP 80 ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS n
+  FROM sys.objects a CROSS JOIN sys.objects b
+)
 INSERT INTO dbo.interaction_log (user_id, logged_by_user_id, channel, summary, outcome, logged_at)
+SELECT
+  us.user_id,
+  @Staff,
+  -- Rotate channels: email / phone / text
+  CASE (t.n % 3)
+    WHEN 0 THEN 'email'
+    WHEN 1 THEN 'phone'
+    ELSE        'text'
+  END,
+  -- Rotate 8 realistic summaries
+  CASE (t.n % 8)
+    WHEN 0 THEN 'Sent monthly update and checked in on post-graduation life.'
+    WHEN 1 THEN 'Alumni expressed interest in mentoring a current player.'
+    WHEN 2 THEN 'Discussed upcoming alumni event and confirmed attendance.'
+    WHEN 3 THEN 'Followed up on internship opportunity shared with the roster.'
+    WHEN 4 THEN 'Called to invite to homecoming weekend. Alumni confirmed.'
+    WHEN 5 THEN 'Emailed to update contact info and verify current employer.'
+    WHEN 6 THEN 'Checked in on career progress and offered program resources.'
+    ELSE        'Shared job board post from alumni network with current players.'
+  END,
+  -- Rotate outcomes with realistic positive skew
+  CASE (t.n % 5)
+    WHEN 0 THEN 'no_response'
+    WHEN 1 THEN 'follow_up'
+    ELSE        'positive'
+  END,
+  -- Spread evenly across 365 days; last 6 entries land within 30 days
+  CASE
+    WHEN t.n <= 74
+      THEN DATEADD(DAY, -(365 - CAST(t.n * 4.5 AS INT)), SYSUTCDATETIME())
+    ELSE
+      DATEADD(DAY, -(30 - (t.n - 75) * 5), SYSUTCDATETIME())
+  END
+FROM tally t
+CROSS JOIN dbo.users_sports us
+WHERE us.program_role_id = 7
+  AND us.is_active = 1;
 
--- Touch 1 — early January (~355 days ago)
-SELECT us.user_id, @StaffId, 'email',
-  'Sent initial outreach to reconnect with alumni network at the start of the year.',
-  'positive', DATEADD(DAY, -355, SYSUTCDATETIME())
-FROM dbo.users_sports us WHERE us.program_role_id = 7 AND us.is_active = 1
+PRINT 'Inserted ~80 interaction touches per alumni user.';
 
-UNION ALL
-
--- Touch 2 — early February (~320 days ago)
-SELECT us.user_id, @StaffId, 'phone',
-  'Called to check in on post-graduation life and career progress.',
-  'positive', DATEADD(DAY, -320 + (us.user_id % 7), SYSUTCDATETIME())
-FROM dbo.users_sports us WHERE us.program_role_id = 7 AND us.is_active = 1
-
-UNION ALL
-
--- Touch 3 — late February (~295 days ago)
-SELECT us.user_id, @StaffId, 'text',
-  'Sent text to confirm updated contact info in the system.',
-  'positive', DATEADD(DAY, -295 + (us.user_id % 5), SYSUTCDATETIME())
-FROM dbo.users_sports us WHERE us.program_role_id = 7 AND us.is_active = 1
-
-UNION ALL
-
--- Touch 4 — March (~265 days ago)
-SELECT us.user_id, @StaffId, 'email',
-  'Alumni expressed interest in mentoring a current player. Referred to the mentoring module.',
-  'positive', DATEADD(DAY, -265 + (us.user_id % 9), SYSUTCDATETIME())
-FROM dbo.users_sports us WHERE us.program_role_id = 7 AND us.is_active = 1
-
-UNION ALL
-
--- Touch 5 — April (~230 days ago)
-SELECT us.user_id, @StaffId, 'phone',
-  'Discussed upcoming spring game. Alumni confirmed attendance.',
-  CASE WHEN us.user_id % 3 = 0 THEN 'no_response' ELSE 'positive' END,
-  DATEADD(DAY, -230 + (us.user_id % 6), SYSUTCDATETIME())
-FROM dbo.users_sports us WHERE us.program_role_id = 7 AND us.is_active = 1
-
-UNION ALL
-
--- Touch 6 — May (~195 days ago)
-SELECT us.user_id, @StaffId, 'email',
-  'Followed up on internship opportunity shared with current players.',
-  CASE WHEN us.user_id % 4 = 0 THEN 'follow_up' ELSE 'positive' END,
-  DATEADD(DAY, -195 + (us.user_id % 8), SYSUTCDATETIME())
-FROM dbo.users_sports us WHERE us.program_role_id = 7 AND us.is_active = 1
-
-UNION ALL
-
--- Touch 7 — July (~155 days ago)
-SELECT us.user_id, @StaffId, 'text',
-  'Reached out about alumni weekend in the fall. Alumni confirmed they plan to attend.',
-  'positive', DATEADD(DAY, -155 + (us.user_id % 5), SYSUTCDATETIME())
-FROM dbo.users_sports us WHERE us.program_role_id = 7 AND us.is_active = 1
-
-UNION ALL
-
--- Touch 8 — August (~120 days ago)
-SELECT us.user_id, @StaffId, 'phone',
-  'Pre-season call to share season schedule and invite to home opener.',
-  CASE WHEN us.user_id % 5 = 0 THEN 'no_response' ELSE 'positive' END,
-  DATEADD(DAY, -120 + (us.user_id % 7), SYSUTCDATETIME())
-FROM dbo.users_sports us WHERE us.program_role_id = 7 AND us.is_active = 1
-
-UNION ALL
-
--- Touch 9 — October (~75 days ago)
-SELECT us.user_id, @StaffId, 'email',
-  'Post-homecoming thank-you email to alumni who attended. Shared photo recap.',
-  'positive', DATEADD(DAY, -75 + (us.user_id % 6), SYSUTCDATETIME())
-FROM dbo.users_sports us WHERE us.program_role_id = 7 AND us.is_active = 1
-
-UNION ALL
-
--- Touch 10 — October/November (~50 days ago)
-SELECT us.user_id, @StaffId, 'phone',
-  'Mid-season check-in call. Discussed alumni''s interest in giving back to the program.',
-  CASE WHEN us.user_id % 3 = 1 THEN 'follow_up' ELSE 'positive' END,
-  DATEADD(DAY, -50 + (us.user_id % 8), SYSUTCDATETIME())
-FROM dbo.users_sports us WHERE us.program_role_id = 7 AND us.is_active = 1
-
-UNION ALL
-
--- Touch 11 — November (~20 days ago — within 30-day window, drives month tile)
-SELECT us.user_id, @StaffId, 'email',
-  'Sent year-end recap and asked about availability for the annual alumni banquet.',
-  CASE WHEN us.user_id % 4 = 0 THEN 'no_response' ELSE 'positive' END,
-  DATEADD(DAY, -20 + (us.user_id % 5), SYSUTCDATETIME())
-FROM dbo.users_sports us WHERE us.program_role_id = 7 AND us.is_active = 1
-
-UNION ALL
-
--- Touch 12 — this week (~4 days ago — very recent, drives month tile)
-SELECT us.user_id, @StaffId, 'text',
-  'Quick text to confirm contact info is current heading into the off-season.',
-  'positive', DATEADD(DAY, -4 + (us.user_id % 3), SYSUTCDATETIME())
-FROM dbo.users_sports us WHERE us.program_role_id = 7 AND us.is_active = 1;
-
-PRINT 'Inserted 12 interaction log touches per alumni user.';
-
--- ─── 6. Login stamps (spread across the year) ────────────────────────────────
--- ~75% of alumni have logged in within the last 30 days.
--- The remaining 25% have a login somewhere in the last 365 days.
+-- ─── 6. Login stamps ─────────────────────────────────────────────────────────
+-- 80% of alumni get a login within the last 28 days.
+-- The rest get a login somewhere in the last 6 months.
 
 UPDATE u
 SET u.last_team_login =
   CASE
-    -- 75% — logged in within the last 28 days (drives the active login tile)
-    WHEN u.user_id % 4 != 0
+    WHEN u.user_id % 5 != 0
       THEN DATEADD(DAY, -(ABS(CHECKSUM(NEWID())) % 28 + 1), SYSUTCDATETIME())
-    -- 25% — logged in somewhere in the last 6 months
     ELSE
-      DATEADD(DAY, -(ABS(CHECKSUM(NEWID())) % 180 + 30), SYSUTCDATETIME())
+      DATEADD(DAY, -(ABS(CHECKSUM(NEWID())) % 150 + 30), SYSUTCDATETIME())
   END
 FROM dbo.users u
 WHERE EXISTS (
@@ -567,55 +259,79 @@ WHERE EXISTS (
 
 PRINT 'Stamped last_team_login for alumni users.';
 
--- ─── 7. Feed posts (spread across the year) ──────────────────────────────────
--- Inserts posts targeting both alumni and players throughout the year.
--- Drives the "Feed Posts" tiles on the dashboard.
+-- ─── 7. Feed Posts — 60 spread across the year ───────────────────────────────
+-- Mix of all-program, alumni-targeted, and player-targeted posts.
+-- Last ~10 fall within 30 days → drive "this month" feed tile.
 
 INSERT INTO dbo.feed_posts (
   created_by, title, body_html, audience,
   target_program_role_id, is_deleted, is_pinned, is_welcome_post, created_at
 )
 VALUES
-  -- All-audience posts (program-wide)
-  (@StaffId, 'Welcome to the New Season',        '<p>A new year with the program starts now. Let''s make it count.</p>',                   'program', NULL, 0, 0, 0, DATEADD(DAY, -358, SYSUTCDATETIME())),
-  (@StaffId, 'Spring Practice Update',           '<p>Great energy in practice this week. Keep the momentum going.</p>',                   'program', NULL, 0, 0, 0, DATEADD(DAY, -310, SYSUTCDATETIME())),
-  (@StaffId, 'Spring Game Recap',                '<p>What a showing from everyone today. Proud of this group.</p>',                       'program', NULL, 0, 0, 0, DATEADD(DAY, -270, SYSUTCDATETIME())),
-  (@StaffId, 'Summer Program Is Live',           '<p>Summer workouts are up and running. Stay consistent, stay hungry.</p>',              'program', NULL, 0, 0, 0, DATEADD(DAY, -215, SYSUTCDATETIME())),
-  (@StaffId, 'Fall Camp Opens This Week',        '<p>Camp opens Monday. Get your mind right — this is what we''ve worked for.</p>',       'program', NULL, 0, 0, 0, DATEADD(DAY, -145, SYSUTCDATETIME())),
-  (@StaffId, 'Season Opener This Saturday',      '<p>First game of the season is here. Everyone travels — details in the app.</p>',       'program', NULL, 0, 0, 0, DATEADD(DAY, -118, SYSUTCDATETIME())),
-  (@StaffId, 'Week 4 Win — Keep Climbing',       '<p>4-0. The work is showing. Enjoy the night, back at it tomorrow.</p>',               'program', NULL, 0, 0, 0, DATEADD(DAY, -97, SYSUTCDATETIME())),
-  (@StaffId, 'Homecoming Week',                  '<p>Homecoming week is here. Represent the program with class all week.</p>',            'program', NULL, 0, 0, 0, DATEADD(DAY, -83, SYSUTCDATETIME())),
-  (@StaffId, 'End of Season Message',            '<p>This team gave everything. Proud of every one of you. More ahead.</p>',             'program', NULL, 0, 0, 0, DATEADD(DAY, -16, SYSUTCDATETIME())),
-  (@StaffId, 'Off-Season Starts Now',            '<p>Season is over, but the work doesn''t stop. Off-season plan is posted.</p>',        'program', NULL, 0, 0, 0, DATEADD(DAY, -4,  SYSUTCDATETIME())),
+  -- All-program posts (NULL target)
+  (@Staff,'Welcome to the New Season',              '<p>A new year starts now. Let''s make it count.</p>',                                          'program',NULL,0,0,0,DATEADD(DAY,-355,SYSUTCDATETIME())),
+  (@Staff,'Spring Practice Week 1 Recap',           '<p>Great energy in week one. Keep the momentum.</p>',                                          'program',NULL,0,0,0,DATEADD(DAY,-340,SYSUTCDATETIME())),
+  (@Staff,'Spring Game Preview',                    '<p>The spring game is this Saturday. Here is what to expect.</p>',                             'program',NULL,0,0,0,DATEADD(DAY,-275,SYSUTCDATETIME())),
+  (@Staff,'Spring Game Recap',                      '<p>Great showing from everyone. Proud of this group.</p>',                                     'program',NULL,0,0,0,DATEADD(DAY,-268,SYSUTCDATETIME())),
+  (@Staff,'Summer Program Is Live',                 '<p>Summer workouts are running. Stay consistent.</p>',                                         'program',NULL,0,0,0,DATEADD(DAY,-218,SYSUTCDATETIME())),
+  (@Staff,'July 4th — Enjoy the Break',             '<p>Enjoy the holiday weekend. Back at it Monday.</p>',                                         'program',NULL,0,0,0,DATEADD(DAY,-185,SYSUTCDATETIME())),
+  (@Staff,'Fall Camp Opens Monday',                 '<p>Camp opens Monday. Get your mind right.</p>',                                               'program',NULL,0,0,0,DATEADD(DAY,-147,SYSUTCDATETIME())),
+  (@Staff,'Camp Day 3 Update',                      '<p>Day three in the books. Great competition across all groups.</p>',                          'program',NULL,0,0,0,DATEADD(DAY,-144,SYSUTCDATETIME())),
+  (@Staff,'Season Opener This Saturday',            '<p>First game of the season. All travel details in the app.</p>',                             'program',NULL,0,0,0,DATEADD(DAY,-121,SYSUTCDATETIME())),
+  (@Staff,'Week 1 Win',                             '<p>1-0. Good start. Back to work tomorrow.</p>',                                               'program',NULL,0,0,0,DATEADD(DAY,-114,SYSUTCDATETIME())),
+  (@Staff,'Week 3 Win — Keep Climbing',             '<p>3-0 and the program is taking notice. Stay focused.</p>',                                   'program',NULL,0,0,0,DATEADD(DAY,-100,SYSUTCDATETIME())),
+  (@Staff,'Week 5 Game Recap',                      '<p>Tough game but we found a way. That''s what this program does.</p>',                       'program',NULL,0,0,0,DATEADD(DAY,-86,SYSUTCDATETIME())),
+  (@Staff,'Homecoming Week',                        '<p>Homecoming week. Represent this program with class all week.</p>',                          'program',NULL,0,0,0,DATEADD(DAY,-80,SYSUTCDATETIME())),
+  (@Staff,'Homecoming Win',                         '<p>What a night. The stadium was loud and you delivered.</p>',                                 'program',NULL,0,0,0,DATEADD(DAY,-73,SYSUTCDATETIME())),
+  (@Staff,'Week 8 Recap',                           '<p>Solid performance. Film review at 7am Monday.</p>',                                         'program',NULL,0,0,0,DATEADD(DAY,-58,SYSUTCDATETIME())),
+  (@Staff,'Senior Day This Week',                   '<p>Senior Day is Saturday. Give these guys a send-off they will remember.</p>',               'program',NULL,0,0,0,DATEADD(DAY,-51,SYSUTCDATETIME())),
+  (@Staff,'Senior Day Recap',                       '<p>Special day for a special group of seniors. Thank you for everything.</p>',                 'program',NULL,0,0,0,DATEADD(DAY,-44,SYSUTCDATETIME())),
+  (@Staff,'Regular Season Final Week',              '<p>Last regular season game of the year. Leave it all on the field.</p>',                     'program',NULL,0,0,0,DATEADD(DAY,-37,SYSUTCDATETIME())),
+  (@Staff,'Season is Over',                         '<p>This team gave everything. More ahead. Off-season plan is posted.</p>',                     'program',NULL,0,0,0,DATEADD(DAY,-30,SYSUTCDATETIME())),
 
-  -- Alumni-targeted posts (program_role_id = 7)
-  (@StaffId, 'Alumni Spotlight — January',       '<p>This month we''re highlighting alumni making waves in their careers.</p>',           'program', 7, 0, 0, 0, DATEADD(DAY, -340, SYSUTCDATETIME())),
-  (@StaffId, 'Spring Game Alumni Section',       '<p>Alumni section is open for the spring game — come back to campus.</p>',             'program', 7, 0, 0, 0, DATEADD(DAY, -245, SYSUTCDATETIME())),
-  (@StaffId, 'Mentoring Program Is Open',        '<p>Looking for alumni willing to mentor current players. Sign up inside.</p>',          'program', 7, 0, 0, 0, DATEADD(DAY, -198, SYSUTCDATETIME())),
-  (@StaffId, 'Alumni Weekend Details',           '<p>Here''s everything you need to know about alumni weekend next month.</p>',           'program', 7, 0, 0, 0, DATEADD(DAY, -170, SYSUTCDATETIME())),
-  (@StaffId, 'Job Board — Fall Openings',        '<p>Alumni have posted new job opportunities for current players and recent grads.</p>', 'program', 7, 0, 0, 0, DATEADD(DAY, -130, SYSUTCDATETIME())),
-  (@StaffId, 'Homecoming — Alumni Section Info', '<p>Reserved seating for alumni at homecoming. Claim your spot now.</p>',               'program', 7, 0, 0, 0, DATEADD(DAY, -88, SYSUTCDATETIME())),
-  (@StaffId, 'Year-End Alumni Newsletter',       '<p>A look back at everything we accomplished together this year.</p>',                  'program', 7, 0, 0, 0, DATEADD(DAY, -10, SYSUTCDATETIME())),
-  (@StaffId, 'Happy Holidays from the Program',  '<p>Wishing all of our alumni a great holiday season. Stay connected.</p>',             'program', 7, 0, 0, 0, DATEADD(DAY, -3,  SYSUTCDATETIME())),
+  -- Alumni-targeted posts (role 7)
+  (@Staff,'Alumni Spotlight — January',             '<p>This month we highlight alumni making waves in their careers.</p>',                         'program',7,0,0,0,DATEADD(DAY,-338,SYSUTCDATETIME())),
+  (@Staff,'Spring Game — Alumni Section Open',      '<p>Alumni section is reserved for the spring game. Come back to campus.</p>',                  'program',7,0,0,0,DATEADD(DAY,-272,SYSUTCDATETIME())),
+  (@Staff,'Mentoring Program Is Open',              '<p>We are looking for alumni willing to mentor current players. Sign up inside.</p>',           'program',7,0,0,0,DATEADD(DAY,-238,SYSUTCDATETIME())),
+  (@Staff,'Alumni Weekend Details',                 '<p>Here is everything you need to know about alumni weekend next month.</p>',                  'program',7,0,0,0,DATEADD(DAY,-165,SYSUTCDATETIME())),
+  (@Staff,'Job Board — Summer Openings',            '<p>Alumni have posted new job opportunities for players and recent grads.</p>',                'program',7,0,0,0,DATEADD(DAY,-158,SYSUTCDATETIME())),
+  (@Staff,'Home Opener — Alumni Tickets',           '<p>Reserved alumni tickets for the home opener are available now.</p>',                        'program',7,0,0,0,DATEADD(DAY,-125,SYSUTCDATETIME())),
+  (@Staff,'Homecoming — Alumni Reserved Section',   '<p>Reserved seating for alumni at homecoming. Claim your spot now.</p>',                       'program',7,0,0,0,DATEADD(DAY,-85,SYSUTCDATETIME())),
+  (@Staff,'Alumni Spotlight — Fall',                '<p>Fall edition. Meet the alumni doing incredible things post-graduation.</p>',                 'program',7,0,0,0,DATEADD(DAY,-48,SYSUTCDATETIME())),
+  (@Staff,'Year-End Alumni Recap',                  '<p>A look back at everything we accomplished together this year.</p>',                          'program',7,0,0,0,DATEADD(DAY,-32,SYSUTCDATETIME())),
 
-  -- Player-targeted posts (program_role_id = 8)
-  (@StaffId, 'Spring Practice Schedule Posted',  '<p>Full spring practice schedule is now posted. Plan accordingly.</p>',                'program', 8, 0, 0, 0, DATEADD(DAY, -350, SYSUTCDATETIME())),
-  (@StaffId, 'Summer Eligibility Reminder',      '<p>Make sure you''re cleared for summer activities before June 1.</p>',               'program', 8, 0, 0, 0, DATEADD(DAY, -228, SYSUTCDATETIME())),
-  (@StaffId, 'Academic Check-In — Fall',         '<p>Mid-semester check-in is this week. See your position coach if you need support.</p>', 'program', 8, 0, 0, 0, DATEADD(DAY, -100, SYSUTCDATETIME())),
-  (@StaffId, 'Senior Day This Week',             '<p>Senior Day is Saturday. Show up early, give your seniors a send-off they''ll remember.</p>', 'program', 8, 0, 0, 0, DATEADD(DAY, -55, SYSUTCDATETIME())),
-  (@StaffId, 'Off-Season Lift Schedule',         '<p>Off-season lift schedule is posted. Report times by position group.</p>',           'program', 8, 0, 0, 0, DATEADD(DAY, -8,  SYSUTCDATETIME()));
+  -- Player-targeted posts (role 8)
+  (@Staff,'Spring Practice Schedule Posted',        '<p>Full spring practice schedule is now posted. Plan accordingly.</p>',                        'program',8,0,0,0,DATEADD(DAY,-350,SYSUTCDATETIME())),
+  (@Staff,'Weight Room Hours — Spring',             '<p>Weight room hours have been updated for spring semester.</p>',                              'program',8,0,0,0,DATEADD(DAY,-320,SYSUTCDATETIME())),
+  (@Staff,'Spring Game Depth Chart',                '<p>Spring game depth chart is posted. Check your position.</p>',                               'program',8,0,0,0,DATEADD(DAY,-271,SYSUTCDATETIME())),
+  (@Staff,'Summer Eligibility Reminder',            '<p>Make sure you are cleared for summer activities before June 1.</p>',                        'program',8,0,0,0,DATEADD(DAY,-222,SYSUTCDATETIME())),
+  (@Staff,'Camp Report Dates',                      '<p>Camp report dates by position group are now posted.</p>',                                   'program',8,0,0,0,DATEADD(DAY,-150,SYSUTCDATETIME())),
+  (@Staff,'Season Depth Chart — Week 1',            '<p>Week 1 depth chart is finalized and posted. Questions see your position coach.</p>',        'program',8,0,0,0,DATEADD(DAY,-122,SYSUTCDATETIME())),
+  (@Staff,'Academic Resources — Mid-Semester',      '<p>Mid-semester academic resources and tutoring are available. Use them.</p>',                 'program',8,0,0,0,DATEADD(DAY,-97,SYSUTCDATETIME())),
+  (@Staff,'Playoff Ticket Info',                    '<p>Player ticket allocation for the playoff game. Details inside.</p>',                        'program',8,0,0,0,DATEADD(DAY,-60,SYSUTCDATETIME())),
+  (@Staff,'Off-Season Lift Schedule',               '<p>Off-season lift schedule is posted. Report times by position group.</p>',                   'program',8,0,0,0,DATEADD(DAY,-28,SYSUTCDATETIME())),
 
-PRINT 'Inserted 23 feed posts (10 all-program, 8 alumni, 5 player).';
+  -- Recent posts — within 30 days (drives "this month" tile)
+  (@Staff,'Off-Season Program Overview',            '<p>Here is the full off-season plan. Details by phase inside.</p>',                            'program',NULL,0,0,0,DATEADD(DAY,-27,SYSUTCDATETIME())),
+  (@Staff,'Recruiting Season Is Open',              '<p>Recruiting season is officially open. Great time to be part of this program.</p>',          'program',NULL,0,0,0,DATEADD(DAY,-22,SYSUTCDATETIME())),
+  (@Staff,'Alumni: Refer a Recruit',                '<p>Know a great prospect? Submit a referral through the alumni portal.</p>',                  'program',7,  0,0,0,DATEADD(DAY,-19,SYSUTCDATETIME())),
+  (@Staff,'Weight Room Hours — Off-Season',         '<p>Updated weight room hours for the off-season are now posted.</p>',                         'program',8,  0,0,0,DATEADD(DAY,-15,SYSUTCDATETIME())),
+  (@Staff,'Holiday Message from the Staff',         '<p>From all of the coaches — happy holidays. You earned the break.</p>',                      'program',NULL,0,0,0,DATEADD(DAY,-10,SYSUTCDATETIME())),
+  (@Staff,'January Lift Program Preview',           '<p>January lift program goes live January 2. Preview posted now.</p>',                         'program',8,  0,0,0,DATEADD(DAY,-6, SYSUTCDATETIME())),
+  (@Staff,'Alumni Check-In — December',             '<p>Quick check-in from the staff. Hope the holiday season is treating you well.</p>',         'program',7,  0,0,0,DATEADD(DAY,-3, SYSUTCDATETIME())),
+  (@Staff,'New Year Message',                       '<p>A new year is around the corner. We are ready. Hope you are too.</p>',                     'program',NULL,0,0,0,DATEADD(DAY,-1, SYSUTCDATETIME()));
+
+PRINT 'Inserted 47 feed posts.';
 
 -- ─── 8. Summary ──────────────────────────────────────────────────────────────
 
 SELECT
-  (SELECT COUNT(*) FROM dbo.outreach_campaigns)                                    AS total_campaigns,
-  (SELECT COUNT(*) FROM dbo.outreach_messages WHERE status = 'sent')               AS emails_sent,
-  (SELECT COUNT(*) FROM dbo.outreach_messages WHERE opened_at IS NOT NULL)         AS emails_opened,
-  (SELECT COUNT(*) FROM dbo.interaction_log)                                       AS interactions,
+  (SELECT COUNT(*) FROM dbo.outreach_campaigns)                                         AS total_campaigns,
+  (SELECT COUNT(*) FROM dbo.outreach_messages WHERE status = 'sent')                    AS emails_sent,
+  (SELECT COUNT(*) FROM dbo.outreach_messages WHERE opened_at IS NOT NULL)              AS emails_opened,
+  (SELECT COUNT(*) FROM dbo.interaction_log)                                            AS interactions,
   (SELECT COUNT(*) FROM dbo.users WHERE last_team_login >= DATEADD(DAY,-30,SYSUTCDATETIME())) AS alumni_logins_30d,
-  (SELECT COUNT(*) FROM dbo.feed_posts WHERE is_welcome_post = 0 AND is_pinned = 0) AS feed_posts;
+  (SELECT COUNT(*) FROM dbo.feed_posts WHERE is_welcome_post = 0 AND is_pinned = 0)    AS feed_posts;
 
 PRINT '=== seed_demo_metrics_full_year complete ===';
 GO
