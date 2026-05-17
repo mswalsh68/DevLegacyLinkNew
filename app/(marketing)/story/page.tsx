@@ -145,7 +145,7 @@ export default function StoryPage() {
               <div className="order-1">
                 <div className="rounded-sm overflow-hidden border border-white/5 shadow-xl">
                   <Image
-                    src="/seniornight.jpeg"
+                    src="/founderimage.jpeg"
                     alt="Mike Walsh on the sideline at USF, helmet in hand"
                     width={600}
                     height={400}
