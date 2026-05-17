@@ -20,11 +20,12 @@ export default function Navbar() {
 
         {/* Desktop nav */}
         <div className="hidden md:flex items-center gap-8 text-sm text-white/70">
-          <a href="#how-it-works" className="hover:text-gold transition-colors">How It Works</a>
-          <a href="#features"     className="hover:text-gold transition-colors">Features</a>
-          <a href="#who"          className="hover:text-gold transition-colors">Who It&apos;s For</a>
-          <a href="#contact"      className="btn-gold text-xs py-2 px-5">Request a Demo</a>
-          <Link href="/login"     className="text-white/50 hover:text-white transition-colors text-xs uppercase tracking-widest">Sign In</Link>
+          <a href="#how-it-works"   className="hover:text-gold transition-colors">How It Works</a>
+          <a href="#features"       className="hover:text-gold transition-colors">Features</a>
+          <a href="#who"            className="hover:text-gold transition-colors">Who It&apos;s For</a>
+          <Link href="/story"       className="hover:text-gold transition-colors">Our Story</Link>
+          <a href="#contact"        className="btn-gold text-xs py-2 px-5">Request a Demo</a>
+          <Link href="/login"       className="text-white/50 hover:text-white transition-colors text-xs uppercase tracking-widest">Sign In</Link>
         </div>
 
         {/* Mobile burger */}
@@ -43,8 +44,9 @@ export default function Navbar() {
           <a href="#how-it-works" onClick={() => setOpen(false)} className="hover:text-gold">How It Works</a>
           <a href="#features"     onClick={() => setOpen(false)} className="hover:text-gold">Features</a>
           <a href="#who"          onClick={() => setOpen(false)} className="hover:text-gold">Who It&apos;s For</a>
+          <Link href="/story"     onClick={() => setOpen(false)} className="hover:text-gold">Our Story</Link>
           <a href="#contact"      onClick={() => setOpen(false)} className="btn-gold text-center text-xs py-3">Request a Demo</a>
-          <Link href="/login" onClick={() => setOpen(false)} className="text-white/40 hover:text-white/70 text-xs uppercase tracking-widest text-center">Sign In</Link>
+          <Link href="/login"     onClick={() => setOpen(false)} className="text-white/40 hover:text-white/70 text-xs uppercase tracking-widest text-center">Sign In</Link>
         </div>
       )}
     </nav>
