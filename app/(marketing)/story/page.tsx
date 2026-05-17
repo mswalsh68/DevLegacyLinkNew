@@ -56,10 +56,8 @@ export default function StoryPage() {
                     my senior year &mdash; we won the program&apos;s first ever state championship.
                   </p>
                   <p>
-                    Those years were some of the best of my life. I made bonds I thought could never
-                    be broken. Shared memories I thought would last forever.
+                    We were a tight-knit group. 48 minutes for a lifetime full of memories. We made friendships that felt like family. We had a bond that we all knew would last forever.
                   </p>
-                  <p>And they did. But the connections didn&apos;t.</p>
                 </div>
               </div>
 
@@ -160,7 +158,7 @@ export default function StoryPage() {
                 <div className="flex flex-col gap-5 text-white/65 text-lg leading-relaxed">
                   <p>
                     I went on to play at the University of South Florida from 2007 to 2011. We won
-                    games we had no business winning. We went on bowl trips. We led, cried, sweated,
+                    games we had no business winning. We went on bowl trips. We laughed, cried, sweated,
                     and broke bread together.
                   </p>
                   <p>
