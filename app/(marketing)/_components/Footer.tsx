@@ -33,16 +33,16 @@ export default function Footer() {
             <div>
               <h4 className="text-white/30 text-xs uppercase tracking-widest font-semibold mb-4">Platform</h4>
               <ul className="space-y-3">
-                <li><a href="#how-it-works" className="text-white/40 hover:text-gold transition-colors text-xs uppercase tracking-widest font-semibold">How It Works</a></li>
-                <li><a href="#features"     className="text-white/40 hover:text-gold transition-colors text-xs uppercase tracking-widest font-semibold">Features</a></li>
-                <li><a href="#who"          className="text-white/40 hover:text-gold transition-colors text-xs uppercase tracking-widest font-semibold">Who It&apos;s For</a></li>
+                <li><a href="/#how-it-works" className="text-white/40 hover:text-gold transition-colors text-xs uppercase tracking-widest font-semibold">How It Works</a></li>
+                <li><a href="/#features"    className="text-white/40 hover:text-gold transition-colors text-xs uppercase tracking-widest font-semibold">Features</a></li>
+                <li><a href="/#who"         className="text-white/40 hover:text-gold transition-colors text-xs uppercase tracking-widest font-semibold">Who It&apos;s For</a></li>
               </ul>
             </div>
             <div>
               <h4 className="text-white/30 text-xs uppercase tracking-widest font-semibold mb-4">Account</h4>
               <ul className="space-y-3">
                 <li><Link href="/login"  className="text-white/40 hover:text-gold transition-colors text-xs uppercase tracking-widest font-semibold">Sign In</Link></li>
-                <li><a href="#contact"   className="text-white/40 hover:text-gold transition-colors text-xs uppercase tracking-widest font-semibold">Request a Demo</a></li>
+                <li><a href="/#contact"  className="text-white/40 hover:text-gold transition-colors text-xs uppercase tracking-widest font-semibold">Request a Demo</a></li>
               </ul>
             </div>
             <div>
