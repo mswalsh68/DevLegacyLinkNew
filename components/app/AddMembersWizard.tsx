@@ -157,41 +157,66 @@ function TextInput({ value, onChange, placeholder, type = 'text', required }: {
   )
 }
 
-// ─── CSV utilities ────────────────────────────────────────────────────────────
+// ─── Upload utilities ─────────────────────────────────────────────────────────
 
-const CSV_TEMPLATES: Record<MemberType, { headers: string[]; example: string[] }> = {
+const UPLOAD_TEMPLATES: Record<MemberType, { headers: string[]; example: string[] }> = {
   staff: {
-    headers: ['email', 'firstName', 'lastName'],
-    example: ['coach@example.com', 'Mike', 'Jones'],
+    headers: ['firstName', 'lastName', 'email'],
+    example: ['Mike', 'Jones', 'coach@example.com'],
   },
   alumni: {
-    headers: ['email', 'firstName', 'lastName', 'position', 'graduationYear', 'city', 'state'],
-    example: ['jane@example.com', 'Jane', 'Doe', 'Midfielder', '2019', 'Tampa', 'FL'],
+    headers: ['firstName', 'lastName', 'email', 'position', 'graduationYear'],
+    example: ['Jane', 'Doe', 'jane@example.com', 'Midfielder', '2019'],
   },
   player: {
-    headers: ['email', 'firstName', 'lastName', 'position', 'academicYear', 'recruitingClass'],
-    example: ['john@example.com', 'John', 'Smith', 'Forward', 'Junior', '2022'],
+    headers: ['firstName', 'lastName', 'email', 'position', 'recruitingClass'],
+    example: ['John', 'Smith', 'john@example.com', 'Forward', '2026'],
   },
 }
 
-function downloadTemplate(type: MemberType) {
-  const { headers, example } = CSV_TEMPLATES[type]
-  const csv  = [headers.join(','), example.join(',')].join('\n')
-  const blob = new Blob([csv], { type: 'text/csv' })
-  const url  = URL.createObjectURL(blob)
-  const a    = document.createElement('a')
-  a.href     = url
-  a.download = `${type}-template.csv`
-  a.click()
-  URL.revokeObjectURL(url)
+async function downloadTemplate(type: MemberType, positions: PositionOption[]) {
+  const { headers, example } = UPLOAD_TEMPLATES[type]
+  const XLSX = await import('xlsx')
+  const wb   = XLSX.utils.book_new()
+  const ws   = XLSX.utils.aoa_to_sheet([headers, example])
+  XLSX.utils.book_append_sheet(wb, ws, 'Template')
+  if (positions.length > 0) {
+    const posWs = XLSX.utils.aoa_to_sheet([
+      ['Valid Positions'],
+      ...positions.map(p => [p.positionName]),
+    ])
+    XLSX.utils.book_append_sheet(wb, posWs, 'Valid Positions')
+  }
+  XLSX.writeFile(wb, `${type}-template.xlsx`)
+}
+
+// Handles quoted fields so commas inside "Smith, Jr." don't break parsing.
+function splitCSVLine(line: string): string[] {
+  const result: string[] = []
+  let current = ''
+  let inQuotes = false
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { current += '"'; i++ }
+      else { inQuotes = !inQuotes }
+    } else if (ch === ',' && !inQuotes) {
+      result.push(current.trim())
+      current = ''
+    } else {
+      current += ch
+    }
+  }
+  result.push(current.trim())
+  return result
 }
 
 function parseCSV(text: string): Record<string, string>[] {
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim())
   if (lines.length < 2) return []
-  const headers = lines[0].split(',').map(h => h.trim())
+  const headers = splitCSVLine(lines[0])
   return lines.slice(1).map(line => {
-    const vals = line.split(',').map(v => v.trim())
+    const vals = splitCSVLine(line)
     const row: Record<string, string> = {}
     headers.forEach((h, i) => { row[h] = vals[i] ?? '' })
     return row
@@ -295,13 +320,23 @@ export function AddMembersWizard({
 
   function selectAction(a: WizardAction) { setAction(a); setStep('configure') }
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     setCsvFileName(file.name)
-    const reader = new FileReader()
-    reader.onload = ev => setCsvRows(parseCSV(ev.target?.result as string))
-    reader.readAsText(file)
+    const ext = file.name.split('.').pop()?.toLowerCase()
+    if (ext === 'xlsx' || ext === 'xls') {
+      const XLSX = await import('xlsx')
+      const data = await file.arrayBuffer()
+      const wb   = XLSX.read(data)
+      const ws   = wb.Sheets[wb.SheetNames[0]]
+      const rows = XLSX.utils.sheet_to_json<Record<string, string>>(ws, { defval: '' })
+      setCsvRows(rows)
+    } else {
+      const reader = new FileReader()
+      reader.onload = ev => setCsvRows(parseCSV(ev.target?.result as string))
+      reader.readAsText(file)
+    }
   }
 
   // ── Submit ────────────────────────────────────────────────────────────────
@@ -371,8 +406,9 @@ export function AddMembersWizard({
   }
 
   async function submitBulk() {
-    if (csvRows.length === 0) { setFormError('Please upload a CSV file with at least one row.'); return }
+    if (csvRows.length === 0) { setFormError('Please upload a file with at least one row.'); return }
     if (!selectedRole) return
+    if (memberType !== 'staff' && !selSportId) { setFormError('Please select a sport before uploading.'); return }
 
     // Resolve position names → IDs from the currently-loaded sportPositions
     function resolvePositionId(name: string): number | null {
@@ -641,7 +677,7 @@ export function AddMembersWizard({
             <>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 24 }}>
                 <ActionTile icon="✏️" title="Create"      description="Add one member"    selected={action === 'create'} onClick={() => selectAction('create')} />
-                <ActionTile icon="📄" title="Bulk Upload" description="CSV file import"   selected={action === 'bulk'}   onClick={() => selectAction('bulk')} />
+                <ActionTile icon="📄" title="Bulk Upload" description="Excel / CSV import" selected={action === 'bulk'}   onClick={() => selectAction('bulk')} />
                 <ActionTile icon="🔗" title="Invite Link" description="Share a signup link" selected={action === 'invite'} onClick={() => selectAction('invite')} />
               </div>
               <Button label="← Back" variant="ghost" size="sm" onClick={goBack} />
@@ -728,21 +764,28 @@ export function AddMembersWizard({
                     <SportPicker allowAllSports={memberType === 'staff' && canBeAllSports} />
                   )}
 
+                  {/* Show locked sport label for single-sport users so they can confirm which sport is targeted */}
+                  {memberType !== 'staff' && !showSportPicker && selSportId && (
+                    <div style={{ fontSize: 13, color: 'var(--color-gray-600)', padding: '8px 12px', backgroundColor: 'var(--color-gray-50)', borderRadius: 6, border: '1px solid var(--color-gray-200)' }}>
+                      Sport: <strong>{sports.find(s => s.id === selSportId)?.name}</strong>
+                    </div>
+                  )}
+
                   {memberType !== 'staff' && sportPositions.length > 0 && (
                     <p style={{ fontSize: 12, color: 'var(--color-gray-500)', margin: 0 }}>
-                      Valid positions for CSV: {sportPositions.map(p => p.positionName).join(', ')}
+                      Valid positions: {sportPositions.map(p => p.positionName).join(', ')}
                     </p>
                   )}
 
                   <div style={{ backgroundColor: 'var(--color-gray-50)', border: '1px solid var(--color-gray-200)', borderRadius: 8, padding: '12px 16px' }}>
                     <p style={{ fontSize: 13, color: 'var(--color-gray-600)', margin: '0 0 8px' }}>
-                      Download the CSV template, fill it in, then upload below.
+                      Download the Excel template, fill it in, then upload below.
                     </p>
-                    <Button label="Download Template" variant="outline" size="sm" onClick={() => downloadTemplate(memberType!)} />
+                    <Button label="Download Template" variant="outline" size="sm" onClick={() => downloadTemplate(memberType!, sportPositions)} />
                   </div>
 
                   <div>
-                    <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleFileChange} />
+                    <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" style={{ display: 'none' }} onChange={handleFileChange} />
                     <div
                       onClick={() => fileInputRef.current?.click()}
                       style={{ border: '2px dashed var(--color-gray-300)', borderRadius: 10, padding: '28px 20px', textAlign: 'center', cursor: 'pointer', backgroundColor: 'var(--color-gray-50)' }}
@@ -756,20 +799,34 @@ export function AddMembersWizard({
                       ) : (
                         <>
                           <div style={{ fontSize: 24, marginBottom: 6 }}>⬆️</div>
-                          <div style={{ fontSize: 14, color: 'var(--color-gray-600)' }}>Click to upload CSV</div>
+                          <div style={{ fontSize: 14, color: 'var(--color-gray-600)' }}>Click to upload Excel or CSV</div>
                         </>
                       )}
                     </div>
                   </div>
 
-                  {csvRows.length > 0 && (
-                    <div style={{ fontSize: 12, color: 'var(--color-gray-500)' }}>
-                      Previewing first 3 of {csvRows.length} rows:
-                      <div style={{ fontFamily: 'monospace', backgroundColor: 'var(--color-gray-50)', border: '1px solid var(--color-gray-200)', borderRadius: 6, padding: '8px 10px', marginTop: 6, overflowX: 'auto' }}>
-                        {csvRows.slice(0, 3).map((r, i) => <div key={i}>{JSON.stringify(r)}</div>)}
-                      </div>
-                    </div>
-                  )}
+                  {csvRows.length > 0 && (() => {
+                    const badPositions = memberType !== 'staff' && sportPositions.length > 0
+                      ? Array.from(new Set(csvRows.map(r => r.position).filter(
+                          p => p && !sportPositions.some(sp => sp.positionName.toLowerCase() === p.toLowerCase())
+                        )))
+                      : []
+                    return (
+                      <>
+                        {badPositions.length > 0 && (
+                          <div style={{ fontSize: 12, color: 'var(--color-warning)', padding: '8px 12px', backgroundColor: 'var(--color-warning-light)', borderRadius: 6 }}>
+                            Unrecognized position(s): {badPositions.join(', ')}. Those rows will upload without a position assigned.
+                          </div>
+                        )}
+                        <div style={{ fontSize: 12, color: 'var(--color-gray-500)' }}>
+                          Previewing first 3 of {csvRows.length} rows:
+                          <div style={{ fontFamily: 'monospace', backgroundColor: 'var(--color-gray-50)', border: '1px solid var(--color-gray-200)', borderRadius: 6, padding: '8px 10px', marginTop: 6, overflowX: 'auto' }}>
+                            {csvRows.slice(0, 3).map((r, i) => <div key={i}>{JSON.stringify(r)}</div>)}
+                          </div>
+                        </div>
+                      </>
+                    )
+                  })()}
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
                     <Button label="← Back" variant="ghost" size="sm" onClick={goBack} />
